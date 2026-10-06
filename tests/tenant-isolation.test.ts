@@ -125,7 +125,8 @@ describe('privilégios e papéis', () => {
          JOIN pg_attribute a ON a.attrelid = c.oid AND a.attname = 'tenant_id' AND NOT a.attisdropped
         WHERE n.nspname = 'public' AND c.relkind = 'r' AND NOT (c.relrowsecurity AND c.relforcerowsecurity)`,
     );
-    expect(r.rows.map((x) => x.relname)).toEqual(['platform_audit_events']); // única exceção: auditoria da plataforma, sem acesso do runtime
+    // Exceções conscientes: auditoria da plataforma (sem acesso do runtime) e diretório slug->tenant (só resolve login, sem dados).
+    expect(r.rows.map((x) => x.relname).sort()).toEqual(['platform_audit_events', 'tenant_directory']);
   });
 
   it('runtime da clínica não altera tenants, planos nem catálogo', async () => {

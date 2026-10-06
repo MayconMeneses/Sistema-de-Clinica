@@ -1,25 +1,53 @@
 # Clínica One — plataforma SaaS de gestão clínica
 
-**Status: Fase 1 EM ANDAMENTO (fundação parcial). Não é produto, não há dados reais, não é seguro para produção.**
-Especificação: ver prompt mestre do projeto. Convênios/TISS: bloqueados globalmente nesta fase.
+**Versão 0.3.0 · funcional em ambiente de desenvolvimento · NÃO pronta para produção nem para dados reais de pacientes.**
+Interface em português do Brasil, **mobile-first** (menu inferior no celular, barra lateral no desktop, instalável na tela inicial).
+Convênios/TISS estão bloqueados globalmente nesta fase.
 
-## O que existe (IMPLEMENTADO e testado localmente)
-- Migrations SQL versionadas (`migrations/`) e runner com checksum.
-- Multi-tenancy com PostgreSQL RLS forçado, contexto transacional de tenant e três papéis sem BYPASSRLS.
-- Catálogo de 5 planos e 14 capabilities; resolução de entitlements no backend; `tiss.billing` bloqueado também no banco.
-- Auditoria append-only (tenant e plataforma).
+## Rodar (requer Node 22 e PostgreSQL 16 locais)
 
-## O que NÃO existe
-Identidade/MFA, API HTTP, Painel Master, pacientes, agenda, prontuário, financeiro, integrações, CI, backup/restore, observabilidade. Ver `docs/BACKLOG.md`.
-
-## Rodar localmente (requer PostgreSQL 16 e Node 22)
-```
+```bash
 npm install
-npm run db:setup        # cria banco e papéis de DEV (superuser local via 'su postgres')
-npm run db:migrate      # com DATABASE_URL_OWNER (ver .env.example)
-npm run check           # typecheck + testes
+npm run setup:dev     # cria banco + papéis de DEV, aplica migrations, cria dados DEMO fictícios e gera o frontend
+npm start             # http://localhost:3000   (PORT=3100 npm start para outra porta)
 ```
-Os testes acumulam tenants de teste com slug aleatório; recrie o banco de dev para limpar (`dropdb clinica_one && npm run db:setup`).
 
-## Documentação
-`docs/adr/`, `docs/THREAT-MODEL.md`, `docs/BACKLOG.md`, `docs/ACEITE-FASE-1.md`, `PENDENCIAS.md`.
+O `npm run seed` imprime os acessos de demonstração (todos fictícios, **somente desenvolvimento**):
+
+| Ambiente | Como entrar |
+|---|---|
+| Clínica demo (plano Completa) | identificador `demo` · `dono@demo.demo`, `anaadmin@demo.demo`, `ritarecepcao@demo.demo`, `drpauloprofissional@demo.demo`, `fabiofinanceiro@demo.demo` · senha `Demo@12345` |
+| Consultório Solo (plano Solo) | identificador `solo-demo` · `dono@solo-demo.demo` |
+| Painel Master (plataforma) | abrir `/#/master` · `master@demo.local` · senha `Demo@12345` · **código MFA**: `npm run totp` (ou cadastre o segredo impresso pelo seed em um app autenticador) |
+
+Para testar no celular, abra `http://<IP-da-máquina>:3000` na mesma rede (cookies `Secure` só são exigidos em produção/HTTPS).
+
+## Comandos
+
+| Comando | O que faz |
+|---|---|
+| `npm run check` | typecheck (servidor + web) e 59 testes (PostgreSQL real) |
+| `npm run build` | typecheck + build do frontend em `web/dist` |
+| `npm run e2e` | smoke no Chromium em celular e desktop (`E2E_URL=http://127.0.0.1:3000`), com screenshots |
+| `npm run dev:server` / `npm run dev:web` | desenvolvimento com recarga (web em :5173 com proxy para a API) |
+| `npm run totp` | código MFA atual do operador demo |
+
+## O que funciona (IMPLEMENTADO e testado localmente)
+
+**Painel Master** — login com senha + MFA (TOTP); criar clínica com proprietário; trocar plano; suspender/reativar (exige novo código MFA + justificativa); conceder/bloquear funcionalidades por clínica (o banco recusa habilitar `tiss.billing`); auditoria da plataforma. O Master **não lê** dados clínicos (sem privilégio no banco).
+
+**Sistema da clínica** — login por clínica; sessões server-side revogáveis; troca de senha encerra outras sessões; suspender usuário derruba sessões na hora.
+- Pacientes: cadastro, busca, edição, alerta clínico (visível só à equipe clínica).
+- Agenda: dia/profissional, agendar, confirmar, chegada, concluir, faltou, reagendar, cancelar com motivo. **Conflito de horário decidido pelo PostgreSQL** (restrição de exclusão), inclusive sob concorrência.
+- Prontuário: rascunho, assinatura, **assinado é imutável**, correção só por adendo com justificativa, leitura auditada, texto preservado no aparelho até salvar.
+- Financeiro particular: cobrança, pagamento (Pix/cartão/dinheiro), estorno limitado ao pago, saldo derivado de movimentos imutáveis, valores em centavos, lançamento idempotente; concluir consulta gera a cobrança uma única vez.
+- Equipe: criar usuário, suspender/reativar, redefinir senha, trilha de auditoria.
+- RBAC deny-by-default (recepção não acessa prontuário) e entitlements por plano/override, decididos **no backend**.
+
+**Fundação** — PostgreSQL com RLS forçado, tenant vindo da sessão, FKs compostas, três papéis sem BYPASSRLS, migrations com checksum, auditoria append-only.
+
+## O que NÃO existe ainda
+Portal do paciente · odontologia · WhatsApp/e-mail/SMS · CRM · estoque · BI · NFS-e · integrações · cadastro de MFA para usuários da clínica · recuperação de senha por e-mail · acesso de suporte temporário · CI · backup/restore testado · observabilidade · deploy/HTTPS. Veja `docs/BACKLOG.md`.
+
+## Antes de qualquer uso real
+Leia `docs/ACEITE-FASE-1.md` e `docs/THREAT-MODEL.md`. Pendências de decisão: `PENDENCIAS.md`. Nenhuma conformidade (LGPD, CFM, CFO) é declarada; exige revisão especializada.
