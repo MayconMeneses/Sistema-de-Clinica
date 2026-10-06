@@ -39,6 +39,13 @@ Navegador/portal ↔ API (não existe ainda) ↔ PostgreSQL. Control plane (`cli
 | Master acessando prontuário | privilégio de banco inexistente; só cria o owner inicial |
 | Reescrita de prontuário/financeiro | triggers de imutabilidade + movimentos append-only |
 
+| Webhook falso/replay/duplicado | HMAC sobre corpo bruto, janela de 5 min, dedupe por evento, sem segredo = 503 |
+| Envio sem autorização do paciente | consentimento vigente verificado no enfileiramento **e** no envio; revogação vale na hora |
+| Dado de paciente em logs/fila | query string nunca logada; worker não guarda telefone/e-mail na fila; `last_error` sanitizado; Master vê só metadados |
+| Worker comprometido lendo pacientes | papel `clinica_worker` só enxerga `outbox_events`/`webhook_receipts` (testado) |
+| Path traversal em arquivos | porta de storage valida cada segmento e o caminho final; isolado por tenant |
+| Envio duplicado após falha | `SKIP LOCKED` (concorrência testada) + `Idempotency-Key` ao provedor (semântica: pelo menos uma vez) |
+
 ## Ameaças ainda SEM controle ou com controle parcial (PENDENTE)
 - Chave de cifragem (`DATA_ENCRYPTION_KEY`) sem rotação nem KMS; em dev é uma chave fixa pública.
 - Sem recuperação de senha por e-mail; sessão não rotaciona após login; sem bloqueio permanente de conta.

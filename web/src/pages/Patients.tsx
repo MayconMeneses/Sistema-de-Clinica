@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { get, patch, post, type Me } from '../api';
 import { brl, dateTimeOf, KIND_LABEL, METHOD_LABEL, parseMoney } from '../format';
+import { Consents, MessageHistory } from './Messages';
 import { Odontogram } from './Odontogram';
 import { Badge, Button, Empty, ErrorBox, Field, Select, Sheet, Spinner, TextInput, useLoad, useToast } from '../ui';
 
@@ -97,6 +98,7 @@ export function PatientDetail({ id, me }: { id: string; me: Me }) {
   const tabs = useMemo(() => [
     { key: 'dados', label: 'Dados', show: true },
     { key: 'prontuario', label: 'Prontuário', show: has('clinical.record') && can('notes.read') },
+    { key: 'mensagens', label: 'Mensagens', show: has('communication.inbox') && can('comm.read') },
     { key: 'odontograma', label: 'Odontograma', show: has('dental.odontogram') && can('dental.read') },
     { key: 'financeiro', label: 'Financeiro', show: has('finance.basic') && can('finance.read') },
   ].filter((t) => t.show), [me]);
@@ -114,7 +116,8 @@ export function PatientDetail({ id, me }: { id: string; me: Me }) {
       <div className="tabs" role="tablist">
         {tabs.map((t) => <button key={t.key} role="tab" aria-selected={tab === t.key} className="tab" onClick={() => setTab(t.key)}>{t.label}</button>)}
       </div>
-      {tab === 'dados' && <div className="card"><PatientForm initial={patient} canAlert={can('notes.read')} onSaved={() => p.reload()} /></div>}
+      {tab === 'dados' && <div className="stack"><div className="card"><PatientForm initial={patient} canAlert={can('notes.read')} onSaved={() => p.reload()} /></div><Consents patientId={id} canWrite={can('patients.write')} /></div>}
+      {tab === 'mensagens' && <MessageHistory patientId={id} />}
       {tab === 'prontuario' && <Notes patientId={id} meId={me.user.id} />}
       {tab === 'odontograma' && <Odontogram patientId={id} canWrite={can('dental.write')} hasFinance={has('finance.basic')} />}
       {tab === 'financeiro' && <PatientFinance patientId={id} canWrite={can('finance.write')} />}

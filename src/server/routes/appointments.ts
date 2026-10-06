@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { audit, clinicRoute } from '../context.js';
+import { enqueueAppointmentMessages } from '../../modules/communications/enqueue.js';
 import { badRequest, conflict, mapDbError, notFound } from '../http.js';
 
 const TRANSITIONS: Record<string, string[]> = {
@@ -51,6 +52,7 @@ export function appointmentRoutes(app: FastifyInstance) {
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
         [ctx.tenantId, b.patientId, b.professionalId, b.startsAt, b.endsAt, b.service, b.priceCents, ctx.user.id]);
       await audit(ctx, 'appointment.create', 'appointment', r.rows[0]!.id);
+      await enqueueAppointmentMessages(ctx, { id: r.rows[0]!.id, patientId: b.patientId, startsAt: b.startsAt }, 'confirmation');
       return { id: r.rows[0]!.id };
     } catch (e) { return mapDbError(e); }
   });
@@ -74,6 +76,7 @@ export function appointmentRoutes(app: FastifyInstance) {
         if (new Date(b.endsAt) <= new Date(b.startsAt)) throw badRequest('O término deve ser depois do início.');
         await ctx.tx.query('UPDATE appointments SET starts_at = $1, ends_at = $2 WHERE id = $3', [b.startsAt, b.endsAt, id]);
         await audit(ctx, 'appointment.reschedule', 'appointment', id);
+        await enqueueAppointmentMessages(ctx, { id, patientId: appt.patient_id, startsAt: b.startsAt }, 'rescheduled');
       }
       if (b.status) {
         if (!TRANSITIONS[appt.status]?.includes(b.status)) throw conflict(`Não é possível mudar de "${appt.status}" para "${b.status}".`);
@@ -87,6 +90,10 @@ export function appointmentRoutes(app: FastifyInstance) {
             [ctx.tenantId, appt.patient_id, id, appt.price_cents, `appt:${id}:charge`, ctx.user.id]);
         }
         await audit(ctx, `appointment.${b.status}`, 'appointment', id);
+        if (b.status === 'cancelled') {
+          const when = await ctx.tx.query<{ starts_at: Date }>('SELECT starts_at FROM appointments WHERE id = $1', [id]);
+          await enqueueAppointmentMessages(ctx, { id, patientId: appt.patient_id, startsAt: when.rows[0]!.starts_at.toISOString() }, 'cancelled');
+        }
       }
     } catch (e) {
       if ((e as { status?: number }).status) throw e;

@@ -23,10 +23,11 @@ export function MasterApp({ hash }: { hash: string }) {
   if (op === undefined) return <main className="auth"><p className="loading" role="status">Carregando…</p></main>;
   if (op === null) return <Login mode="master" onDone={refresh} />;
 
-  const section = hash.startsWith('/master/funcionalidades') ? 'caps' : hash.startsWith('/master/auditoria') ? 'audit' : 'tenants';
+  const section = hash.startsWith('/master/funcionalidades') ? 'caps' : hash.startsWith('/master/auditoria') ? 'audit' : hash.startsWith('/master/integracoes') ? 'integrations' : 'tenants';
   const links = [
     { to: '/master', key: 'tenants', label: 'Clínicas', ico: '▣' },
     { to: '/master/funcionalidades', key: 'caps', label: 'Planos', ico: '◧' },
+    { to: '/master/integracoes', key: 'integrations', label: 'Integrações', ico: '⇄' },
     { to: '/master/auditoria', key: 'audit', label: 'Auditoria', ico: '☰' },
   ];
   return (
@@ -41,6 +42,7 @@ export function MasterApp({ hash }: { hash: string }) {
       <main className="content">
         {section === 'tenants' && <Tenants />}
         {section === 'caps' && <Plans />}
+        {section === 'integrations' && <Integrations />}
         {section === 'audit' && <PlatformAudit />}
       </main>
     </div>
@@ -159,6 +161,8 @@ function TenantSheet({ tenant, data, onClose, onChanged }: { tenant: Tenant | nu
         </>
       )}
 
+      <TenantIntegrations tenantId={tenant.id} why={why} justified={justified} />
+
       <h3>Funcionalidades</h3>
       <ul className="list">
         {data.capabilities.map((c) => {
@@ -217,6 +221,110 @@ function PlatformAudit() {
       <ul className="list">
         {a.data?.events.map((e) => (
           <li key={e.id} className="list-item"><strong>{e.action}</strong><br /><span className="muted small">{e.operator} · {dateTimeOf(e.occurredAt)} · {e.justification}</span></li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
+interface IntegrationsData {
+  providers: { kind: string; provider: string; configured: boolean; implemented: boolean; validatedWithProvider: boolean }[];
+  queue: { status: string; count: number }[];
+  deadByTenant: { tenantId: string; name: string; dead: number }[];
+  receipts: { status: string; count: number }[];
+  connections: { tenantId: string; kind: string; provider: string; mode: string }[];
+}
+const KIND_LABEL: Record<string, string> = { whatsapp: 'WhatsApp', email: 'E-mail', sms: 'SMS', payments: 'Pagamentos (Pix/cartão)', storage: 'Armazenamento de arquivos', calendar: 'Calendários', nfse: 'NFS-e', signature: 'Assinatura eletrônica' };
+const QUEUE_LABEL: Record<string, string> = { pending: 'Na fila', processing: 'Processando', sent: 'Enviadas', failed: 'Com nova tentativa', dead: 'Falharam (dead-letter)', skipped: 'Não enviadas (regra)' };
+
+function Integrations() {
+  const toast = useToast();
+  const d = useLoad(() => get<IntegrationsData>('/api/master/integrations'), []);
+  const [requeue, setRequeue] = useState<{ tenantId: string; name: string } | null>(null);
+  const [why, setWhy] = useState('');
+  const [code, setCode] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    if (!requeue) return;
+    setBusy(true); setError(null);
+    try {
+      const r = await post<{ messages: number; receipts: number }>('/api/master/integrations/requeue', { tenantId: requeue.tenantId, code, justification: why });
+      toast(`${r.messages} mensagem(ns) e ${r.receipts} recibo(s) recolocados na fila.`); setRequeue(null); setWhy(''); setCode(''); d.reload();
+    } catch (err) { setError((err as Error).message); } finally { setBusy(false); }
+  }
+
+  if (d.loading && !d.data) return <Spinner />;
+  if (d.error || !d.data) return <ErrorBox message={d.error ?? 'Erro'} onRetry={d.reload} />;
+  return (
+    <>
+      <div className="page-head"><h1>Integrações</h1></div>
+      <p className="muted">Estado dos provedores no servidor. As credenciais ficam em variáveis de ambiente e nunca aparecem aqui. Sem credenciais, o envio acontece em modo de demonstração (simulado).</p>
+      <ul className="list">
+        {d.data.providers.map((p) => (
+          <li key={p.kind} className="list-item stack">
+            <div className="row between"><strong>{KIND_LABEL[p.kind] ?? p.kind}</strong>
+              {p.configured ? <Badge tone="ok">Configurado</Badge> : p.implemented ? <Badge tone="warn">Aguardando credenciais</Badge> : <Badge>Não implementado</Badge>}</div>
+            <span className="small muted">Provedor: {p.provider}{p.implemented && !p.validatedWithProvider ? ' · ainda não validado com o provedor real' : ''}</span>
+          </li>
+        ))}
+      </ul>
+      <h2>Fila de mensagens</h2>
+      <div className="stats">
+        {d.data.queue.length === 0 && <p className="muted">Fila vazia.</p>}
+        {d.data.queue.map((q) => <div key={q.status} className="stat"><b>{q.count}</b><span>{QUEUE_LABEL[q.status] ?? q.status}</span></div>)}
+      </div>
+      <p className="small muted">Recibos de webhook: {d.data.receipts.length ? d.data.receipts.map((r) => `${r.count} ${r.status}`).join(' · ') : 'nenhum'}.</p>
+      <h2>Falhas definitivas por clínica</h2>
+      {d.data.deadByTenant.length === 0 && <Empty title="Nenhuma falha definitiva" />}
+      <ul className="list">
+        {d.data.deadByTenant.map((t) => (
+          <li key={t.tenantId} className="list-item row between">
+            <span><strong>{t.name}</strong><br /><span className="small muted">{t.dead} mensagem(ns)</span></span>
+            <Button variant="secondary" className="btn-sm" onClick={() => setRequeue({ tenantId: t.tenantId, name: t.name })}>Recolocar na fila</Button>
+          </li>
+        ))}
+      </ul>
+      <Sheet open={!!requeue} title="Recolocar na fila" onClose={() => setRequeue(null)}>
+        <form onSubmit={submit} noValidate>
+          <p>As mensagens com falha definitiva de <strong>{requeue?.name}</strong> serão tentadas de novo. O conteúdo das mensagens não é exibido à plataforma.</p>
+          <TextInput label="Justificativa (auditoria)" value={why} onChange={setWhy} hint="Exemplo: provedor corrigido." />
+          <TextInput label="Código MFA atual" value={code} onChange={setCode} inputMode="numeric" maxLength={6} />
+          {error && <p className="field-msg error" role="alert">{error}</p>}
+          <Button type="submit" busy={busy} disabled={why.trim().length < 5 || code.length !== 6} className="btn-block">Recolocar na fila</Button>
+        </form>
+      </Sheet>
+    </>
+  );
+}
+
+function TenantIntegrations({ tenantId, why, justified }: { tenantId: string; why: string; justified: boolean }) {
+  const toast = useToast();
+  const d = useLoad(() => get<IntegrationsData>('/api/master/integrations'), [tenantId]);
+  const [error, setError] = useState<string | null>(null);
+  async function setMode(kind: string, mode: string) {
+    setError(null);
+    try { await post(`/api/master/tenants/${tenantId}/integrations`, { kind, mode, justification: why }); toast('Modo atualizado.'); d.reload(); }
+    catch (e) { setError((e as Error).message); }
+  }
+  const cur = (kind: string) => d.data?.connections.find((c) => c.tenantId === tenantId && c.kind === kind)?.mode;
+  return (
+    <>
+      <h3>Canais de mensagem</h3>
+      <p className="small muted">Padrão: demonstração (simulado). "Produção" exige credenciais configuradas no servidor.</p>
+      {error && <p className="field-msg error" role="alert">{error}</p>}
+      <ul className="list">
+        {['whatsapp', 'email', 'sms'].map((k) => (
+          <li key={k} className="list-item stack">
+            <div className="row between"><strong>{KIND_LABEL[k]}</strong><Badge tone={cur(k) === 'live' ? 'ok' : cur(k) === 'disabled' ? 'bad' : 'neutral'}>{cur(k) === 'live' ? 'Produção' : cur(k) === 'disabled' ? 'Desativado' : 'Demonstração'}</Badge></div>
+            <div className="row">
+              {(['sandbox', 'live', 'disabled'] as const).filter((m) => m !== (cur(k) ?? 'sandbox')).map((m) => (
+                <Button key={m} variant="secondary" className="btn-sm" disabled={!justified} onClick={() => setMode(k, m)}>{m === 'sandbox' ? 'Usar demonstração' : m === 'live' ? 'Usar produção' : 'Desativar'}</Button>
+              ))}
+            </div>
+          </li>
         ))}
       </ul>
     </>

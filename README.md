@@ -1,6 +1,6 @@
 # Clínica One — plataforma SaaS de gestão clínica
 
-**Versão 0.4.0 · funcional em ambiente de desenvolvimento · NÃO pronta para produção nem para dados reais de pacientes.**
+**Versão 0.5.0 · funcional em ambiente de desenvolvimento · NÃO pronta para produção nem para dados reais de pacientes.**
 Interface em português do Brasil, **mobile-first** (menu inferior no celular, barra lateral no desktop, instalável na tela inicial).
 Convênios/TISS estão bloqueados globalmente nesta fase.
 
@@ -26,7 +26,7 @@ Para testar no celular, abra `http://<IP-da-máquina>:3000` na mesma rede (cooki
 
 | Comando | O que faz |
 |---|---|
-| `npm run check` | typecheck (servidor + web) e 74 testes (PostgreSQL real) |
+| `npm run check` | typecheck (servidor + web) e 104 testes (PostgreSQL real) |
 | `npm run drill` | backup → restore em banco temporário → valida dados, RLS e isolamento (reprova se algo divergir) |
 | `npm run build` | typecheck + build do frontend em `web/dist` |
 | `npm run e2e` | smoke no Chromium em celular e desktop (`E2E_URL=http://127.0.0.1:3000`), com screenshots |
@@ -44,6 +44,7 @@ Para testar no celular, abra `http://<IP-da-máquina>:3000` na mesma rede (cooki
 - Financeiro particular: cobrança, pagamento (Pix/cartão/dinheiro), estorno limitado ao pago, saldo derivado de movimentos imutáveis, valores em centavos, lançamento idempotente; concluir consulta gera a cobrança uma única vez.
 - Equipe: criar usuário, suspender/reativar, redefinir senha e 2 etapas, trilha de auditoria.
 - **Verificação em duas etapas (TOTP)** para usuários da clínica: ativar/desativar pela conta (no celular, o link abre o app autenticador), exigida no login, código de uso único; segredos **cifrados em repouso** (AES-256-GCM).
+- **Comunicação com o paciente** (plano Essencial ou superior): autorização por canal (WhatsApp, e-mail, SMS) com histórico; ao agendar, remarcar ou cancelar, a mensagem entra numa **outbox transacional** e o worker envia (hoje em **sandbox**, simulado) com retry, backoff e dead-letter; lembrete 24 h antes; histórico no paciente; webhooks de entrega assinados. Painel de Integrações no Master. Detalhes e o que falta conectar: `docs/INTEGRACOES.md`.
 - **Odontologia** (plano Completa/Enterprise): odontograma permanente (32) e decíduo (20) por face, **histórico imutável** (estado atual = último evento), leitura auditada; plano de tratamento com prioridade e valor, "concluir e cobrar" gera a cobrança uma única vez. Só profissional registra; proprietário lê.
 - RBAC deny-by-default (recepção não acessa prontuário) e entitlements por plano/override, decididos **no backend**.
 
@@ -58,7 +59,10 @@ Para testar no celular, abra `http://<IP-da-máquina>:3000` na mesma rede (cooki
 | `NODE_ENV=production` | cookies `Secure`, HSTS, sem valores padrão de dev |
 
 ## O que NÃO existe ainda
-Portal do paciente · orçamento odontológico com aceite, imagens/radiografias, próteses · WhatsApp/e-mail/SMS · CRM · estoque · BI · NFS-e · integrações · recuperação de senha por e-mail (depende de provedor de e-mail) · acesso de suporte temporário · observabilidade · deploy/HTTPS. O CI está **escrito mas ainda não foi executado** no GitHub. Veja `docs/BACKLOG.md`.
+Portal do paciente · orçamento odontológico com aceite, imagens/radiografias, próteses · envio **real** de WhatsApp/e-mail/SMS (depende de contratar provedor; já está montado em sandbox) · CRM · estoque · BI · NFS-e · integrações · recuperação de senha por e-mail (depende de provedor de e-mail) · acesso de suporte temporário · observabilidade · deploy/HTTPS. O CI está **escrito mas ainda não foi executado** no GitHub. Veja `docs/BACKLOG.md`.
+
+## Documentos
+`docs/CONFORMIDADE.md` (matriz contra o prompt mestre) · `docs/INTEGRACOES.md` · `docs/AMBIENTE.md` · `docs/BACKLOG.md` · `docs/THREAT-MODEL.md` · `docs/ACEITE-FASE-1.md` · `docs/adr/`
 
 ## Antes de qualquer uso real
 Leia `docs/ACEITE-FASE-1.md` e `docs/THREAT-MODEL.md`. Pendências de decisão: `PENDENCIAS.md`. Nenhuma conformidade (LGPD, CFM, CFO) é declarada; exige revisão especializada.

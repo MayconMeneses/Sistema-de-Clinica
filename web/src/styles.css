@@ -168,3 +168,4 @@ button.list-item:hover { border-color: var(--accent); }
 .tooth-chip { display: inline-grid; place-items: center; min-width: 28px; height: 28px; padding: 0 4px; border: 1px solid var(--border); border-radius: 8px; font-size: .75rem; font-weight: 800; }
 details summary { cursor: pointer; font-weight: 700; min-height: 44px; display: flex; align-items: center; }
 @media (min-width: 640px) { .arch { grid-template-columns: 1fr 1fr; } }
+.stats:empty { display: none; }

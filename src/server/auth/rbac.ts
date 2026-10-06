@@ -10,6 +10,7 @@ const PERMISSIONS = {
   'agenda.write': CLINICAL_FRONT,
   'notes.read': ['owner', 'professional'],
   'notes.write': ['professional'],
+  'comm.read': ['owner', 'admin', 'receptionist'],
   'dental.read': ['owner', 'professional'],
   'dental.write': ['professional'],
   'finance.read': ['owner', 'admin', 'receptionist', 'finance'],

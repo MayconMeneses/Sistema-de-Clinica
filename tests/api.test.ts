@@ -8,58 +8,12 @@ import { encryptSecret } from '../src/server/crypto.js';
 process.env.DATABASE_URL_APP ??= 'postgres://clinica_app:dev_app_pw@127.0.0.1:5432/clinica_one';
 process.env.DATABASE_URL_PLATFORM ??= 'postgres://clinica_platform:dev_platform_pw@127.0.0.1:5432/clinica_one';
 const { buildApp } = await import('../src/server/app.js');
-const { platformPool } = await import('../src/server/db.js');
+const { platformPool, appPool: serverAppPool } = await import('../src/server/db.js');
+const { PW, Client, tenant, master, state } = await import('./api-helpers.js');
 
-const PW = 'Senha-Teste-123';
 let app: FastifyInstance;
 
-class Client {
-  cookie = '';
-  constructor(private prefix = '') {}
-  async req(method: 'GET' | 'POST' | 'PATCH', url: string, payload?: unknown, headers: Record<string, string> = {}): Promise<LightMyRequestResponse> {
-    const res = await app.inject({
-      method, url, payload: payload as object | undefined,
-      headers: { 'x-requested-with': 'clinica-one', ...(this.cookie ? { cookie: this.cookie } : {}), ...headers },
-    });
-    const set = res.cookies.find((c) => c.name === (this.prefix || 'cs'));
-    if (set) this.cookie = set.value ? `${set.name}=${set.value}` : '';
-    return res;
-  }
-  get = (u: string) => this.req('GET', u);
-  post = (u: string, b?: unknown) => this.req('POST', u, b ?? {});
-  patch = (u: string, b: unknown) => this.req('PATCH', u, b);
-}
-
-async function tenant(label: string, plan = 'completa') {
-  const slug = `api-${label}-${randomUUID().slice(0, 6)}`;
-  const id = randomUUID();
-  await platformPool.query("INSERT INTO tenants (id, slug, name, plan_code, status) VALUES ($1,$2,$3,$4,'active')", [id, slug, `Clínica ${label}`, plan]);
-  await platformPool.query("INSERT INTO users (id, tenant_id, email, name, password_hash, role) VALUES ($1,$2,$3,$4,$5,'owner')", [randomUUID(), id, `dono@${slug}.test`, 'Dono', await hashPassword(PW)]);
-  const owner = new Client();
-  expect((await owner.post('/api/auth/login', { clinic: slug, email: `dono@${slug}.test`, password: PW })).statusCode).toBe(200);
-  const mk = async (role: string, name: string) => {
-    const email = `${role}-${name}@${slug}.test`;
-    expect((await owner.post('/api/users', { name, email, role, password: PW })).statusCode).toBe(200);
-    const c = new Client();
-    expect((await c.post('/api/auth/login', { clinic: slug, email, password: PW })).statusCode).toBe(200);
-    return { c, email };
-  };
-  return { id, slug, owner, mk };
-}
-
-/** Cada código TOTP vale uma vez: o login usa o passo anterior; code() entrega passos 0, +1 (janela ±1). */
-async function master() {
-  const email = `m-${randomUUID().slice(0, 6)}@master.test`;
-  const secret = generateSecret();
-  await platformPool.query('INSERT INTO platform_users (email, name, password_hash, totp_secret) VALUES ($1,$2,$3,$4)', [email, 'Op', await hashPassword(PW), encryptSecret(secret)]);
-  const c = new Client('ms');
-  const r = await c.post('/api/master/login', { email, password: PW, code: totpAt(secret, Date.now() - 30000) });
-  expect(r.statusCode).toBe(200);
-  let n = 0;
-  return { c, email, secret, code: () => totpAt(secret, Date.now() + 30000 * n++) };
-}
-
-beforeAll(async () => { app = await buildApp(); });
+beforeAll(async () => { app = await buildApp(); state.app = app; });
 
 // Códigos TOTP são calculados no teste e verificados pelo servidor logo depois. Se a virada do passo de 30s
 // cair entre os dois, o código do "passo anterior" sai da janela ±1 e o teste falha sem defeito do produto.
@@ -68,7 +22,7 @@ beforeEach(async () => {
   const pos = Date.now() % 30000;
   if (pos > 25000) await new Promise((r) => setTimeout(r, 30000 - pos + 300));
 });
-afterAll(async () => { await app.close(); });
+afterAll(async () => { await app.close(); await serverAppPool.end(); await platformPool.end(); });
 
 describe('autenticação da clínica', () => {
   it('login emite cookie HttpOnly SameSite=Strict e /api/me responde', async () => {
@@ -519,5 +473,26 @@ describe('odontologia', () => {
     await dr.c.get(`/api/patients/${pid}/odontogram`);
     const events = (await t.owner.get('/api/audit')).json().events as { action: string }[];
     expect(events.some((e) => e.action === 'dental.read')).toBe(true);
+  });
+});
+
+describe('privacidade nos logs', () => {
+  it('a busca de paciente não deixa nome nem documento nos logs', async () => {
+    const { Writable } = await import('node:stream');
+    const lines: string[] = [];
+    const logged = await buildApp({ logStream: new Writable({ write(c, _e, cb) { lines.push(String(c)); cb(); } }) });
+    const slug = `log-${randomUUID().slice(0, 6)}`;
+    const id = randomUUID();
+    await platformPool.query("INSERT INTO tenants (id, slug, name, plan_code, status) VALUES ($1,$2,'Clínica Log','completa','active')", [id, slug]);
+    await platformPool.query("INSERT INTO users (id, tenant_id, email, name, password_hash, role) VALUES ($1,$2,$3,'Dono',$4,'owner')", [randomUUID(), id, `dono@${slug}.test`, await hashPassword(PW)]);
+    const login = await logged.inject({ method: 'POST', url: '/api/auth/login', headers: { 'x-requested-with': 'clinica-one' }, payload: { clinic: slug, email: `dono@${slug}.test`, password: PW } });
+    const cookie = login.cookies.find((c) => c.name === 'cs')!;
+    const res = await logged.inject({ method: 'GET', url: '/api/patients?q=Maria%20Souza%2012345678900', headers: { cookie: `cs=${cookie.value}` } });
+    expect(res.statusCode).toBe(200);
+    const text = lines.join('');
+    expect(text).toContain('/api/patients');
+    expect(text).not.toMatch(/Maria|Souza|12345678900/);
+    expect(text).not.toContain(cookie.value);
+    await logged.close();
   });
 });

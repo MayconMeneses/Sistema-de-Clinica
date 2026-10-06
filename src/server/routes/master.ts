@@ -8,6 +8,7 @@ import { DbRateLimiter } from '../auth/rate-limit.js';
 import { config } from '../config.js';
 import { cookieOptions, MASTER_COOKIE, masterRoute, type MasterCtx } from '../context.js';
 import { platformPool } from '../db.js';
+import { integrationHealth, LIVE_PROVIDERS } from '../../integrations/registry.js';
 import { badRequest, conflict, forbidden, HttpError, newSecret, notFound, sha256, unauthorized } from '../http.js';
 
 const limiter = new DbRateLimiter(platformPool);
@@ -186,6 +187,39 @@ export function masterRoutes(app: FastifyInstance) {
     }
     await platformAudit(c, `tenant.override.${b.mode}`, id, b.reason, { capability: b.capability });
     return { ok: true };
+  });
+
+  // ------------------------------------------------------------ Integrações (sem acesso ao conteúdo das mensagens)
+  masterRoute(app, 'GET', '/api/master/integrations', async (c) => {
+    const queue = await c.db.query('SELECT status, count(*)::int AS count FROM outbox_events GROUP BY status');
+    const dead = await c.db.query(`SELECT o.tenant_id AS "tenantId", t.name, count(*)::int AS dead FROM outbox_events o JOIN tenants t ON t.id = o.tenant_id WHERE o.status = 'dead' GROUP BY o.tenant_id, t.name ORDER BY dead DESC LIMIT 50`);
+    const receipts = await c.db.query('SELECT status, count(*)::int AS count FROM webhook_receipts GROUP BY status');
+    const connections = await c.db.query('SELECT tenant_id AS "tenantId", kind, provider, mode FROM integration_connections');
+    return { providers: integrationHealth(), queue: queue.rows, deadByTenant: dead.rows, receipts: receipts.rows, connections: connections.rows };
+  });
+
+  masterRoute(app, 'POST', '/api/master/tenants/:id/integrations', async (c, req) => {
+    const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    const b = z.object({ kind: z.enum(['whatsapp', 'email', 'sms']), mode: z.enum(['disabled', 'sandbox', 'live']), justification }).parse(req.body);
+    const t = await c.db.query('SELECT 1 FROM tenants WHERE id = $1', [id]);
+    if (!t.rowCount) throw notFound('Clínica não encontrada.');
+    if (b.mode === 'live' && !LIVE_PROVIDERS[b.kind].configured()) throw conflict('O provedor deste canal ainda não está configurado no servidor (credenciais ausentes).');
+    await c.db.query(
+      `INSERT INTO integration_connections (tenant_id, kind, provider, mode) VALUES ($1,$2,$3,$4)
+       ON CONFLICT (tenant_id, kind) DO UPDATE SET mode = EXCLUDED.mode, provider = EXCLUDED.provider, updated_at = now()`,
+      [id, b.kind, LIVE_PROVIDERS[b.kind].provider, b.mode]);
+    await platformAudit(c, 'tenant.integration.set', id, b.justification, { kind: b.kind, mode: b.mode });
+    return { ok: true };
+  });
+
+  masterRoute(app, 'POST', '/api/master/integrations/requeue', async (c, req) => {
+    const b = z.object({ tenantId: z.string().uuid(), code: z.string().max(10), justification }).parse(req.body);
+    await requireFreshMfa(c, b.code);
+    // Só recoloca na fila o que está morto; o Master não lê nem altera o conteúdo das mensagens.
+    const o = await c.db.query(`UPDATE outbox_events SET status = 'pending', attempts = 0, next_attempt_at = now() WHERE tenant_id = $1 AND status = 'dead'`, [b.tenantId]);
+    const r = await c.db.query(`UPDATE webhook_receipts SET status = 'received', attempts = 0 WHERE status = 'dead'`);
+    await platformAudit(c, 'integrations.requeue_dead', b.tenantId, b.justification, { messages: o.rowCount, receipts: r.rowCount });
+    return { messages: o.rowCount ?? 0, receipts: r.rowCount ?? 0 };
   });
 
   masterRoute(app, 'GET', '/api/master/audit', async (c) => {

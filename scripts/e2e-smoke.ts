@@ -91,6 +91,39 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
   await page.getByText('Pagamento').first().waitFor();
   must(true, 'recepção registra pagamento Pix');
   await page.screenshot({ path: `${SHOTS}/06-financeiro-paciente-mobile.png` });
+
+  // Comunicação: autorização do paciente → agendamento → mensagem enfileirada e enviada pelo worker (sandbox)
+  await page.getByRole('tab', { name: 'Dados' }).click();
+  const wa = page.getByRole('listitem').filter({ hasText: 'WhatsApp' });
+  await wa.getByRole('button').first().waitFor();
+  if (await wa.getByRole('button', { name: 'Registrar autorização' }).count()) { // idempotente: pode já estar autorizado de uma execução anterior
+    await wa.getByRole('button', { name: 'Registrar autorização' }).click();
+    await page.getByText('Autorização registrada.').waitFor();
+  }
+  await wa.getByText('Autorizado', { exact: true }).first().waitFor();
+  must(true, 'recepção registra a autorização de WhatsApp do paciente');
+  await page.screenshot({ path: `${SHOTS}/06b-consentimento-mobile.png`, fullPage: true });
+  await page.getByRole('link', { name: 'Agenda' }).click();
+  await page.getByRole('button', { name: 'Novo agendamento' }).click();
+  await page.getByLabel('Paciente').fill('Beatriz');
+  await page.getByRole('button', { name: 'Beatriz Lima' }).click();
+  const future = new Date(Date.now() + (7 + (Math.floor(Date.now() / 60000) % 50)) * 86400000).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+  await page.getByLabel('Data').fill(future);
+  await page.getByLabel('Horário').fill('14:00');
+  await page.getByRole('button', { name: 'Agendar consulta' }).click();
+  await page.getByText('Consulta agendada.').waitFor();
+  must(true, 'agendamento futuro criado');
+  await page.getByRole('link', { name: 'Pacientes' }).click();
+  await page.getByRole('link', { name: /Beatriz Lima/ }).click();
+  await page.getByRole('tab', { name: 'Mensagens' }).click();
+  // A mais recente aparece primeiro; ela precisa sair da fila e ficar "Enviada" (a tela se atualiza sozinha).
+  const newest = page.getByRole('listitem').filter({ hasText: 'Confirmação de consulta' }).first();
+  await newest.waitFor();
+  await newest.locator('.badge', { hasText: 'Enviada' }).waitFor({ timeout: 25000 });
+  must(true, 'confirmação enviada pelo worker (sandbox)');
+  must(await page.getByText('Lembrete de consulta').first().isVisible(), 'lembrete de 24h fica agendado');
+  await noHorizontalScroll(page, 'mensagens');
+  await page.screenshot({ path: `${SHOTS}/06c-mensagens-mobile.png` });
   await ctx.close();
 }
 
@@ -258,6 +291,13 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
   await mp.getByText('Convênios/TISS estão bloqueados globalmente').waitFor();
   must(true, 'Master mostra TISS bloqueado globalmente');
   await mp.screenshot({ path: `${SHOTS}/11-master-clinica-mobile.png` });
+  await mp.getByRole('button', { name: 'Fechar' }).click();
+  await mp.getByRole('link', { name: 'Integrações' }).click();
+  await mp.getByRole('heading', { name: 'Integrações' }).waitFor();
+  await mp.getByText('Aguardando credenciais').first().waitFor();
+  must(true, 'Master mostra provedores aguardando credenciais (sem expor segredos)');
+  await noHorizontalScroll(mp, 'master-integracoes');
+  await mp.screenshot({ path: `${SHOTS}/12-master-integracoes-mobile.png`, fullPage: true });
   await m.close();
   await ctx.close();
 }
