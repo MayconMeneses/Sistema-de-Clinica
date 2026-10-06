@@ -28,7 +28,9 @@ Legenda: ✅ IMPLEMENTADO e testado localmente · 🟡 PARCIAL · ⬜ PLANEJADO
 ## Fase 3
 - ✅ Odontograma com histórico imutável e plano de tratamento com cobrança
 - ⬜ Orçamento com versões e aceite, imagens/radiografias, próteses/laboratórios, repasses
-- ⬜ WhatsApp/e-mail/SMS, inbox, templates, automações, opt-out, portal inicial
+- ✅ Camada de integrações: outbox transacional, worker (retry/backoff/dead-letter), webhooks assinados, consentimento, adaptadores WhatsApp/e-mail/SMS (sandbox + real escrito), armazenamento local
+- ⛔ Envio real: depende de escolher/contratar provedores e validar adaptadores (`docs/INTEGRACOES.md`)
+- ⬜ Inbox, templates editáveis, automações, opt-out por resposta, portal inicial
 
 ## Fases 4–6
 ⬜ Comunicação, portal, CRM, estoque, BI, NFS-e, integrações, regulados, IA. Convênios/TISS: bloqueado globalmente.

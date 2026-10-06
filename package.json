@@ -1,6 +1,6 @@
 {
   "name": "clinica-one",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
   "description": "Plataforma SaaS multiempresa de gestão clínica (reconstrução — Fase 1 em andamento)",
   "type": "module",
@@ -22,7 +22,8 @@
     "totp": "tsx scripts/totp.ts",
     "e2e": "tsx scripts/e2e-smoke.ts",
     "setup:dev": "npm run db:setup && npm run db:migrate && npm run seed && npm run build",
-    "drill": "bash scripts/backup-restore-drill.sh"
+    "drill": "bash scripts/backup-restore-drill.sh",
+    "worker": "tsx src/worker/main.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.2",

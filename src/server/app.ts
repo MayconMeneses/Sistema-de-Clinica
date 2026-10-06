@@ -8,18 +8,32 @@ import { appPool, platformPool } from './db.js';
 import { errorHandler } from './http.js';
 import { appointmentRoutes } from './routes/appointments.js';
 import { authRoutes } from './routes/auth.js';
+import { communicationRoutes } from './routes/communications.js';
 import { dentalRoutes } from './routes/dental.js';
 import { financeRoutes } from './routes/finance.js';
 import { masterRoutes } from './routes/master.js';
 import { noteRoutes } from './routes/notes.js';
 import { patientRoutes } from './routes/patients.js';
 import { teamRoutes } from './routes/team.js';
+import { webhookRoutes } from './routes/webhooks.js';
 
 const CSP = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
 
-export async function buildApp(opts: { logger?: boolean } = {}) {
+/** Logs sem dados de paciente: a query string (ex.: busca por nome/CPF) nunca é registrada. */
+function loggerConfig(opts: { logger?: boolean; logStream?: NodeJS.WritableStream }) {
+  if (!opts.logger && !opts.logStream) return false;
+  return {
+    level: process.env.LOG_LEVEL ?? 'info',
+    ...(opts.logStream ? { stream: opts.logStream } : {}),
+    serializers: {
+      req: (req: { method: string; url: string; ip?: string }) => ({ method: req.method, path: req.url.split('?')[0], ip: req.ip }),
+    },
+  };
+}
+
+export async function buildApp(opts: { logger?: boolean; logStream?: NodeJS.WritableStream } = {}) {
   const app = Fastify({
-    logger: opts.logger ?? false,
+    logger: loggerConfig(opts),
     bodyLimit: 256 * 1024,
     trustProxy: process.env.TRUST_PROXY === '1',
     genReqId: () => crypto.randomUUID(),
@@ -29,7 +43,8 @@ export async function buildApp(opts: { logger?: boolean } = {}) {
 
   app.addHook('onRequest', async (req, reply) => {
     // CSRF: cookies são SameSite=Strict; além disso mutações exigem cabeçalho customizado e Origin coerente.
-    if (req.url.startsWith('/api/') && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+    // Webhooks não usam cookie: autenticam por assinatura HMAC (ver routes/webhooks.ts).
+    if (req.url.startsWith('/api/') && !req.url.startsWith('/api/webhooks/') && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
       const origin = req.headers.origin;
       let originOk = true;
       if (origin) { try { originOk = new URL(origin).host === req.headers.host; } catch { originOk = false; } } // "null" ou malformado => bloqueia
@@ -66,6 +81,8 @@ export async function buildApp(opts: { logger?: boolean } = {}) {
   dentalRoutes(app);
   financeRoutes(app);
   teamRoutes(app);
+  communicationRoutes(app);
+  await webhookRoutes(app);
 
   const webDir = join(import.meta.dirname, '..', '..', 'web', 'dist');
   if (existsSync(webDir)) {
@@ -76,6 +93,5 @@ export async function buildApp(opts: { logger?: boolean } = {}) {
     });
   }
 
-  app.addHook('onClose', async () => { await appPool.end(); await platformPool.end(); });
   return app;
 }

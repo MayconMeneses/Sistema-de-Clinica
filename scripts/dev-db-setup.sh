@@ -21,10 +21,10 @@ END \$\$;
 SQL
 }
 
-{ role_sql clinica_owner dev_owner_pw; role_sql clinica_app dev_app_pw; role_sql clinica_platform dev_platform_pw; } | sup -d postgres -f -
+{ role_sql clinica_owner dev_owner_pw; role_sql clinica_app dev_app_pw; role_sql clinica_platform dev_platform_pw; role_sql clinica_worker dev_worker_pw; } | sup -d postgres -f -
 
 if [ "$(sup -d postgres -tA -c "SELECT 1 FROM pg_database WHERE datname='$DB'")" != "1" ]; then
   sup -d postgres -c "CREATE DATABASE $DB OWNER clinica_owner"
 fi
-sup -d "$DB" -c "REVOKE ALL ON DATABASE $DB FROM PUBLIC; GRANT CONNECT ON DATABASE $DB TO clinica_app, clinica_platform; ALTER SCHEMA public OWNER TO clinica_owner; REVOKE ALL ON SCHEMA public FROM PUBLIC; GRANT USAGE ON SCHEMA public TO clinica_app, clinica_platform;"
+sup -d "$DB" -c "REVOKE ALL ON DATABASE $DB FROM PUBLIC; GRANT CONNECT ON DATABASE $DB TO clinica_app, clinica_platform, clinica_worker; ALTER SCHEMA public OWNER TO clinica_owner; REVOKE ALL ON SCHEMA public FROM PUBLIC; GRANT USAGE ON SCHEMA public TO clinica_app, clinica_platform, clinica_worker;"
 echo "Banco $DB e papéis de desenvolvimento prontos."
