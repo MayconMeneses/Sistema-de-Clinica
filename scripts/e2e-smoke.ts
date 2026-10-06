@@ -58,6 +58,18 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
   must(await page.getByRole('link', { name: 'Gestão' }).isVisible(), 'recepção vê Gestão (horários e bloqueios)');
   await noHorizontalScroll(page, 'dashboard');
   await page.screenshot({ path: `${SHOTS}/02-inicio-mobile.png` });
+  // Menu inferior: nenhum rótulo visível pode ficar cortado em celulares estreitos (360px é a largura Android mais comum).
+  for (const w of [390, 360, 320]) {
+    await page.setViewportSize({ width: w, height: 844 });
+    const nav = await page.evaluate(() => [...document.querySelectorAll('.nav a')].map((a) => {
+      const l = a.querySelector('.lbl') as HTMLElement;
+      const visible = l.getBoundingClientRect().width > 2;
+      return { text: l.textContent, visible, clipped: visible && (l.scrollWidth > l.clientWidth + 1 || a.scrollWidth > a.clientWidth + 1), active: a.getAttribute('aria-current') === 'page' };
+    }));
+    must(nav.every((n) => !n.clipped), `menu inferior sem rótulo cortado em ${w}px`);
+    must(nav.filter((n) => n.active).every((n) => n.visible), `menu inferior mostra o rótulo do item ativo em ${w}px`);
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
 
   await page.getByRole('link', { name: 'Agenda' }).click();
   await page.getByText('Maria Souza').first().waitFor();

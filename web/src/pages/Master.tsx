@@ -37,7 +37,7 @@ export function MasterApp({ hash }: { hash: string }) {
         <Button variant="ghost" className="btn-sm" onClick={async () => { try { await post('/api/master/logout'); } finally { setOp(null); } }}>Sair</Button>
       </header>
       <nav className="nav" aria-label="Plataforma">
-        {links.map((l) => <a key={l.key} href={`#${l.to}`} aria-current={section === l.key ? 'page' : undefined}><span className="ico" aria-hidden="true">{l.ico}</span>{l.label}</a>)}
+        {links.map((l) => <a key={l.key} href={`#${l.to}`} aria-current={section === l.key ? 'page' : undefined}><span className="ico" aria-hidden="true">{l.ico}</span><span className="lbl">{l.label}</span></a>)}
       </nav>
       <main className="content">
         {section === 'tenants' && <Tenants />}
