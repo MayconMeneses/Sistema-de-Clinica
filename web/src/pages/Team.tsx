@@ -3,7 +3,7 @@ import { get, patch, post } from '../api';
 import { dateTimeOf, ROLE_LABEL } from '../format';
 import { Badge, Button, ErrorBox, Select, Sheet, Spinner, TextInput, useLoad, useToast } from '../ui';
 
-interface User { id: string; name: string; email: string; role: string; status: string }
+interface User { id: string; name: string; email: string; role: string; status: string; mfaEnabled: boolean }
 interface AuditEvent { id: string; occurredAt: string; action: string; entityType: string; actorName: string | null }
 
 export function Team() {
@@ -26,6 +26,12 @@ function Users() {
   const [adding, setAdding] = useState(false);
   const [resetFor, setResetFor] = useState<User | null>(null);
 
+  async function resetMfa(u: User) {
+    if (!window.confirm(`Redefinir a verificação em duas etapas de ${u.name}? A pessoa será desconectada e poderá configurar de novo.`)) return;
+    try { await patch(`/api/users/${u.id}`, { resetMfa: true }); toast('Verificação em duas etapas redefinida.'); list.reload(); }
+    catch (e) { toast((e as Error).message, 'bad'); }
+  }
+
   async function toggle(u: User) {
     const status = u.status === 'active' ? 'suspended' : 'active';
     if (status === 'suspended' && !window.confirm(`Suspender ${u.name}? O acesso será bloqueado imediatamente.`)) return;
@@ -41,12 +47,13 @@ function Users() {
       <ul className="list">
         {list.data?.users.map((u) => (
           <li key={u.id} className="list-item stack">
-            <div className="row between"><strong>{u.name}</strong>{u.status === 'active' ? <Badge tone="ok">Ativo</Badge> : <Badge tone="bad">Suspenso</Badge>}</div>
+            <div className="row between"><strong>{u.name}</strong><span className="row">{u.mfaEnabled && <Badge tone="info">2 etapas</Badge>}{u.status === 'active' ? <Badge tone="ok">Ativo</Badge> : <Badge tone="bad">Suspenso</Badge>}</span></div>
             <span className="muted small">{u.email} · {ROLE_LABEL[u.role] ?? u.role}</span>
             {u.role !== 'owner' && (
               <div className="row">
                 <Button variant="secondary" className="btn-sm" onClick={() => toggle(u)}>{u.status === 'active' ? 'Suspender' : 'Reativar'}</Button>
                 <Button variant="secondary" className="btn-sm" onClick={() => setResetFor(u)}>Redefinir senha</Button>
+                {u.mfaEnabled && <Button variant="secondary" className="btn-sm" onClick={() => resetMfa(u)}>Redefinir 2 etapas</Button>}
               </div>
             )}
           </li>

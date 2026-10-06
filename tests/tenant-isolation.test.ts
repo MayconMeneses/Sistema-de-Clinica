@@ -137,6 +137,14 @@ describe('privilégios e papéis', () => {
     ).rejects.toThrow(/permission denied/);
   });
 
+  it('control plane não lê senha, segredo TOTP nem dados de pacientes/dentes', async () => {
+    await expect(platformPool.query('SELECT password_hash FROM users')).rejects.toThrow(/permission denied/);
+    await expect(platformPool.query('SELECT totp_secret FROM users')).rejects.toThrow(/permission denied/);
+    await expect(platformPool.query('SELECT * FROM patients')).rejects.toThrow(/permission denied/);
+    await expect(platformPool.query('SELECT * FROM dental_findings')).rejects.toThrow(/permission denied/);
+    await expect(platformPool.query("UPDATE users SET role = 'admin'")).rejects.toThrow(/permission denied/);
+  });
+
   it('runtime da clínica não lê a auditoria da plataforma', async () => {
     await expect(withTenant(appPool, tenantA, (c) => c.query('SELECT * FROM platform_audit_events'))).rejects.toThrow(/permission denied/);
   });

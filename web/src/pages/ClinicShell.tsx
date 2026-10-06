@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { post, type Me } from '../api';
 import { ROLE_LABEL } from '../format';
 import { Button, Sheet, TextInput, useToast } from '../ui';
+import { MfaPanel } from './Mfa';
 import { Agenda } from './Agenda';
 import { Dashboard } from './Dashboard';
 import { FinancePage } from './Finance';
@@ -10,7 +11,7 @@ import { Team } from './Team';
 
 interface NavItem { path: string; label: string; ico: string; show: boolean }
 
-export function ClinicShell({ me, hash, onLogout }: { me: Me; hash: string; onLogout: () => void }) {
+export function ClinicShell({ me, hash, onLogout, onRefresh }: { me: Me; hash: string; onLogout: () => void; onRefresh: () => void }) {
   const can = (p: string) => me.permissions.includes(p);
   const has = (c: string) => me.entitlements.includes(c);
   const items: NavItem[] = [
@@ -47,12 +48,12 @@ export function ClinicShell({ me, hash, onLogout }: { me: Me; hash: string; onLo
         ))}
       </nav>
       <main className="content" id="main">{page}</main>
-      <AccountSheet open={menu} me={me} onClose={() => setMenu(false)} onLogout={onLogout} />
+      <AccountSheet open={menu} me={me} onClose={() => setMenu(false)} onLogout={onLogout} onRefresh={onRefresh} />
     </div>
   );
 }
 
-function AccountSheet({ open, me, onClose, onLogout }: { open: boolean; me: Me; onClose: () => void; onLogout: () => void }) {
+function AccountSheet({ open, me, onClose, onLogout, onRefresh }: { open: boolean; me: Me; onClose: () => void; onLogout: () => void; onRefresh: () => void }) {
   const toast = useToast();
   const [changing, setChanging] = useState(false);
   const [current, setCurrent] = useState('');
@@ -87,6 +88,7 @@ function AccountSheet({ open, me, onClose, onLogout }: { open: boolean; me: Me; 
         </form>
       ) : (
         <div className="stack">
+          <MfaPanel enabled={me.mfaEnabled} onChanged={onRefresh} />
           <Button variant="secondary" className="btn-block" onClick={() => setChanging(true)}>Alterar senha</Button>
           <Button variant="danger" className="btn-block" onClick={logout}>Sair</Button>
         </div>

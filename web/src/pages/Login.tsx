@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { post } from '../api';
+import { ApiError, post } from '../api';
 import { Button, TextInput } from '../ui';
 
 export function Login({ mode, onDone }: { mode: 'clinic' | 'master'; onDone: () => void }) {
@@ -7,6 +7,7 @@ export function Login({ mode, onDone }: { mode: 'clinic' | 'master'; onDone: () 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
+  const [needCode, setNeedCode] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -16,7 +17,7 @@ export function Login({ mode, onDone }: { mode: 'clinic' | 'master'; onDone: () 
     setBusy(true);
     try {
       if (mode === 'clinic') {
-        await post('/api/auth/login', { clinic, email, password });
+        await post('/api/auth/login', { clinic, email, password, ...(needCode ? { code } : {}) });
         try { localStorage.setItem('last-clinic', clinic.trim().toLowerCase()); } catch { /* opcional */ }
       } else {
         await post('/api/master/login', { email, password, code });
@@ -24,6 +25,7 @@ export function Login({ mode, onDone }: { mode: 'clinic' | 'master'; onDone: () 
       setPassword(''); setCode('');
       onDone();
     } catch (err) {
+      if (err instanceof ApiError && err.code === 'mfa_required') setNeedCode(true);
       setError((err as Error).message);
     } finally { setBusy(false); }
   }
@@ -41,7 +43,7 @@ export function Login({ mode, onDone }: { mode: 'clinic' | 'master'; onDone: () 
           {mode === 'clinic' && <TextInput label="Identificador da clínica" value={clinic} onChange={setClinic} required autoComplete="organization" hint="Exemplo: demo" />}
           <TextInput label="E-mail" type="email" value={email} onChange={setEmail} required autoComplete="username" inputMode="email" />
           <TextInput label="Senha" type="password" value={password} onChange={setPassword} required autoComplete="current-password" />
-          {mode === 'master' && <TextInput label="Código MFA (6 dígitos)" value={code} onChange={setCode} required inputMode="numeric" autoComplete="one-time-code" maxLength={6} />}
+          {(mode === 'master' || needCode) && <TextInput label={mode === 'master' ? 'Código MFA (6 dígitos)' : 'Código do autenticador (6 dígitos)'} value={code} onChange={setCode} required inputMode="numeric" autoComplete="one-time-code" maxLength={6} />}
           {error && <p className="field-msg error" role="alert">{error}</p>}
           <Button type="submit" busy={busy} className="btn-block">Entrar</Button>
         </form>

@@ -1,0 +1,59 @@
+name: CI
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: '5432'
+      PGUSER: postgres
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Banco de teste e papéis (sem BYPASSRLS)
+        run: bash scripts/dev-db-setup.sh
+      - name: Migrations (aplica duas vezes: precisa ser idempotente)
+        run: npm run db:migrate && npm run db:migrate
+      - name: Typecheck (servidor + web)
+        run: npm run typecheck
+      - name: Testes (PostgreSQL real)
+        run: npm test
+      - name: Build do frontend
+        run: npm run build
+      - name: Auditoria de dependências
+        run: npm audit --audit-level=high
+      - name: Varredura simples de segredos
+        run: |
+          if grep -rIE --exclude-dir=node_modules --exclude-dir=.git --exclude=package-lock.json -e '-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----' -e 'AKIA[0-9A-Z]{16}' .; then
+            echo "Possível segredo no repositório"; exit 1
+          fi
+      - name: Drill de backup/restore
+        run: |
+          npm run seed
+          npm run drill
+      - name: Navegador (E2E em celular e desktop)
+        run: |
+          npx playwright-core install --with-deps chromium
+          npm start &
+          for i in $(seq 1 30); do curl -sf localhost:3000/api/ready && break; sleep 1; done
+          E2E_URL=http://127.0.0.1:3000 npm run e2e

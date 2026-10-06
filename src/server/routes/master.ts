@@ -3,14 +3,14 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { resolveEntitlements, type TenantStatus } from '../../modules/entitlements/resolve.js';
 import { hashPassword, passwordPolicyError, verifyPassword } from '../auth/password.js';
-import { RateLimiter } from '../auth/rate-limit.js';
-import { verifyTotp } from '../auth/totp.js';
+import { consumeTotp } from '../auth/mfa.js';
+import { DbRateLimiter } from '../auth/rate-limit.js';
 import { config } from '../config.js';
 import { cookieOptions, MASTER_COOKIE, masterRoute, type MasterCtx } from '../context.js';
 import { platformPool } from '../db.js';
 import { badRequest, conflict, forbidden, HttpError, newSecret, notFound, sha256, unauthorized } from '../http.js';
 
-const limiter = new RateLimiter(5, 15 * 60 * 1000);
+const limiter = new DbRateLimiter(platformPool);
 const justification = z.string().trim().min(5, 'Informe a justificativa (mín. 5 caracteres).').max(500);
 
 async function platformAudit(c: MasterCtx, action: string, tenantId: string | null, why: string, metadata: object = {}) {
@@ -19,10 +19,12 @@ async function platformAudit(c: MasterCtx, action: string, tenantId: string | nu
     [c.operator.email, action, tenantId, why, JSON.stringify({ ...metadata, ip: c.req.ip })]);
 }
 
-/** Reautenticação (MFA) para ações críticas. */
+/** Reautenticação (MFA) para ações críticas. Cada código vale uma vez (anti-replay). */
 async function requireFreshMfa(c: MasterCtx, code: string | undefined) {
   const r = await c.db.query<{ totp_secret: string }>('SELECT totp_secret FROM platform_users WHERE id = $1', [c.operator.id]);
-  if (!code || !r.rows[0] || !verifyTotp(r.rows[0].totp_secret, code)) throw forbidden('Código MFA inválido. Confirme com o código atual.');
+  if (!code || !r.rows[0] || !(await consumeTotp(c.db, 'platform_users', c.operator.id, r.rows[0].totp_secret, code))) {
+    throw forbidden('Código MFA inválido ou já utilizado. Aguarde o próximo código do aplicativo.');
+  }
 }
 
 export function masterRoutes(app: FastifyInstance) {
@@ -33,21 +35,21 @@ export function masterRoutes(app: FastifyInstance) {
       code: z.string().trim().max(10),
     }).parse(req.body);
     const key = `${req.ip}|master|${body.email}`;
-    if (limiter.tooMany(key)) throw new HttpError(429, 'Muitas tentativas. Aguarde alguns minutos.', 'rate_limited');
+    if (await limiter.tooMany(key)) throw new HttpError(429, 'Muitas tentativas. Aguarde alguns minutos.', 'rate_limited');
 
     const u = await platformPool.query<{ id: string; password_hash: string; totp_secret: string; status: string }>(
       'SELECT id, password_hash, totp_secret, status FROM platform_users WHERE email = $1', [body.email]);
     const user = u.rows[0];
     const pwOk = await verifyPassword(body.password, user?.password_hash);
-    const mfaOk = !!user && verifyTotp(user.totp_secret, body.code);
+    const mfaOk = !!user && pwOk && (await consumeTotp(platformPool, 'platform_users', user.id, user.totp_secret, body.code));
     if (!user || !pwOk || !mfaOk || user.status !== 'active') {
-      limiter.record(key);
+      await limiter.record(key);
       await platformPool.query(
         `INSERT INTO platform_audit_events (operator_id, action, justification, metadata) VALUES ($1,'master.login_failed','tentativa de login',$2)`,
         [body.email, JSON.stringify({ ip: req.ip })]);
       throw unauthorized('E-mail, senha ou código MFA inválidos.');
     }
-    limiter.reset(key);
+    await limiter.reset(key);
     const secret = newSecret();
     await platformPool.query(
       `INSERT INTO platform_sessions (user_id, token_hash, expires_at) VALUES ($1,$2, now() + make_interval(hours => $3))`,
@@ -73,6 +75,7 @@ export function masterRoutes(app: FastifyInstance) {
     const pcaps = await c.db.query('SELECT plan_code, capability_code FROM plan_capabilities');
     const tenants = await c.db.query('SELECT id, slug, name, status, plan_code AS "planCode", created_at AS "createdAt" FROM tenants ORDER BY created_at DESC');
     const overrides = await c.db.query('SELECT tenant_id, capability_code, mode, reason FROM tenant_entitlement_overrides');
+    const owners = await c.db.query('SELECT tenant_id, name, email, totp_enabled FROM users WHERE role = \'owner\'');
     const catalog = caps.rows.map((r) => ({ code: r.code, globallyAvailable: r.globallyAvailable, dependsOn: r.dependsOn }));
     return {
       plans: plans.rows,
@@ -85,7 +88,7 @@ export function masterRoutes(app: FastifyInstance) {
           overrides: ov.map((o) => ({ capability: o.capability_code, mode: o.mode })),
           catalog,
         });
-        return { ...t, overrides: ov.map((o) => ({ capability: o.capability_code, mode: o.mode, reason: o.reason })), effective: [...effective].sort() };
+        return { ...t, owner: owners.rows.filter((o) => o.tenant_id === t.id).map((o) => ({ name: o.name, email: o.email, mfaEnabled: o.totp_enabled }))[0] ?? null, overrides: ov.map((o) => ({ capability: o.capability_code, mode: o.mode, reason: o.reason })), effective: [...effective].sort() };
       }),
     };
   });
@@ -141,6 +144,19 @@ export function masterRoutes(app: FastifyInstance) {
       await c.db.query('UPDATE tenants SET plan_code = $1 WHERE id = $2', [b.planCode, id]);
       await platformAudit(c, 'tenant.plan.change', id, b.justification, { from: tenant.plan_code, to: b.planCode });
     }
+    return { ok: true };
+  });
+
+  masterRoute(app, 'POST', '/api/master/tenants/:id/reset-owner-mfa', async (c, req) => {
+    const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    const b = z.object({ code: z.string().max(10), justification }).parse(req.body);
+    await requireFreshMfa(c, b.code);
+    // Só MFA e versão de sessão do proprietário mudam; o Master não lê nem altera dados clínicos.
+    const r = await c.db.query(
+      `UPDATE users SET totp_enabled = false, totp_secret = NULL, totp_last_step = NULL, session_version = session_version + 1
+        WHERE tenant_id = $1 AND role = 'owner'`, [id]);
+    if (!r.rowCount) throw notFound('Proprietário não encontrado.');
+    await platformAudit(c, 'tenant.owner_mfa_reset', id, b.justification);
     return { ok: true };
   });
 

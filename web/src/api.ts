@@ -31,4 +31,5 @@ export interface Me {
   clinic: { name: string };
   permissions: string[];
   entitlements: string[];
+  mfaEnabled: boolean;
 }
