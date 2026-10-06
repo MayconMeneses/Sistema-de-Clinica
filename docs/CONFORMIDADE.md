@@ -1,7 +1,7 @@
 # Matriz de conformidade com o prompt mestre
 
 Legenda: ✅ atendido e testado localmente · 🟡 parcial · ⬜ não iniciado · ⛔ depende de decisão/terceiro · n/a não se aplica.
-Estado em v0.5.0. "Testado" = teste automatizado em PostgreSQL real (ver `npm run check`) ou E2E no navegador. Nada aqui declara conformidade legal/regulatória.
+Estado em v0.6.0. "Testado" = teste automatizado em PostgreSQL real (ver `npm run check`) ou E2E no navegador. Nada aqui declara conformidade legal/regulatória.
 
 | § | Requisito | Estado | Evidência / lacuna |
 |---|---|---|---|
@@ -18,12 +18,12 @@ Estado em v0.5.0. "Testado" = teste automatizado em PostgreSQL real (ver `npm ru
 | 6 | Capabilities e entitlement no backend | 🟡 | plano, override, dependência, status, indisponibilidade global, RBAC ✅; add-ons, quotas, feature flag, rollout, inadimplência, unidade, política de segurança ⬜ |
 | 7 | Catálogo de add-ons, medição e alertas de consumo | ⬜ | |
 | 8 | Papéis da plataforma | 🟡 | operador único; faltam papéis (financeiro, suporte, auditor…) |
-| 8 | Papéis da clínica | 🟡 | 5 de 13 (dono, admin, recepção, profissional, financeiro) |
+| 8 | Papéis da clínica | 🟡 | 5 de 13 (dono, admin, recepção, profissional, financeiro); permissões novas: gestão da organização, horários/bloqueios, encaixe |
 | 8 | RBAC + ABAC, deny-by-default | 🟡 | RBAC ✅ deny-by-default ✅; ABAC só por permissão clínica (falta unidade/relacionamento/finalidade) |
-| 9 | Organização/unidades/salas/recursos | 🟡 | tabelas `units`/`resources` sem API/UI |
+| 9 | Organização/unidades/salas/recursos | 🟡 | unidades, salas/cadeiras/equipamentos com API e tela (Gestão) ✅; endereço, contatos, horários da unidade, feriados da unidade, identidade visual, equipamentos com manutenção ⬜ |
 | 10 | Pacientes | 🟡 | cadastro, busca, alerta restrito, consentimento de comunicação versionado ✅; responsável/dependentes, anexos, duplicidade/mesclagem, exportação, privacidade ⬜ |
-| 11 | Agenda | 🟡 | dia/profissional, conflito transacional (concorrência testada), cancelar/reagendar/falta ✅; semana/mês, disponibilidade, bloqueios, feriados, salas, séries, lista de espera, sinal, online ⬜ |
-| 12 | Recepção/jornada | 🟡 | check-in simples; fila, triagem, formulários, chamada, checkout ⬜ |
+| 11 | Agenda | 🟡 | dia/profissional, conflito de profissional, paciente **e sala** decidido pelo banco (concorrência testada), horário de atendimento, encaixe, bloqueios (clínica/profissional/sala, validados no banco), séries semanais com conflito parcial, lista de espera, cancelar/reagendar/falta ✅; visão semanal/mensal, agenda por serviço, duração por serviço/profissional, sinal/pagamento antecipado, agendamento online, calendários externos ⬜ |
+| 12 | Recepção/jornada | 🟡 | chegada, prioridade, fila, chamada, em atendimento, conclusão com cobrança, tempo de espera, atualização automática ✅; pré-cadastro, triagem, formulários pendentes, atraso, checkout com pagamento, pesquisa, recall ⬜ |
 | 13 | Prontuário | 🟡 | evolução, rascunho, assinatura imutável, adendo, leitura auditada ✅; formulários, sinais vitais, prescrição, atestados, anexos, impressão ⬜ |
 | 14 | Odontologia | 🟡 | odontograma adulto/infantil com histórico imutável, plano com cobrança ✅; orçamento com versões/aceite, comparação temporal, imagens, próteses/laboratórios, repasses ⬜ |
 | 15 | Pacotes por especialidade | ⬜ | |

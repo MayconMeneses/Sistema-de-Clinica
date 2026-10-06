@@ -2,20 +2,35 @@ import { useState, type FormEvent } from 'react';
 import { get, patch, post } from '../api';
 import { dateTimeOf, ROLE_LABEL } from '../format';
 import { Badge, Button, ErrorBox, Select, Sheet, Spinner, TextInput, useLoad, useToast } from '../ui';
+import { Blocks, Hours, UnitsRooms } from './Settings';
 
 interface User { id: string; name: string; email: string; role: string; status: string; mfaEnabled: boolean }
 interface AuditEvent { id: string; occurredAt: string; action: string; entityType: string; actorName: string | null }
 
-export function Team() {
-  const [tab, setTab] = useState<'team' | 'audit'>('team');
+type Tab = 'team' | 'units' | 'hours' | 'blocks' | 'audit';
+
+export function Team({ permissions }: { permissions: string[] }) {
+  const can = (p: string) => permissions.includes(p);
+  const tabs: { key: Tab; label: string; show: boolean }[] = [
+    { key: 'team', label: 'Usuários', show: can('users.manage') },
+    { key: 'units', label: 'Unidades e salas', show: can('org.manage') },
+    { key: 'hours', label: 'Horários', show: can('schedule.manage') || can('org.manage') },
+    { key: 'blocks', label: 'Bloqueios', show: can('schedule.manage') || can('org.manage') },
+    { key: 'audit', label: 'Auditoria', show: can('audit.read') },
+  ];
+  const visible = tabs.filter((t) => t.show);
+  const [tab, setTab] = useState<Tab>(visible[0]?.key ?? 'team');
   return (
     <>
-      <div className="page-head"><h1>Equipe</h1></div>
+      <div className="page-head"><h1>Gestão</h1></div>
       <div className="tabs" role="tablist">
-        <button role="tab" className="tab" aria-selected={tab === 'team'} onClick={() => setTab('team')}>Usuários</button>
-        <button role="tab" className="tab" aria-selected={tab === 'audit'} onClick={() => setTab('audit')}>Auditoria</button>
+        {visible.map((t) => <button key={t.key} role="tab" className="tab" aria-selected={tab === t.key} onClick={() => setTab(t.key)}>{t.label}</button>)}
       </div>
-      {tab === 'team' ? <Users /> : <Audit />}
+      {tab === 'team' && <Users />}
+      {tab === 'units' && <UnitsRooms canManage={can('org.manage')} />}
+      {tab === 'hours' && <Hours canManage={can('schedule.manage')} />}
+      {tab === 'blocks' && <Blocks canManage={can('schedule.manage')} />}
+      {tab === 'audit' && <Audit />}
     </>
   );
 }

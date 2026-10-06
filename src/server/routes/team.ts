@@ -80,7 +80,7 @@ export function teamRoutes(app: FastifyInstance) {
     if (has('schedule.core')) {
       const r = await ctx.tx.query(
         `SELECT count(*) FILTER (WHERE status NOT IN ('cancelled','no_show')) AS active,
-                count(*) FILTER (WHERE status = 'checked_in') AS waiting
+                count(*) FILTER (WHERE status IN ('checked_in','called')) AS waiting
            FROM appointments
           WHERE starts_at >= (date_trunc('day', now() AT TIME ZONE 'America/Sao_Paulo') AT TIME ZONE 'America/Sao_Paulo')
             AND starts_at <  (date_trunc('day', now() AT TIME ZONE 'America/Sao_Paulo') AT TIME ZONE 'America/Sao_Paulo') + interval '1 day'`);
