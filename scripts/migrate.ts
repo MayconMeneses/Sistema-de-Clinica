@@ -43,7 +43,7 @@ export async function migrate(connectionString: string): Promise<string[]> {
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const url = process.env.DATABASE_URL_OWNER;
+  const url = process.env.DATABASE_URL_OWNER ?? (process.env.NODE_ENV === 'production' ? undefined : 'postgres://clinica_owner:dev_owner_pw@127.0.0.1:5432/clinica_one');
   if (!url) throw new Error('DATABASE_URL_OWNER não definida');
   migrate(url).then((a) => console.log(a.length ? `Aplicadas: ${a.join(', ')}` : 'Nada a aplicar'));
 }

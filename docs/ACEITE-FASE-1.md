@@ -1,11 +1,14 @@
 # Critérios de aceite — Fase 1 (gate)
 
-1. Dois tenants provados isolados em leitura, escrita, exclusão e inserção cruzada — **atendido para dados em PostgreSQL local**.
-2. Autorização no backend com deny by default — **parcial** (DB e entitlements; RBAC/ABAC pendentes).
-3. Auditoria durável e imutável — **parcial** (estrutura sim, uso não).
-4. Identidade com MFA e sessões revogáveis — **não atendido**.
-5. Painel Master mínimo com auditoria e MFA — **não atendido**.
-6. CI executando typecheck, testes e verificação de migrations — **não atendido**.
-7. Backup com restore executado e validado — **não atendido**.
+| # | Critério | Estado |
+|---|---|---|
+| 1 | Dois tenants isolados em leitura/escrita/exclusão/inserção cruzada | ✅ banco (27 testes) e HTTP (cookie forjado, IDOR, FK) — PostgreSQL local |
+| 2 | Autorização no backend, deny by default | ✅ RBAC + entitlements testados; ABAC (unidade, relacionamento) pendente |
+| 3 | Auditoria durável e imutável | ✅ gravada nas ações sensíveis; append-only por trigger |
+| 4 | Identidade com sessões revogáveis | ✅ clínica; **MFA só no Master** |
+| 5 | Painel Master mínimo com auditoria e MFA | ✅ (sem suporte temporário) |
+| 6 | CI com typecheck, testes e migrations | ❌ não existe |
+| 7 | Backup com restore executado e validado | ❌ não executado |
+| 8 | Cache/fila/arquivo/webhook/relatório tenant-aware | n/a — componentes inexistentes |
 
-**A Fase 1 NÃO está concluída; o gate continua fechado.**
+**Gate NÃO atendido (itens 6 e 7, MFA da clínica, suporte temporário, HTTPS/segredos). Não usar com dados reais.**
