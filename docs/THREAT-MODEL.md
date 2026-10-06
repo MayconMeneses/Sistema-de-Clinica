@@ -46,6 +46,10 @@ Navegador/portal ↔ API (não existe ainda) ↔ PostgreSQL. Control plane (`cli
 | Path traversal em arquivos | porta de storage valida cada segmento e o caminho final; isolado por tenant |
 | Envio duplicado após falha | `SKIP LOCKED` (concorrência testada) + `Idempotency-Key` ao provedor (semântica: pelo menos uma vez) |
 
+| Mesclagem destruir histórico clínico/financeiro | alias: dados imutáveis ficam no cadastro de origem e são lidos no principal; mesclagem auditada e só por dono/admin |
+| Exportação vazar além da permissão de quem exporta | seções sem permissão/contrato são omitidas e listadas; exportação auditada; só dono/admin |
+| Chaves de duplicidade fora de sincronia | calculadas por trigger no banco (qualquer caminho de escrita) |
+
 ## Ameaças ainda SEM controle ou com controle parcial (PENDENTE)
 - Chave de cifragem (`DATA_ENCRYPTION_KEY`) sem rotação nem KMS; em dev é uma chave fixa pública.
 - Sem recuperação de senha por e-mail; sessão não rotaciona após login; sem bloqueio permanente de conta.

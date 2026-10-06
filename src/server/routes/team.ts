@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { hashPassword, passwordPolicyError } from '../auth/password.js';
 import { audit, clinicRoute } from '../context.js';
+import { hasPermission } from '../auth/rbac.js';
 import { badRequest, conflict, forbidden, notFound } from '../http.js';
 
 const idParam = z.object({ id: z.string().uuid() });
@@ -86,6 +87,10 @@ export function teamRoutes(app: FastifyInstance) {
             AND starts_at <  (date_trunc('day', now() AT TIME ZONE 'America/Sao_Paulo') AT TIME ZONE 'America/Sao_Paulo') + interval '1 day'`);
       out.appointmentsToday = Number(r.rows[0].active);
       out.waiting = Number(r.rows[0].waiting);
+    }
+    if (hasPermission(ctx.user.role, 'privacy.manage')) {
+      const q = await ctx.tx.query(`SELECT count(*)::int AS open, count(*) FILTER (WHERE due_at < now())::int AS overdue FROM privacy_requests WHERE status IN ('open','in_progress')`);
+      out.privacyOpen = q.rows[0].open; out.privacyOverdue = q.rows[0].overdue;
     }
     return out;
   });

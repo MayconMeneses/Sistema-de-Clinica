@@ -1,7 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { audit, clinicRoute } from '../context.js';
-import { notFound } from '../http.js';
+import { HttpError, notFound } from '../http.js';
+import { findDuplicates } from '../../modules/patients/family.js';
 import { hasPermission } from '../auth/rbac.js';
 
 const opt = (max: number) => z.string().trim().max(max).nullish().transform((v) => (v ? v : null));
@@ -18,7 +19,7 @@ const patientBody = z.object({
 const COLUMNS: Record<string, string> = {
   name: 'name', socialName: 'social_name', birthDate: 'birth_date', phone: 'phone', email: 'email', document: 'document', alert: 'alert',
 };
-const SELECT = `id, name, social_name AS "socialName", to_char(birth_date,'YYYY-MM-DD') AS "birthDate", phone, email, document, alert, created_at AS "createdAt"`;
+const SELECT = `id, name, social_name AS "socialName", to_char(birth_date,'YYYY-MM-DD') AS "birthDate", phone, email, document, alert, created_at AS "createdAt", merged_into AS "mergedInto"`;
 
 export function patientRoutes(app: FastifyInstance) {
   clinicRoute(app, 'GET', '/api/patients', { cap: 'patient.registry', perm: 'patients.read' }, async (ctx) => {
@@ -26,14 +27,19 @@ export function patientRoutes(app: FastifyInstance) {
     const like = q ? `%${q.replace(/[\\%_]/g, '\\$&')}%` : null;
     const r = await ctx.tx.query(
       `SELECT ${SELECT} FROM patients
-        WHERE ($1::text IS NULL OR name ILIKE $1 OR social_name ILIKE $1 OR phone ILIKE $1 OR document ILIKE $1)
+        WHERE merged_into IS NULL AND ($1::text IS NULL OR name ILIKE $1 OR social_name ILIKE $1 OR phone ILIKE $1 OR document ILIKE $1)
         ORDER BY lower(name) LIMIT 100`, [like]);
     const canSeeAlert = hasPermission(ctx.user.role, 'notes.read');
     return { patients: r.rows.map((p) => (canSeeAlert ? p : { ...p, alert: null })) };
   });
 
   clinicRoute(app, 'POST', '/api/patients', { cap: 'patient.registry', perm: 'patients.write' }, async (ctx) => {
+    const body = z.object({ confirmNotDuplicate: z.boolean().optional() }).passthrough().parse(ctx.req.body);
     const b = patientBody.parse(ctx.req.body);
+    if (!body.confirmNotDuplicate) {
+      const candidates = await findDuplicates(ctx.tx, b);
+      if (candidates.length) throw new HttpError(409, 'Já existe um cadastro parecido. Confira antes de criar outro.', 'possible_duplicate', { candidates });
+    }
     const r = await ctx.tx.query<{ id: string }>(
       `INSERT INTO patients (tenant_id, name, social_name, birth_date, phone, email, document, alert, created_by)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,

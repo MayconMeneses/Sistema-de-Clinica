@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { audit, clinicRoute } from '../context.js';
+import { assertActive, family } from '../../modules/patients/family.js';
 import { notFound } from '../http.js';
 
 const idParam = z.object({ id: z.string().uuid() });
@@ -21,6 +22,7 @@ export function communicationRoutes(app: FastifyInstance) {
     const b = z.object({ purpose: z.enum(PURPOSES), granted: z.boolean() }).parse(ctx.req.body);
     const p = await ctx.tx.query('SELECT 1 FROM patients WHERE id = $1', [id]);
     if (!p.rowCount) throw notFound('Paciente não encontrado.');
+    await assertActive(ctx.tx, id);
     await ctx.tx.query(
       `INSERT INTO patient_consents (tenant_id, patient_id, purpose, granted, source, recorded_by) VALUES ($1,$2,$3,$4,'staff',$5)`,
       [ctx.tenantId, id, b.purpose, b.granted, ctx.user.id]);
@@ -33,7 +35,7 @@ export function communicationRoutes(app: FastifyInstance) {
     const r = await ctx.tx.query(
       `SELECT id, payload->>'template' AS template, payload->>'channel' AS channel, status, delivery_status AS "deliveryStatus",
               attempts, last_error AS "reason", next_attempt_at AS "scheduledFor", created_at AS "createdAt", processed_at AS "processedAt"
-         FROM outbox_events WHERE topic = 'message.send' AND payload->>'patientId' = $1 ORDER BY created_at DESC LIMIT 100`, [id]);
+         FROM outbox_events WHERE topic = 'message.send' AND payload->>'patientId' = ANY($1::text[]) ORDER BY created_at DESC LIMIT 100`, [await family(ctx.tx, id)]);
     return { messages: r.rows };
   });
 }

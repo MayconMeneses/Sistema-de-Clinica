@@ -1,6 +1,6 @@
 # Clínica One — plataforma SaaS de gestão clínica
 
-**Versão 0.6.0 · funcional em ambiente de desenvolvimento · NÃO pronta para produção nem para dados reais de pacientes.**
+**Versão 0.7.0 · funcional em ambiente de desenvolvimento · NÃO pronta para produção nem para dados reais de pacientes.**
 Interface em português do Brasil, **mobile-first** (menu inferior no celular, barra lateral no desktop, instalável na tela inicial).
 Convênios/TISS estão bloqueados globalmente nesta fase.
 
@@ -26,7 +26,7 @@ Para testar no celular, abra `http://<IP-da-máquina>:3000` na mesma rede (cooki
 
 | Comando | O que faz |
 |---|---|
-| `npm run check` | typecheck (servidor + web) e 120 testes (PostgreSQL real) |
+| `npm run check` | typecheck (servidor + web) e 134 testes (PostgreSQL real) |
 | `npm run drill` | backup → restore em banco temporário → valida dados, RLS e isolamento (reprova se algo divergir) |
 | `npm run build` | typecheck + build do frontend em `web/dist` |
 | `npm run e2e` | smoke no Chromium em celular e desktop (`E2E_URL=http://127.0.0.1:3000`), com screenshots |
@@ -38,7 +38,7 @@ Para testar no celular, abra `http://<IP-da-máquina>:3000` na mesma rede (cooki
 **Painel Master** — login com senha + MFA (TOTP, cada código vale uma vez); criar clínica com proprietário; trocar plano; suspender/reativar (exige novo código MFA + justificativa); conceder/bloquear funcionalidades por clínica (o banco recusa habilitar `tiss.billing`); auditoria da plataforma. Recupera o MFA do proprietário que perdeu o aparelho (exige MFA + justificativa; só mexe em MFA/sessão). O Master **não lê** dados clínicos, senhas nem segredos (sem privilégio no banco, provado em teste).
 
 **Sistema da clínica** — login por clínica; sessões server-side revogáveis; troca de senha encerra outras sessões; suspender usuário derruba sessões na hora.
-- Pacientes: cadastro, busca, edição, alerta clínico (visível só à equipe clínica).
+- Pacientes: cadastro, busca, edição, alerta clínico (visível só à equipe clínica); **aviso de cadastro parecido** (documento, nome+nascimento, telefone+primeiro nome; normaliza acento, máscara e +55 no banco); **revisão de duplicados e mesclagem auditada** (nada é apagado: prontuário assinado e financeiro permanecem e aparecem no cadastro principal); **responsáveis**; **exportação dos dados** (respeita as permissões de quem exporta e é auditada); **solicitações de privacidade** do titular com prazo de referência de 15 dias e fila na Gestão.
 - Agenda: dia/profissional, agendar, confirmar, reagendar, cancelar com motivo, faltou. **Conflito de profissional, paciente e sala decidido pelo PostgreSQL** (restrição de exclusão), inclusive sob concorrência. Horário de atendimento por profissional (fora dele só como **encaixe**, pela recepção), **bloqueios** (feriado, folga, manutenção; o banco recusa agendar sobre eles), **séries semanais** (tudo-ou-nada ou pulando datas com conflito) e **lista de espera**.
 - Recepção: fila do dia com chegada (com prioridade), chamada, atendimento e conclusão; atualiza sozinha; concluir gera a cobrança uma única vez.
 - Gestão: unidades, salas/cadeiras/equipamentos, horários e bloqueios.

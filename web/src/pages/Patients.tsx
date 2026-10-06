@@ -1,25 +1,28 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { get, patch, post, type Me } from '../api';
+import { ApiError, get, patch, post, type Me } from '../api';
 import { brl, dateTimeOf, KIND_LABEL, METHOD_LABEL, parseMoney } from '../format';
 import { Consents, MessageHistory } from './Messages';
+import { Duplicates, Guardians, MergeButton, PrivacyCard } from './PatientAdmin';
 import { Odontogram } from './Odontogram';
 import { Badge, Button, Empty, ErrorBox, Field, Select, Sheet, Spinner, TextInput, useLoad, useToast } from '../ui';
 
-interface Patient { id: string; name: string; socialName: string | null; birthDate: string | null; phone: string | null; email: string | null; document: string | null; alert: string | null }
+interface Patient { id: string; name: string; socialName: string | null; birthDate: string | null; phone: string | null; email: string | null; document: string | null; alert: string | null; mergedInto?: string | null }
 
 export function Patients({ me }: { me: Me }) {
   const [q, setQ] = useState('');
   const [debounced, setDebounced] = useState('');
   const [creating, setCreating] = useState(false);
+  const [view, setView] = useState<'list' | 'dups'>('list');
   useEffect(() => { const t = setTimeout(() => setDebounced(q.trim()), 250); return () => clearTimeout(t); }, [q]);
   const list = useLoad(() => get<{ patients: Patient[] }>(`/api/patients${debounced ? `?q=${encodeURIComponent(debounced)}` : ''}`), [debounced]);
   const canWrite = me.permissions.includes('patients.write');
+  if (view === 'dups') return <Duplicates onBack={() => { setView('list'); list.reload(); }} />;
 
   return (
     <>
       <div className="page-head">
         <h1>Pacientes</h1>
-        {canWrite && <Button onClick={() => setCreating(true)}>Novo paciente</Button>}
+        <span className="row">{me.permissions.includes('patients.merge') && <Button variant="secondary" onClick={() => setView('dups')}>Possíveis duplicados</Button>}{canWrite && <Button onClick={() => setCreating(true)}>Novo paciente</Button>}</span>
       </div>
       <Field label="Buscar por nome, telefone ou documento">
         {(id) => <input id={id} type="search" value={q} onChange={(e) => setQ(e.target.value)} autoComplete="off" />}
@@ -56,26 +59,30 @@ function PatientForm({ initial, canAlert, onSaved }: { initial?: Patient; canAle
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [serverError, setServerError] = useState<string | null>(null);
+  const [dups, setDups] = useState<{ id: string; name: string; birthDate: string | null; phone: string | null; reason: string }[]>([]);
   const [busy, setBusy] = useState(false);
   const set = (k: keyof typeof f) => (v: string) => setF((s) => ({ ...s, [k]: v }));
 
-  async function submit(e: FormEvent) {
+  async function submit(e: FormEvent, confirmNotDuplicate = false) {
     e.preventDefault();
     const errs: Record<string, string> = {};
     if (f.name.trim().length < 2) errs.name = 'Informe o nome do paciente.';
     if (f.email && !/^\S+@\S+\.\S{2,}$/.test(f.email)) errs.email = 'Informe um e-mail válido, como nome@dominio.com.';
     setErrors(errs);
     if (Object.keys(errs).length) return;
-    setBusy(true); setServerError(null);
-    const body = { ...f, birthDate: f.birthDate || null, ...(canAlert ? {} : { alert: undefined }) };
+    setBusy(true); setServerError(null); setDups([]);
+    const body = { ...f, birthDate: f.birthDate || null, ...(canAlert ? {} : { alert: undefined }), ...(confirmNotDuplicate ? { confirmNotDuplicate: true } : {}) };
     try {
       if (initial) { await patch(`/api/patients/${initial.id}`, body); toast('Dados do paciente salvos.'); onSaved(initial.id); }
       else { const r = await post<{ id: string }>('/api/patients', body); toast('Paciente cadastrado.'); onSaved(r.id); }
-    } catch (err) { setServerError((err as Error).message); } finally { setBusy(false); }
+    } catch (err) {
+      if (err instanceof ApiError && err.code === 'possible_duplicate') setDups((err.data.candidates as typeof dups) ?? []);
+      setServerError((err as Error).message);
+    } finally { setBusy(false); }
   }
 
   return (
-    <form onSubmit={submit} noValidate>
+    <form onSubmit={(e) => submit(e)} noValidate>
       <TextInput label="Nome completo" value={f.name} onChange={set('name')} error={errors.name} required autoComplete="off" />
       <TextInput label="Nome social (opcional)" value={f.socialName} onChange={set('socialName')} />
       <div className="grid2">
@@ -86,6 +93,13 @@ function PatientForm({ initial, canAlert, onSaved }: { initial?: Patient; canAle
       </div>
       {canAlert && <TextInput label="Alerta clínico (visível só à equipe clínica)" value={f.alert} onChange={set('alert')} hint="Exemplo: alergia a penicilina." />}
       {serverError && <p className="field-msg error" role="alert">{serverError}</p>}
+      {dups.length > 0 && (
+        <div className="card">
+          <p className="small"><strong>Cadastros parecidos:</strong></p>
+          <ul className="list">{dups.map((d) => <li key={d.id} className="list-item"><a href={`#/pacientes/${d.id}`}><strong>{d.name}</strong></a><br /><span className="small muted">{d.reason}{d.birthDate ? ` · ${d.birthDate}` : ''}{d.phone ? ` · ${d.phone}` : ''}</span></li>)}</ul>
+          <Button type="button" variant="secondary" className="btn-block" busy={busy} onClick={(e) => submit(e as unknown as FormEvent, true)}>Não é a mesma pessoa: cadastrar mesmo assim</Button>
+        </div>
+      )}
       <Button type="submit" busy={busy} className="btn-block">{initial ? 'Salvar alterações' : 'Cadastrar paciente'}</Button>
     </form>
   );
@@ -107,6 +121,9 @@ export function PatientDetail({ id, me }: { id: string; me: Me }) {
   if (p.loading && !p.data) return <Spinner />;
   if (p.error || !p.data) return <><p><a href="#/pacientes">← Pacientes</a></p><ErrorBox message={p.error ?? 'Paciente não encontrado.'} onRetry={p.reload} /></>;
   const patient = p.data.patient;
+  if (patient.mergedInto) {
+    return (<><p><a href="#/pacientes">← Pacientes</a></p><div className="banner" role="note">Este cadastro foi mesclado a outro. O histórico dele aparece no cadastro principal.</div><a className="btn btn-primary" href={`#/pacientes/${patient.mergedInto}`}>Abrir cadastro principal</a></>);
+  }
 
   return (
     <>
@@ -116,7 +133,7 @@ export function PatientDetail({ id, me }: { id: string; me: Me }) {
       <div className="tabs" role="tablist">
         {tabs.map((t) => <button key={t.key} role="tab" aria-selected={tab === t.key} className="tab" onClick={() => setTab(t.key)}>{t.label}</button>)}
       </div>
-      {tab === 'dados' && <div className="stack"><div className="card"><PatientForm initial={patient} canAlert={can('notes.read')} onSaved={() => p.reload()} /></div><Consents patientId={id} canWrite={can('patients.write')} /></div>}
+      {tab === 'dados' && <div className="stack"><div className="card"><PatientForm initial={patient} canAlert={can('notes.read')} onSaved={() => p.reload()} /></div><Consents patientId={id} canWrite={can('patients.write')} /><Guardians patientId={id} canWrite={can('patients.write')} />{can('privacy.open') && <PrivacyCard patientId={id} patientName={patient.name} canExport={can('patients.export')} />}{can('patients.merge') && <div><MergeButton patient={{ id, name: patient.name }} onMerged={(t) => { window.location.hash = `/pacientes/${t}`; }} /></div>}</div>}
       {tab === 'mensagens' && <MessageHistory patientId={id} />}
       {tab === 'prontuario' && <Notes patientId={id} meId={me.user.id} />}
       {tab === 'odontograma' && <Odontogram patientId={id} canWrite={can('dental.write')} hasFinance={has('finance.basic')} />}

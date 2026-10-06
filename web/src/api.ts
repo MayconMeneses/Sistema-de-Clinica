@@ -1,5 +1,5 @@
 export class ApiError extends Error {
-  constructor(public status: number, public code: string, message: string) { super(message); }
+  constructor(public status: number, public code: string, message: string, public data: Record<string, unknown> = {}) { super(message); }
 }
 
 export async function api<T = unknown>(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string, body?: unknown): Promise<T> {
@@ -17,7 +17,7 @@ export async function api<T = unknown>(method: 'GET' | 'POST' | 'PATCH' | 'DELET
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     if (res.status === 401 && !url.includes('/login')) window.dispatchEvent(new Event('session-expired'));
-    throw new ApiError(res.status, data.error ?? 'error', data.message ?? 'Não foi possível concluir a ação.');
+    throw new ApiError(res.status, data.error ?? 'error', data.message ?? 'Não foi possível concluir a ação.', data);
   }
   return data as T;
 }
