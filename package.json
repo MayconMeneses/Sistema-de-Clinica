@@ -1,0 +1,25 @@
+{
+  "name": "clinica-one",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Plataforma SaaS multiempresa de gestão clínica (reconstrução — Fase 1 em andamento)",
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "db:setup": "bash scripts/dev-db-setup.sh",
+    "db:migrate": "tsx scripts/migrate.ts",
+    "test": "vitest run",
+    "check": "npm run typecheck && npm test"
+  },
+  "dependencies": {
+    "pg": "^8.13.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/pg": "^8.11.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}
