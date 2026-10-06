@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { audit, clinicRoute, type ClinicCtx } from '../context.js';
 import { hasPermission } from '../auth/rbac.js';
 import { enqueueAppointmentMessages } from '../../modules/communications/enqueue.js';
+import { assertActive } from '../../modules/patients/family.js';
 import { badRequest, conflict, forbidden, HttpError, mapDbError, notFound } from '../http.js';
 
 /** Fila da recepção: chegou → chamado → em atendimento → concluído. Voltar para a fila é permitido a quem foi chamado. */
@@ -57,7 +58,8 @@ interface NewAppt {
   startsAt: Date; endsAt: Date; service: string; priceCents: number; seriesId: string | null;
 }
 
-async function checkRefs(ctx: ClinicCtx, professionalId: string, resourceId: string | null) {
+async function checkRefs(ctx: ClinicCtx, professionalId: string, resourceId: string | null, patientId?: string) {
+  if (patientId) await assertActive(ctx.tx, patientId);
   const pro = await ctx.tx.query(`SELECT 1 FROM users WHERE id = $1 AND role = 'professional' AND status = 'active'`, [professionalId]);
   if (!pro.rowCount) throw badRequest('Profissional inválido.');
   if (resourceId) {
@@ -110,7 +112,7 @@ export function appointmentRoutes(app: FastifyInstance) {
     const startsAt = new Date(b.startsAt), endsAt = new Date(b.endsAt);
     if (endsAt <= startsAt) throw badRequest('O término deve ser depois do início.');
     needOverride(ctx, b.encaixe);
-    await checkRefs(ctx, b.professionalId, b.resourceId);
+    await checkRefs(ctx, b.professionalId, b.resourceId, b.patientId);
     try {
       const id = await bookOne(ctx, { ...b, startsAt, endsAt, seriesId: null }, b.encaixe);
       await audit(ctx, 'appointment.create', 'appointment', id);
@@ -132,7 +134,7 @@ export function appointmentRoutes(app: FastifyInstance) {
     const start = new Date(b.startsAt), end = new Date(b.endsAt);
     if (end <= start) throw badRequest('O término deve ser depois do início.');
     needOverride(ctx, b.encaixe);
-    await checkRefs(ctx, b.professionalId, b.resourceId);
+    await checkRefs(ctx, b.professionalId, b.resourceId, b.patientId);
 
     const seriesId = randomUUID();
     const created: { id: string; startsAt: string }[] = [];

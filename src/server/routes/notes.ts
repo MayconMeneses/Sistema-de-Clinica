@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { audit, clinicRoute } from '../context.js';
+import { assertActive, family } from '../../modules/patients/family.js';
 import { conflict, forbidden, mapDbError, notFound } from '../http.js';
 
 const body = z.object({ body: z.string().trim().min(1, 'Escreva o registro.').max(20000) });
@@ -15,7 +16,7 @@ export function noteRoutes(app: FastifyInstance) {
               n.parent_note_id AS "parentNoteId", n.addendum_reason AS "addendumReason",
               n.author_id AS "authorId", u.name AS "authorName"
          FROM clinical_notes n JOIN users u ON u.tenant_id = n.tenant_id AND u.id = n.author_id
-        WHERE n.patient_id = $1 ORDER BY n.created_at`, [id]);
+        WHERE n.patient_id = ANY($1::uuid[]) ORDER BY n.created_at`, [await family(ctx.tx, id)]);
     await audit(ctx, 'record.read', 'patient', id, { notes: r.rowCount });
     return { notes: r.rows };
   });
@@ -23,6 +24,7 @@ export function noteRoutes(app: FastifyInstance) {
   clinicRoute(app, 'POST', '/api/patients/:id/notes', { ...CLINICAL, perm: 'notes.write' }, async (ctx) => {
     const { id } = idParam.parse(ctx.req.params);
     const b = body.parse(ctx.req.body);
+    await assertActive(ctx.tx, id);
     try {
       const r = await ctx.tx.query<{ id: string }>(
         'INSERT INTO clinical_notes (tenant_id, patient_id, author_id, body) VALUES ($1,$2,$3,$4) RETURNING id',

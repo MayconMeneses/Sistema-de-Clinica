@@ -4,7 +4,7 @@ import type pg from 'pg';
 import { ZodError } from 'zod';
 
 export class HttpError extends Error {
-  constructor(public status: number, message: string, public code = 'error') { super(message); }
+  constructor(public status: number, message: string, public code = 'error', public extra?: Record<string, unknown>) { super(message); }
 }
 export const badRequest = (m: string) => new HttpError(400, m, 'bad_request');
 export const unauthorized = (m = 'Sessão inválida ou expirada.') => new HttpError(401, m, 'unauthorized');
@@ -16,7 +16,7 @@ export const sha256 = (s: string) => createHash('sha256').update(s).digest('hex'
 export const newSecret = () => randomBytes(32).toString('base64url');
 
 export function errorHandler(err: unknown, req: FastifyRequest, reply: FastifyReply) {
-  if (err instanceof HttpError) return reply.status(err.status).send({ error: err.code, message: err.message, requestId: req.id });
+  if (err instanceof HttpError) return reply.status(err.status).send({ ...(err.extra ?? {}), error: err.code, message: err.message, requestId: req.id });
   if (err instanceof ZodError) {
     const message = err.issues.map((i) => `${i.path.join('.') || 'corpo'}: ${i.message}`).join('; ');
     return reply.status(400).send({ error: 'validation', message, requestId: req.id });

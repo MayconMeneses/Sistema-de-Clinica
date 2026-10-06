@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { audit, clinicRoute } from '../context.js';
 import { APPT_FROM, APPT_SELECT } from './appointments.js';
+import { assertActive } from '../../modules/patients/family.js';
 import { badRequest, conflict, mapDbError, notFound } from '../http.js';
 
 const CAP = { cap: 'schedule.core' } as const;
@@ -125,6 +126,7 @@ export function scheduleRoutes(app: FastifyInstance) {
       notes: z.string().trim().max(300).nullish().transform((v) => v || null),
       priority: z.enum(['normal', 'priority']).default('normal'),
     }).parse(ctx.req.body);
+    await assertActive(ctx.tx, b.patientId);
     const dup = await ctx.tx.query(`SELECT 1 FROM waitlist_entries WHERE patient_id = $1 AND status = 'waiting' AND professional_id IS NOT DISTINCT FROM $2`, [b.patientId, b.professionalId]);
     if (dup.rowCount) throw conflict('Este paciente já está na lista de espera.');
     try {

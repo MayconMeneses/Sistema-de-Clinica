@@ -114,7 +114,7 @@ export function Agenda({ me }: { me: Me }) {
   );
 }
 
-function PatientPicker({ q, setQ, patientId, setPatientId, open }: { q: string; setQ: (v: string) => void; patientId: string; setPatientId: (v: string) => void; open: boolean }) {
+export function PatientPicker({ q, setQ, patientId, setPatientId, open }: { q: string; setQ: (v: string) => void; patientId: string; setPatientId: (v: string) => void; open: boolean }) {
   const found = useLoad(() => (open && q.trim().length >= 2 ? get<{ patients: { id: string; name: string }[] }>(`/api/patients?q=${encodeURIComponent(q.trim())}`) : Promise.resolve({ patients: [] })), [q, open]);
   return (
     <>

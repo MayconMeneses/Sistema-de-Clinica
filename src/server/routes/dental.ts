@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { audit, clinicRoute } from '../context.js';
+import { assertActive, family } from '../../modules/patients/family.js';
 import { badRequest, conflict, mapDbError, notFound } from '../http.js';
 
 const CAP = { cap: 'dental.odontogram' } as const;
@@ -20,8 +21,8 @@ export function dentalRoutes(app: FastifyInstance) {
     const { id } = idParam.parse(ctx.req.params);
     const r = await ctx.tx.query(
       `SELECT DISTINCT ON (tooth, COALESCE(surface, '')) tooth, surface, condition, note, created_at AS "createdAt"
-         FROM dental_findings WHERE patient_id = $1
-        ORDER BY tooth, COALESCE(surface, ''), seq DESC`, [id]);
+         FROM dental_findings WHERE patient_id = ANY($1::uuid[])
+        ORDER BY tooth, COALESCE(surface, ''), seq DESC`, [await family(ctx.tx, id)]);
     await audit(ctx, 'dental.read', 'patient', id);
     return { findings: r.rows };
   });
@@ -32,7 +33,7 @@ export function dentalRoutes(app: FastifyInstance) {
     const r = await ctx.tx.query(
       `SELECT f.id, f.surface, f.condition, f.note, f.created_at AS "createdAt", u.name AS "authorName"
          FROM dental_findings f JOIN users u ON u.tenant_id = f.tenant_id AND u.id = f.recorded_by
-        WHERE f.patient_id = $1 AND f.tooth = $2 ORDER BY f.seq DESC LIMIT 100`, [id, q.tooth]);
+        WHERE f.patient_id = ANY($1::uuid[]) AND f.tooth = $2 ORDER BY f.seq DESC LIMIT 100`, [await family(ctx.tx, id), q.tooth]);
     return { events: r.rows };
   });
 
@@ -45,6 +46,7 @@ export function dentalRoutes(app: FastifyInstance) {
       note: z.string().trim().max(500).nullish().transform((v) => v || null),
     }).parse(ctx.req.body);
     if (b.surface && !SURFACE_CONDITIONS.includes(b.condition)) throw badRequest('Esta condição se aplica ao dente inteiro, não a uma face.');
+    await assertActive(ctx.tx, id);
     try {
       const r = await ctx.tx.query<{ id: string }>(
         `INSERT INTO dental_findings (tenant_id, patient_id, tooth, surface, condition, note, recorded_by)
@@ -59,7 +61,7 @@ export function dentalRoutes(app: FastifyInstance) {
     const { id } = idParam.parse(ctx.req.params);
     const r = await ctx.tx.query(
       `SELECT id, tooth, procedure, price_cents::text AS "priceCents", priority, status, created_at AS "createdAt", completed_at AS "completedAt"
-         FROM dental_plan_items WHERE patient_id = $1 ORDER BY priority, created_at`, [id]);
+         FROM dental_plan_items WHERE patient_id = ANY($1::uuid[]) ORDER BY priority, created_at`, [await family(ctx.tx, id)]);
     const open = r.rows.filter((x) => x.status === 'planned' || x.status === 'in_progress');
     const totalOpen = open.reduce((acc, x) => acc + BigInt(x.priceCents), 0n);
     return { items: r.rows, openTotalCents: totalOpen.toString() };
@@ -73,6 +75,7 @@ export function dentalRoutes(app: FastifyInstance) {
       priceCents: z.number().int().min(0).max(100_000_000).default(0),
       priority: z.number().int().min(1).max(3).default(2),
     }).parse(ctx.req.body);
+    await assertActive(ctx.tx, id);
     try {
       const r = await ctx.tx.query<{ id: string }>(
         `INSERT INTO dental_plan_items (tenant_id, patient_id, tooth, procedure, price_cents, priority, created_by)

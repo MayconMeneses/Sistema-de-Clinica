@@ -1,7 +1,7 @@
 # Matriz de conformidade com o prompt mestre
 
 Legenda: ✅ atendido e testado localmente · 🟡 parcial · ⬜ não iniciado · ⛔ depende de decisão/terceiro · n/a não se aplica.
-Estado em v0.6.0. "Testado" = teste automatizado em PostgreSQL real (ver `npm run check`) ou E2E no navegador. Nada aqui declara conformidade legal/regulatória.
+Estado em v0.7.0. "Testado" = teste automatizado em PostgreSQL real (ver `npm run check`) ou E2E no navegador. Nada aqui declara conformidade legal/regulatória.
 
 | § | Requisito | Estado | Evidência / lacuna |
 |---|---|---|---|
@@ -21,7 +21,7 @@ Estado em v0.6.0. "Testado" = teste automatizado em PostgreSQL real (ver `npm ru
 | 8 | Papéis da clínica | 🟡 | 5 de 13 (dono, admin, recepção, profissional, financeiro); permissões novas: gestão da organização, horários/bloqueios, encaixe |
 | 8 | RBAC + ABAC, deny-by-default | 🟡 | RBAC ✅ deny-by-default ✅; ABAC só por permissão clínica (falta unidade/relacionamento/finalidade) |
 | 9 | Organização/unidades/salas/recursos | 🟡 | unidades, salas/cadeiras/equipamentos com API e tela (Gestão) ✅; endereço, contatos, horários da unidade, feriados da unidade, identidade visual, equipamentos com manutenção ⬜ |
-| 10 | Pacientes | 🟡 | cadastro, busca, alerta restrito, consentimento de comunicação versionado ✅; responsável/dependentes, anexos, duplicidade/mesclagem, exportação, privacidade ⬜ |
+| 10 | Pacientes | 🟡 | cadastro, busca, alerta restrito, consentimento de comunicação versionado, **responsáveis**, **aviso e revisão de duplicidade**, **mesclagem auditada** (histórico imutável preservado por alias), **exportação** respeitando permissões, **solicitações de privacidade** com prazo ✅; anexos/documentos, dependentes como cadastro ligado, identificadores adicionais, histórico de alterações campo a campo, origem do paciente/lead ⬜ |
 | 11 | Agenda | 🟡 | dia/profissional, conflito de profissional, paciente **e sala** decidido pelo banco (concorrência testada), horário de atendimento, encaixe, bloqueios (clínica/profissional/sala, validados no banco), séries semanais com conflito parcial, lista de espera, cancelar/reagendar/falta ✅; visão semanal/mensal, agenda por serviço, duração por serviço/profissional, sinal/pagamento antecipado, agendamento online, calendários externos ⬜ |
 | 12 | Recepção/jornada | 🟡 | chegada, prioridade, fila, chamada, em atendimento, conclusão com cobrança, tempo de espera, atualização automática ✅; pré-cadastro, triagem, formulários pendentes, atraso, checkout com pagamento, pesquisa, recall ⬜ |
 | 13 | Prontuário | 🟡 | evolução, rascunho, assinatura imutável, adendo, leitura auditada ✅; formulários, sinais vitais, prescrição, atestados, anexos, impressão ⬜ |
@@ -42,7 +42,7 @@ Estado em v0.6.0. "Testado" = teste automatizado em PostgreSQL real (ver `npm ru
 | 28 | Regras de dados | ✅ | UUID, UTC, centavos, imutabilidade, movimentos, conflito no banco; ⬜ estoque, retenção/descarte, tabela de anexos |
 | 29 | Autenticação/sessões | 🟡 | login, logout, troca de senha, MFA, revogação, expiração, rate limit ✅; convite, recuperação, lista de dispositivos, rotação ⬜ |
 | 30 | Segurança | 🟡 | RLS, CSP, CSRF, headers, validação, payload, logs sem dado de paciente, `npm audit` 0, varredura de segredos ✅; SAST, pentest, incidente, upload seguro (rota), rotação ⬜ |
-| 31 | LGPD | ⬜ | só consentimento de comunicação; exige revisão humana especializada |
+| 31 | LGPD | 🟡 | ferramentas: consentimento versionado, acesso/exportação, registro e prazo de solicitações do titular, trilha de auditoria, minimização nos logs; **faltam**: base legal por finalidade, retenção/descarte, anonimização, incidentes, RIPD, suboperadores, textos jurídicos. Exige revisão humana especializada; nada aqui declara conformidade |
 | 32 | Regras profissionais/interoperabilidade | ⛔ | validação humana necessária |
 | 33 | IA | ⬜ | nenhuma IA no produto (intencional) |
 | 34 | Observabilidade | 🟡 | logs estruturados, request id, health/ready ✅; métricas, traces, error tracking, alertas, runbooks ⬜ |

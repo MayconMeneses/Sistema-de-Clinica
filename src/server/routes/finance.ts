@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { audit, clinicRoute, type ClinicCtx } from '../context.js';
+import { assertActive, family } from '../../modules/patients/family.js';
 import { badRequest, mapDbError, notFound } from '../http.js';
 
 const FIN = { cap: 'finance.basic' } as const;
@@ -12,7 +13,7 @@ async function patientTotals(ctx: ClinicCtx, patientId: string) {
     `SELECT COALESCE(SUM(amount_cents) FILTER (WHERE kind='charge'),0)::text AS charged,
             COALESCE(SUM(amount_cents) FILTER (WHERE kind='payment'),0)::text AS paid,
             COALESCE(SUM(amount_cents) FILTER (WHERE kind='refund'),0)::text AS refunded
-       FROM financial_movements WHERE patient_id = $1`, [patientId]);
+       FROM financial_movements WHERE patient_id = ANY($1::uuid[])`, [await family(ctx.tx, patientId)]);
   const t = r.rows[0]!;
   const charged = BigInt(t.charged), paid = BigInt(t.paid), refunded = BigInt(t.refunded);
   return { charged, paid, refunded, balance: charged - paid + refunded, netPaid: paid - refunded };
@@ -23,7 +24,7 @@ export function financeRoutes(app: FastifyInstance) {
     const { id } = idParam.parse(ctx.req.params);
     const m = await ctx.tx.query(
       `SELECT id, kind, method, amount_cents::text AS "amountCents", note, created_at AS "createdAt", appointment_id AS "appointmentId"
-         FROM financial_movements WHERE patient_id = $1 ORDER BY created_at DESC LIMIT 200`, [id]);
+         FROM financial_movements WHERE patient_id = ANY($1::uuid[]) ORDER BY created_at DESC LIMIT 200`, [await family(ctx.tx, id)]);
     const t = await patientTotals(ctx, id);
     return { movements: m.rows, balanceCents: t.balance.toString(), chargedCents: t.charged.toString(), paidCents: t.netPaid.toString() };
   });
@@ -43,6 +44,7 @@ export function financeRoutes(app: FastifyInstance) {
     // Serializa movimentos do mesmo paciente: evita estorno duplo concorrente.
     const lock = await ctx.tx.query('SELECT 1 FROM patients WHERE id = $1 FOR UPDATE', [b.patientId]);
     if (!lock.rowCount) throw notFound('Paciente não encontrado.');
+    await assertActive(ctx.tx, b.patientId);
     if (b.idempotencyKey) {
       const dup = await ctx.tx.query<{ id: string }>('SELECT id FROM financial_movements WHERE idempotency_key = $1', [b.idempotencyKey]);
       if (dup.rows[0]) return { id: dup.rows[0].id, duplicate: true };

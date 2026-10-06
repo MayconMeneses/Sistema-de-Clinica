@@ -3,7 +3,7 @@ import { brl, dateTimeOf } from '../format';
 import { Badge, ErrorBox, Spinner, useLoad } from '../ui';
 
 export function Dashboard({ me }: { me: Me }) {
-  const d = useLoad(() => get<{ patients?: number; appointmentsToday?: number; waiting?: number }>('/api/dashboard'), []);
+  const d = useLoad(() => get<{ patients?: number; appointmentsToday?: number; waiting?: number; privacyOpen?: number; privacyOverdue?: number }>('/api/dashboard'), []);
   const has = (c: string) => me.entitlements.includes(c);
   const fin = useLoad(
     () => (has('finance.basic') && me.permissions.includes('finance.read')
@@ -16,6 +16,7 @@ export function Dashboard({ me }: { me: Me }) {
       {['owner', 'admin'].includes(me.user.role) && !me.mfaEnabled && (
         <div className="banner" role="note">Proteja a conta da clínica: ative a verificação em duas etapas no menu da sua conta (seu nome, no topo).</div>
       )}
+      {!!d.data?.privacyOpen && <div className="banner" role="note">{d.data.privacyOpen} solicitação(ões) de privacidade em aberto{d.data.privacyOverdue ? `, ${d.data.privacyOverdue} vencida(s)` : ''}. Veja em Gestão › Privacidade.</div>}
       {d.loading && <Spinner />}
       {d.error && <ErrorBox message={d.error} onRetry={d.reload} />}
       {d.data && (

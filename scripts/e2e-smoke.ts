@@ -209,7 +209,7 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
   const apiOk = async (r: { ok(): boolean; status(): number }, what: string) => { if (!r.ok()) problems.push(`API ${what} falhou: HTTP ${r.status()}`); };
   const mkPro = await ctx.request.post(`${BASE}/api/users`, { headers: H, data: { name: proName, email: `e2e-${stamp}@demo.demo`, role: 'professional', password: PW } });
   await apiOk(mkPro, 'criar profissional');
-  const mkPat = await ctx.request.post(`${BASE}/api/patients`, { headers: H, data: { name: patName, phone: '+5511955554444' } });
+  const mkPat = await ctx.request.post(`${BASE}/api/patients`, { headers: H, data: { name: patName, phone: `+55119${String(Date.now()).slice(-8)}`, confirmNotDuplicate: true } });
   await apiOk(mkPat, 'criar paciente');
   const patId = (await mkPat.json()).id as string;
   const proId = ((await (await ctx.request.get(`${BASE}/api/professionals`)).json()).professionals as { id: string; name: string }[]).find((p) => p.name === proName)!.id;
@@ -262,6 +262,56 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
   await wl.getByRole('button', { name: 'Remover da lista' }).click();
   await wl.waitFor({ state: 'detached' });
   must(true, 'agenda: paciente removido da lista de espera');
+
+  // Pacientes: aviso de duplicidade, responsáveis, privacidade/exportação e mesclagem
+  await page.getByRole('link', { name: 'Pacientes' }).click();
+  await page.getByRole('button', { name: 'Novo paciente' }).click();
+  await page.getByRole('dialog').getByLabel('Nome completo').fill('Maria Souza');
+  await page.getByRole('dialog').getByLabel('Telefone').fill('(11) 99999-0001');
+  await page.getByRole('dialog').getByRole('button', { name: 'Cadastrar paciente' }).click();
+  await page.getByText('Cadastros parecidos:').waitFor();
+  await page.getByText('mesmo telefone e primeiro nome').waitFor();
+  must(true, 'pacientes: cadastro parecido é avisado antes de criar duplicado');
+  await page.getByRole('dialog').getByRole('button', { name: 'Fechar' }).click();
+
+  await page.getByLabel('Buscar por nome, telefone ou documento').fill(patName);
+  await page.getByRole('link', { name: new RegExp(patName) }).click();
+  await page.getByRole('heading', { name: 'Responsáveis' }).waitFor();
+  await page.getByRole('region', { name: 'Responsáveis' }).getByRole('button', { name: 'Adicionar' }).click();
+  await page.getByRole('dialog').getByLabel('Nome', { exact: true }).fill('Mãe E2E');
+  await page.getByRole('dialog').getByLabel('Parentesco').fill('Mãe');
+  await page.getByRole('dialog').getByLabel('É o responsável legal').check();
+  await page.getByRole('dialog').getByRole('button', { name: 'Adicionar responsável' }).click();
+  await page.getByText('Responsável legal').waitFor();
+  must(true, 'pacientes: responsável legal cadastrado');
+
+  await page.getByRole('region', { name: 'Privacidade e dados' }).getByRole('button', { name: 'Registrar solicitação' }).click();
+  await page.getByRole('dialog').getByLabel('Tipo').selectOption({ label: 'Cópia / portabilidade' });
+  await page.getByRole('dialog').getByRole('button', { name: 'Registrar solicitação' }).click();
+  await page.getByText('Solicitação registrada.').waitFor();
+  const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Exportar dados do paciente' }).click()]);
+  const exported = JSON.parse(await (await import('node:fs/promises')).readFile((await download.path())!, 'utf8'));
+  must(exported.format === 'clinica-one/export/v1' && exported.records[0].name === patName && exported.guardians.length === 1, 'pacientes: exportação baixa o arquivo com os dados do paciente');
+  await page.getByRole('link', { name: 'Gestão' }).click();
+  await page.getByRole('tab', { name: 'Privacidade' }).click();
+  const req = page.getByRole('listitem').filter({ hasText: patName });
+  await req.getByRole('button', { name: 'Concluir' }).click();
+  await page.getByRole('dialog').getByLabel('Resposta dada ao titular').fill('Cópia entregue ao titular');
+  await page.getByRole('dialog').getByRole('button', { name: 'Concluir' }).click();
+  await req.waitFor({ state: 'detached' });
+  must(true, 'privacidade: solicitação concluída com resposta registrada');
+
+  const docNum = `9${String(Date.now()).slice(-10)}`;
+  for (const n of ['A', 'B']) await apiOk(await ctx.request.post(`${BASE}/api/patients`, { headers: H, data: { name: `Dup ${n} ${stamp}`, document: docNum, confirmNotDuplicate: true } }), `criar duplicado ${n}`);
+  await page.getByRole('link', { name: 'Pacientes' }).click();
+  await page.getByRole('button', { name: 'Possíveis duplicados' }).click();
+  const pair = page.getByRole('listitem').filter({ hasText: `Dup A ${stamp}` });
+  await pair.getByText('mesmo documento').waitFor();
+  await pair.getByRole('button', { name: `Manter “Dup A ${stamp}”` }).click();
+  await page.getByRole('dialog').getByLabel('Motivo da mesclagem').fill('Cadastro repetido (teste)');
+  await page.getByRole('dialog').getByRole('button', { name: 'Mesclar cadastros' }).click();
+  await pair.waitFor({ state: 'detached' });
+  must(true, 'pacientes: duplicados revisados e mesclados pela interface');
 
   // Gestão: unidade → sala → horário → bloqueio (e remoção com confirmação)
   await page.getByRole('link', { name: 'Gestão' }).click();
