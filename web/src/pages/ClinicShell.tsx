@@ -46,7 +46,7 @@ export function ClinicShell({ me, hash, onLogout, onRefresh }: { me: Me; hash: s
       <nav className="nav" aria-label="Principal">
         {visible.map((i) => (
           <a key={i.path} href={`#${i.path}`} aria-current={current === i.path ? 'page' : undefined}>
-            <span className="ico" aria-hidden="true">{i.ico}</span>{i.label}
+            <span className="ico" aria-hidden="true">{i.ico}</span><span className="lbl">{i.label}</span>
           </a>
         ))}
       </nav>
