@@ -5,7 +5,7 @@ import { Badge, Button, Empty, ErrorBox, Select, Sheet, Spinner, TextInput, useL
 import { Login } from './Login';
 
 interface Capability { code: string; description: string; globallyAvailable: boolean; dependsOn: string[] }
-interface Tenant { id: string; slug: string; name: string; status: string; planCode: string; createdAt: string; overrides: { capability: string; mode: 'grant' | 'block'; reason: string }[]; effective: string[] }
+interface Tenant { owner: { name: string; email: string; mfaEnabled: boolean } | null; id: string; slug: string; name: string; status: string; planCode: string; createdAt: string; overrides: { capability: string; mode: 'grant' | 'block'; reason: string }[]; effective: string[] }
 interface Overview { plans: { code: string; name: string }[]; capabilities: Capability[]; tenants: Tenant[] }
 const STATUS_TONE: Record<string, 'ok' | 'warn' | 'bad' | 'neutral'> = { active: 'ok', suspended: 'warn', closed: 'bad', provisioning: 'neutral' };
 const STATUS_TEXT: Record<string, string> = { active: 'Ativa', suspended: 'Suspensa', closed: 'Encerrada', provisioning: 'Em provisionamento' };
@@ -142,6 +142,20 @@ function TenantSheet({ tenant, data, onClose, onChanged }: { tenant: Tenant | nu
               {nextStatus === 'suspended' ? 'Suspender clínica' : 'Reativar clínica'}
             </Button>
           </div>
+        </>
+      )}
+
+      {tenant.owner && (
+        <>
+          <h3>Proprietário</h3>
+          <p className="small">{tenant.owner.name} · {tenant.owner.email} {tenant.owner.mfaEnabled ? <Badge tone="info">2 etapas ativa</Badge> : <Badge>2 etapas desativada</Badge>}</p>
+          {tenant.owner.mfaEnabled && (
+            <>
+              <p className="small muted">Se o proprietário perdeu o aparelho, redefina a verificação. Ele será desconectado. Requer justificativa e um código MFA seu (informe acima).</p>
+              <Button variant="secondary" busy={busy} disabled={!justified || code.length !== 6}
+                onClick={() => act(() => post(`/api/master/tenants/${tenant.id}/reset-owner-mfa`, { code, justification: why }), 'Verificação do proprietário redefinida.')}>Redefinir 2 etapas do proprietário</Button>
+            </>
+          )}
         </>
       )}
 

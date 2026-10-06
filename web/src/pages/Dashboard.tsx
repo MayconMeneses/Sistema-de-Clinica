@@ -13,6 +13,9 @@ export function Dashboard({ me }: { me: Me }) {
   return (
     <>
       <div className="page-head"><h1>Olá, {me.user.name.split(' ')[0]}</h1></div>
+      {['owner', 'admin'].includes(me.user.role) && !me.mfaEnabled && (
+        <div className="banner" role="note">Proteja a conta da clínica: ative a verificação em duas etapas no menu da sua conta (seu nome, no topo).</div>
+      )}
       {d.loading && <Spinner />}
       {d.error && <ErrorBox message={d.error} onRetry={d.reload} />}
       {d.data && (

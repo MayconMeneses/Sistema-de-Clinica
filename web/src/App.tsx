@@ -17,7 +17,7 @@ function ClinicApp({ hash }: { hash: string }) {
 
   if (me === undefined) return <main className="auth"><p className="loading" role="status">Carregando…</p></main>;
   if (me === null) return <Login mode="clinic" onDone={refresh} />;
-  return <ClinicShell me={me} hash={hash} onLogout={() => { sessionStorage.clear(); setMe(null); }} />;
+  return <ClinicShell me={me} hash={hash} onLogout={() => { sessionStorage.clear(); setMe(null); }} onRefresh={refresh} />;
 }
 
 export default function App() {

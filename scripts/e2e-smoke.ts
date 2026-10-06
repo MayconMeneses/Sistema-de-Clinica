@@ -3,10 +3,11 @@
  *   E2E_URL=http://127.0.0.1:3100 E2E_SHOTS=/caminho npm run e2e
  * Falha em: erro de console/CSP, requisição 5xx, rolagem horizontal no celular.
  */
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { chromium, type Page } from 'playwright-core';
 import pg from 'pg';
 import { totpAt } from '../src/server/auth/totp.js';
+import { decryptSecret } from '../src/server/crypto.js';
 
 const BASE = process.env.E2E_URL ?? 'http://127.0.0.1:3000';
 const SHOTS = process.env.E2E_SHOTS ?? 'e2e-shots';
@@ -31,7 +32,8 @@ async function noHorizontalScroll(page: Page, label: string) {
 function step(msg: string) { console.log(`✓ ${msg}`); }
 function must(cond: unknown, msg: string) { if (!cond) { problems.push(`ASSERT: ${msg}`); console.log(`✗ ${msg}`); } else step(msg); }
 
-const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH ?? '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--no-sandbox'] });
+const OPT = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH ?? (existsSync(OPT) ? OPT : undefined), args: ['--no-sandbox'] });
 
 // ---------------- CELULAR: clínica ----------------
 {
@@ -80,6 +82,7 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
   await page.getByRole('link', { name: /Beatriz Lima/ }).click();
   await page.getByRole('tab', { name: 'Dados' }).waitFor();
   must(!(await page.getByRole('tab', { name: 'Prontuário' }).count()), 'recepção NÃO vê aba Prontuário');
+  must(!(await page.getByRole('tab', { name: 'Odontograma' }).count()), 'recepção NÃO vê aba Odontograma');
   must(await page.getByRole('tab', { name: 'Financeiro' }).isVisible(), 'recepção vê aba Financeiro');
   await page.getByRole('tab', { name: 'Financeiro' }).click();
   await page.getByRole('button', { name: 'Registrar lançamento' }).click();
@@ -118,6 +121,32 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
   must(await page.getByRole('button', { name: 'Registrar adendo' }).first().isVisible(), 'registro assinado oferece adendo');
   await noHorizontalScroll(page, 'prontuario');
   await page.screenshot({ path: `${SHOTS}/07-prontuario-mobile.png` });
+
+  await page.getByRole('tab', { name: 'Odontograma' }).click();
+  await page.getByRole('button', { name: /^Dente 16/ }).waitFor();
+  must((await page.getByRole('button', { name: /^Dente \d\d/ }).count()) === 32, 'odontograma permanente mostra 32 dentes');
+  await noHorizontalScroll(page, 'odontograma');
+  await page.getByRole('button', { name: /^Dente 16/ }).click();
+  await page.getByLabel('Onde').selectOption('O');
+  await page.getByLabel('Condição').selectOption('caries');
+  await page.getByRole('button', { name: 'Registrar achado' }).click();
+  await page.getByText('Dente 16: achado registrado.').waitFor();
+  await page.getByRole('heading', { name: 'Histórico do dente' }).waitFor();
+  must(true, 'profissional registra cárie na face oclusal do dente 16');
+  await page.screenshot({ path: `${SHOTS}/07b-dente-sheet-mobile.png` });
+  await page.getByRole('button', { name: 'Fechar' }).click();
+  await page.getByRole('button', { name: /^Dente 16: Cárie \(O\)/ }).waitFor();
+  must(true, 'odontograma reflete o achado (texto, não só cor)');
+  await page.getByRole('button', { name: 'Decídua' }).click();
+  must((await page.getByRole('button', { name: /^Dente \d\d/ }).count()) === 20, 'dentição decídua mostra 20 dentes');
+  await page.getByRole('button', { name: 'Permanente' }).click();
+  await page.getByRole('button', { name: 'Adicionar item' }).click();
+  await page.getByLabel('Procedimento').fill('Restauração em resina');
+  await page.getByLabel('Valor (R$)').fill('250,00');
+  await page.getByRole('button', { name: 'Adicionar ao plano' }).click();
+  await page.getByText('Restauração em resina').first().waitFor();
+  must(true, 'profissional adiciona item ao plano de tratamento');
+  await page.screenshot({ path: `${SHOTS}/07c-odontograma-mobile.png`, fullPage: true });
   await ctx.close();
 }
 
@@ -140,10 +169,74 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
   await page.getByText('Maria Souza').first().waitFor();
   await page.screenshot({ path: `${SHOTS}/09-agenda-desktop.png` });
 
+  // MFA da clínica: ativar, sair, entrar exigindo código, desativar (usa a administradora e deixa a conta como estava)
+  {
+    const mctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, locale: 'pt-BR' });
+    const mp = await mctx.newPage();
+    watch(mp, 'mfa');
+    const email = 'anaadmin@demo.demo';
+    const login = async (code?: string) => {
+      await mp.goto(BASE);
+      await mp.getByLabel('Identificador da clínica').fill('demo');
+      await mp.getByLabel('E-mail').fill(email);
+      await mp.getByLabel('Senha').fill(PW);
+      await mp.getByRole('button', { name: 'Entrar' }).click();
+      if (code !== undefined) {
+        await mp.getByLabel('Código do autenticador (6 dígitos)').fill(code);
+        await mp.getByRole('button', { name: 'Entrar' }).click();
+      }
+    };
+    await login();
+    await mp.getByRole('navigation', { name: 'Principal' }).waitFor();
+    await mp.getByRole('button', { name: /Conta de/ }).click();
+    await mp.getByRole('button', { name: 'Ativar', exact: true }).click();
+    await mp.getByLabel('Confirme sua senha').fill(PW);
+    await mp.getByRole('button', { name: 'Continuar' }).click();
+    const secret = (await mp.locator('code').innerText()).trim();
+    must(/^[A-Z2-7]{32}$/.test(secret), 'MFA: chave de configuração exibida');
+    must(await mp.getByRole('link', { name: 'Abrir no aplicativo' }).getAttribute('href').then((h) => !!h && h.startsWith('otpauth://')), 'MFA: link otpauth:// para abrir o app autenticador no celular');
+    await mp.getByLabel('Código de 6 dígitos').fill(totpAt(secret, Date.now() - 30000));
+    await mp.getByRole('button', { name: 'Ativar verificação' }).click();
+    await mp.getByText('Verificação em duas etapas ativada.').waitFor();
+    must(true, 'MFA da clínica ativado pela interface');
+    await mp.getByRole('button', { name: 'Fechar' }).click();
+    await mp.getByRole('button', { name: /Conta de/ }).click();
+    await mp.getByRole('button', { name: 'Sair' }).click();
+    await login();
+    await mp.getByLabel('Código do autenticador (6 dígitos)').waitFor();
+    must(/código do aplicativo/i.test(await mp.getByRole('alert').innerText()), 'MFA: login pede o código quando a conta tem 2 etapas');
+    await mp.getByLabel('Código do autenticador (6 dígitos)').fill('000000');
+    await mp.getByRole('button', { name: 'Entrar' }).click();
+    await mp.getByText(/Código ou credenciais inválidos/).waitFor();
+    must(true, 'MFA: código errado é recusado');
+    await mp.getByLabel('Código do autenticador (6 dígitos)').fill(totpAt(secret, Date.now()));
+    await mp.getByRole('button', { name: 'Entrar' }).click();
+    await mp.getByRole('navigation', { name: 'Principal' }).waitFor();
+    must(true, 'MFA: login com código válido');
+    await mp.getByRole('button', { name: /Conta de/ }).click();
+    await mp.getByRole('button', { name: 'Desativar', exact: true }).click();
+    await mp.getByLabel('Senha', { exact: true }).fill(PW);
+    await mp.getByLabel('Código de 6 dígitos').fill(totpAt(secret, Date.now() + 30000));
+    await mp.getByRole('button', { name: 'Desativar verificação' }).click();
+    await mp.getByText('Verificação em duas etapas desativada.').waitFor();
+    must(true, 'MFA da clínica desativado (conta restaurada)');
+    await mctx.close();
+  }
+
   // Master
   const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL_PLATFORM ?? 'postgres://clinica_platform:dev_platform_pw@127.0.0.1:5432/clinica_one' });
-  const secret = (await pool.query<{ totp_secret: string }>("SELECT totp_secret FROM platform_users WHERE email = 'master@demo.local'")).rows[0]!.totp_secret;
+  const row = (await pool.query<{ totp_secret: string; totp_last_step: string | null }>("SELECT totp_secret, totp_last_step FROM platform_users WHERE email = 'master@demo.local'")).rows[0]!;
   await pool.end();
+  const secret = decryptSecret(row.totp_secret);
+  // Cada passo TOTP vale uma vez: escolhe o próximo ainda não usado (aguarda se a janela estiver esgotada).
+  const last = row.totp_last_step ? Number(row.totp_last_step) : -1;
+  let masterStep: number | undefined;
+  while (masterStep === undefined) {
+    const cur = Math.floor(Date.now() / 30000);
+    masterStep = [cur, cur + 1].find((st) => st > last);
+    if (masterStep === undefined) await new Promise((r) => setTimeout(r, 5000));
+  }
+  const masterCode = totpAt(secret, masterStep * 30000);
   const m = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, locale: 'pt-BR' });
   const mp = await m.newPage();
   watch(mp, 'master-mobile');
@@ -154,7 +247,7 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
   await mp.getByRole('button', { name: 'Entrar' }).click();
   await mp.getByRole('alert').waitFor();
   must(/inválidos/.test(await mp.getByRole('alert').innerText()), 'Master recusa código MFA inválido');
-  await mp.getByLabel('Código MFA (6 dígitos)').fill(totpAt(secret, Date.now()));
+  await mp.getByLabel('Código MFA (6 dígitos)').fill(masterCode);
   await mp.getByRole('button', { name: 'Entrar' }).click();
   await mp.getByRole('heading', { name: 'Clínicas' }).waitFor();
   must(true, 'Master entra com senha + MFA');

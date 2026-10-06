@@ -8,6 +8,7 @@ import { appPool, platformPool } from './db.js';
 import { errorHandler } from './http.js';
 import { appointmentRoutes } from './routes/appointments.js';
 import { authRoutes } from './routes/auth.js';
+import { dentalRoutes } from './routes/dental.js';
 import { financeRoutes } from './routes/finance.js';
 import { masterRoutes } from './routes/master.js';
 import { noteRoutes } from './routes/notes.js';
@@ -30,7 +31,9 @@ export async function buildApp(opts: { logger?: boolean } = {}) {
     // CSRF: cookies são SameSite=Strict; além disso mutações exigem cabeçalho customizado e Origin coerente.
     if (req.url.startsWith('/api/') && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
       const origin = req.headers.origin;
-      const bad = req.headers['x-requested-with'] !== 'clinica-one' || (origin && new URL(origin).host !== req.headers.host);
+      let originOk = true;
+      if (origin) { try { originOk = new URL(origin).host === req.headers.host; } catch { originOk = false; } } // "null" ou malformado => bloqueia
+      const bad = req.headers['x-requested-with'] !== 'clinica-one' || !originOk;
       if (bad) return reply.status(403).send({ error: 'csrf', message: 'Requisição bloqueada.', requestId: req.id });
     }
   });
@@ -60,6 +63,7 @@ export async function buildApp(opts: { logger?: boolean } = {}) {
   patientRoutes(app);
   appointmentRoutes(app);
   noteRoutes(app);
+  dentalRoutes(app);
   financeRoutes(app);
   teamRoutes(app);
 

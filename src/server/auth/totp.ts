@@ -40,14 +40,20 @@ export function totpAt(secret: string, timeMs: number): string {
   return code.toString().padStart(6, '0');
 }
 
-export function verifyTotp(secret: string, code: string, nowMs = Date.now()): boolean {
-  if (!/^\d{6}$/.test(code)) return false;
-  let ok = false;
+/** Retorna o passo (contador de 30s) que bateu com o código, ou null. Janela ±1 passo. */
+export function matchTotpStep(secret: string, code: string, nowMs = Date.now()): number | null {
+  if (!/^\d{6}$/.test(code)) return null;
+  const base = Math.floor(nowMs / 30000);
+  let matched: number | null = null;
   for (const drift of [-1, 0, 1]) {
-    const expected = Buffer.from(totpAt(secret, nowMs + drift * 30000));
-    if (timingSafeEqual(expected, Buffer.from(code))) ok = true;
+    const expected = Buffer.from(totpAt(secret, (base + drift) * 30000));
+    if (timingSafeEqual(expected, Buffer.from(code))) matched = base + drift;
   }
-  return ok;
+  return matched;
+}
+
+export function verifyTotp(secret: string, code: string, nowMs = Date.now()): boolean {
+  return matchTotpStep(secret, code, nowMs) !== null;
 }
 
 export function otpauthUri(secret: string, account: string): string {

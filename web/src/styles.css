@@ -148,3 +148,23 @@ input[aria-invalid='true'] { border-color: var(--danger); }
 button.list-item { text-align: left; font: inherit; color: inherit; cursor: pointer; display: block; width: 100%; }
 button.list-item:hover { border-color: var(--accent); }
 .sheet-body h3 { margin-top: 1.4rem; }
+
+/* ---------- odontograma ---------- */
+.arch { display: grid; gap: .75rem; }
+.quad-label { margin: 0 0 .25rem; }
+.teeth { display: grid; gap: 4px; }
+.teeth.n8 { grid-template-columns: repeat(8, minmax(0, 1fr)); }
+.teeth.n5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.tooth { min-height: 56px; min-width: 0; padding: 2px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 10px; cursor: pointer; }
+.tooth b { font-size: .95rem; line-height: 1; }
+.tooth span { font-size: .7rem; font-weight: 800; line-height: 1; }
+.cond-caries { background: var(--danger-soft); border-color: var(--danger); }
+.cond-restoration, .cond-crown, .cond-endodontic, .cond-implant { background: var(--info-soft); border-color: var(--info); }
+.cond-sealant { background: var(--ok-soft); border-color: var(--ok); }
+.cond-fracture, .cond-extraction_planned { background: var(--warn-soft); border-color: var(--warn); }
+.cond-missing { background: var(--surface-2); border-style: dashed; color: var(--muted); }
+.cond-healthy { background: var(--surface); }
+.legend { list-style: none; margin: .5rem 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: .4rem; }
+.tooth-chip { display: inline-grid; place-items: center; min-width: 28px; height: 28px; padding: 0 4px; border: 1px solid var(--border); border-radius: 8px; font-size: .75rem; font-weight: 800; }
+details summary { cursor: pointer; font-weight: 700; min-height: 44px; display: flex; align-items: center; }
+@media (min-width: 640px) { .arch { grid-template-columns: 1fr 1fr; } }

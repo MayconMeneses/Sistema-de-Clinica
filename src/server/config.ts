@@ -7,7 +7,16 @@ function url(name: string, devDefault: string): string {
   return devDefault; // credencial de DESENVOLVIMENTO local (ver scripts/dev-db-setup.sh)
 }
 
+function secretKey(): string {
+  const v = process.env.DATA_ENCRYPTION_KEY;
+  if (v) return v;
+  if (isProd) throw new Error('DATA_ENCRYPTION_KEY é obrigatória em produção (32 bytes em base64)');
+  // Chave FIXA de desenvolvimento: não protege nada em produção. Gere a real com: openssl rand -base64 32
+  return Buffer.from('dev-only-key-do-not-use-in-prod!!').subarray(0, 32).toString('base64');
+}
+
 export const config = {
+  dataEncryptionKey: secretKey(),
   isProd,
   port: Number(process.env.PORT ?? 3000),
   host: process.env.HOST ?? '0.0.0.0',

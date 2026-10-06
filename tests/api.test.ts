@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { hashPassword } from '../src/server/auth/password.js';
 import { generateSecret, totpAt } from '../src/server/auth/totp.js';
+import { encryptSecret } from '../src/server/crypto.js';
 
 process.env.DATABASE_URL_APP ??= 'postgres://clinica_app:dev_app_pw@127.0.0.1:5432/clinica_one';
 process.env.DATABASE_URL_PLATFORM ??= 'postgres://clinica_platform:dev_platform_pw@127.0.0.1:5432/clinica_one';
@@ -46,17 +47,27 @@ async function tenant(label: string, plan = 'completa') {
   return { id, slug, owner, mk };
 }
 
+/** Cada código TOTP vale uma vez: o login usa o passo anterior; code() entrega passos 0, +1 (janela ±1). */
 async function master() {
   const email = `m-${randomUUID().slice(0, 6)}@master.test`;
   const secret = generateSecret();
-  await platformPool.query('INSERT INTO platform_users (email, name, password_hash, totp_secret) VALUES ($1,$2,$3,$4)', [email, 'Op', await hashPassword(PW), secret]);
+  await platformPool.query('INSERT INTO platform_users (email, name, password_hash, totp_secret) VALUES ($1,$2,$3,$4)', [email, 'Op', await hashPassword(PW), encryptSecret(secret)]);
   const c = new Client('ms');
-  const r = await c.post('/api/master/login', { email, password: PW, code: totpAt(secret, Date.now()) });
+  const r = await c.post('/api/master/login', { email, password: PW, code: totpAt(secret, Date.now() - 30000) });
   expect(r.statusCode).toBe(200);
-  return { c, email, secret, code: () => totpAt(secret, Date.now()) };
+  let n = 0;
+  return { c, email, secret, code: () => totpAt(secret, Date.now() + 30000 * n++) };
 }
 
 beforeAll(async () => { app = await buildApp(); });
+
+// Códigos TOTP são calculados no teste e verificados pelo servidor logo depois. Se a virada do passo de 30s
+// cair entre os dois, o código do "passo anterior" sai da janela ±1 e o teste falha sem defeito do produto.
+// Começar cada teste na primeira parte do passo elimina essa corrida.
+beforeEach(async () => {
+  const pos = Date.now() % 30000;
+  if (pos > 25000) await new Promise((r) => setTimeout(r, 30000 - pos + 300));
+});
 afterAll(async () => { await app.close(); });
 
 describe('autenticação da clínica', () => {
@@ -326,5 +337,187 @@ describe('Painel Master', () => {
   it('Master não lê pacientes da clínica (control plane sem acesso a dados clínicos)', async () => {
     const r = await platformPool.query('SELECT count(*) FROM patients').catch((e) => e);
     expect(String(r.message ?? '')).toMatch(/permission denied/);
+  });
+});
+
+describe('MFA, anti-replay e segredos', () => {
+  it('Master: código já usado no login não vale de novo (replay)', async () => {
+    const email = `r-${randomUUID().slice(0, 6)}@master.test`;
+    const secret = generateSecret();
+    await platformPool.query('INSERT INTO platform_users (email, name, password_hash, totp_secret) VALUES ($1,$2,$3,$4)', [email, 'Op', await hashPassword(PW), encryptSecret(secret)]);
+    const code = totpAt(secret, Date.now());
+    expect((await new Client('ms').post('/api/master/login', { email, password: PW, code })).statusCode).toBe(200);
+    expect((await new Client('ms').post('/api/master/login', { email, password: PW, code })).statusCode).toBe(401);
+  });
+
+  it('segredos TOTP ficam cifrados em repouso (Master e clínica)', async () => {
+    const m = await master();
+    const row = await platformPool.query('SELECT totp_secret FROM platform_users WHERE email = $1', [m.email]);
+    expect(row.rows[0].totp_secret).toMatch(/^v1:/);
+    expect(row.rows[0].totp_secret).not.toContain(m.secret);
+  });
+
+  it('MFA da clínica: ativar, exigir no login, bloquear replay e desativar', async () => {
+    const t = await tenant('mfa');
+    const email = `dono@${t.slug}.test`;
+    expect((await t.owner.post('/api/me/mfa/setup', { password: 'senha-errada-x' })).statusCode).toBe(400);
+    const setup = await t.owner.post('/api/me/mfa/setup', { password: PW });
+    expect(setup.statusCode).toBe(200);
+    const { secret, otpauth } = setup.json() as { secret: string; otpauth: string };
+    expect(otpauth).toContain('otpauth://totp/');
+    expect((await t.owner.post('/api/me/mfa/enable', { code: '000000' })).statusCode).toBe(400);
+    expect((await t.owner.post('/api/me/mfa/enable', { code: totpAt(secret, Date.now() - 30000) })).statusCode).toBe(200);
+    expect((await t.owner.get('/api/me')).json().mfaEnabled).toBe(true);
+
+    const login = (code?: string) => new Client().post('/api/auth/login', { clinic: t.slug, email, password: PW, ...(code ? { code } : {}) });
+    const noCode = await login();
+    expect(noCode.statusCode).toBe(401);
+    expect(noCode.json().error).toBe('mfa_required');
+    expect((await login('000000')).statusCode).toBe(401);
+    const good = totpAt(secret, Date.now());
+    expect((await login(good)).statusCode).toBe(200);
+    expect((await login(good)).statusCode).toBe(401); // replay do mesmo código
+
+    expect((await t.owner.post('/api/me/mfa/disable', { password: PW, code: totpAt(secret, Date.now() + 30000) })).statusCode).toBe(200);
+    expect((await login()).statusCode).toBe(200);
+  });
+
+  it('Master recupera o MFA do proprietário sem ler dados; sessões antigas caem', async () => {
+    const t = await tenant('recover');
+    const { secret } = (await t.owner.post('/api/me/mfa/setup', { password: PW })).json() as { secret: string };
+    await t.owner.post('/api/me/mfa/enable', { code: totpAt(secret, Date.now() - 30000) });
+    const m = await master();
+    expect((await m.c.post(`/api/master/tenants/${t.id}/reset-owner-mfa`, { code: '000000', justification: 'proprietário perdeu o celular' })).statusCode).toBe(403);
+    expect((await m.c.post(`/api/master/tenants/${t.id}/reset-owner-mfa`, { code: m.code(), justification: 'proprietário perdeu o celular' })).statusCode).toBe(200);
+    expect((await t.owner.get('/api/me')).statusCode).toBe(401); // sessão antiga invalidada
+    const relog = await new Client().post('/api/auth/login', { clinic: t.slug, email: `dono@${t.slug}.test`, password: PW });
+    expect(relog.statusCode).toBe(200);
+    const audit = (await m.c.get('/api/master/audit')).json().events as { action: string; tenantId: string }[];
+    expect(audit.some((e) => e.action === 'tenant.owner_mfa_reset' && e.tenantId === t.id)).toBe(true);
+  });
+
+  it('administrador redefine o MFA de um colaborador', async () => {
+    const t = await tenant('adminreset');
+    const rec = await t.mk('receptionist', 'rita');
+    const { secret } = (await rec.c.post('/api/me/mfa/setup', { password: PW })).json() as { secret: string };
+    await rec.c.post('/api/me/mfa/enable', { code: totpAt(secret, Date.now() - 30000) });
+    const users = (await t.owner.get('/api/users')).json().users as { id: string; email: string; mfaEnabled: boolean }[];
+    const u = users.find((x) => x.email === rec.email)!;
+    expect(u.mfaEnabled).toBe(true);
+    expect((await t.owner.patch(`/api/users/${u.id}`, { resetMfa: true })).statusCode).toBe(200);
+    expect((await new Client().post('/api/auth/login', { clinic: t.slug, email: rec.email, password: PW })).statusCode).toBe(200);
+  });
+
+  it('limitador de falhas fica no banco e guarda só hash da chave', async () => {
+    const rows = await platformPool.query('SELECT key_hash FROM rate_limits');
+    expect(rows.rowCount).toBeGreaterThan(0);
+    for (const r of rows.rows) expect(r.key_hash).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('Origin malformado ("null") é bloqueado sem erro 500', async () => {
+    const t = await tenant('origin');
+    const r = await t.owner.req('POST', '/api/patients', { name: 'Fulano' }, { origin: 'null' });
+    expect(r.statusCode).toBe(403);
+  });
+});
+
+describe('odontologia', () => {
+  async function setup(plan = 'completa') {
+    const t = await tenant('dent', plan);
+    const dr = await t.mk('professional', 'dr');
+    const pid = (await dr.c.post('/api/patients', { name: 'Paciente Dental' })).json().id as string;
+    return { t, dr, pid };
+  }
+
+  it('odontograma guarda histórico; estado atual é o último evento por dente/face', async () => {
+    const { dr, pid } = await setup();
+    const add = (b: object) => dr.c.post(`/api/patients/${pid}/odontogram/findings`, b);
+    expect((await add({ tooth: '16', surface: 'O', condition: 'caries' })).statusCode).toBe(200);
+    expect((await add({ tooth: '16', surface: 'O', condition: 'restoration', note: 'Resina composta' })).statusCode).toBe(200);
+    expect((await add({ tooth: '16', surface: 'M', condition: 'caries' })).statusCode).toBe(200);
+    expect((await add({ tooth: '46', condition: 'missing' })).statusCode).toBe(200);
+    const cur = (await dr.c.get(`/api/patients/${pid}/odontogram`)).json().findings as { tooth: string; surface: string | null; condition: string }[];
+    expect(cur.find((f) => f.tooth === '16' && f.surface === 'O')!.condition).toBe('restoration');
+    expect(cur.find((f) => f.tooth === '16' && f.surface === 'M')!.condition).toBe('caries');
+    expect(cur.find((f) => f.tooth === '46' && f.surface === null)!.condition).toBe('missing');
+    const hist = (await dr.c.get(`/api/patients/${pid}/odontogram/history?tooth=16`)).json().events as { condition: string; surface: string }[];
+    expect(hist).toHaveLength(3);
+    expect(hist.filter((e) => e.surface === 'O').map((e) => e.condition)).toEqual(['restoration', 'caries']); // mais recente primeiro
+  });
+
+  it('valida dente (FDI), face e condição; dentição decídua é aceita', async () => {
+    const { dr, pid } = await setup();
+    const add = (b: object) => dr.c.post(`/api/patients/${pid}/odontogram/findings`, b);
+    expect((await add({ tooth: '19', condition: 'caries', surface: 'O' })).statusCode).toBe(400);
+    expect((await add({ tooth: '56', condition: 'missing' })).statusCode).toBe(400);
+    expect((await add({ tooth: '55', surface: 'O', condition: 'caries' })).statusCode).toBe(200); // decíduo
+    expect((await add({ tooth: '16', surface: 'O', condition: 'missing' })).statusCode).toBe(400); // ausência é do dente inteiro
+    expect((await add({ tooth: '16', condition: 'inventada' })).statusCode).toBe(400);
+  });
+
+  it('eventos do odontograma são imutáveis até para o owner do banco', async () => {
+    const { dr, pid } = await setup();
+    await dr.c.post(`/api/patients/${pid}/odontogram/findings`, { tooth: '11', condition: 'crown' });
+    const { ownerPool } = await import('./helpers.js');
+    const client = await ownerPool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('ALTER TABLE dental_findings NO FORCE ROW LEVEL SECURITY');
+      await expect(client.query("UPDATE dental_findings SET condition = 'healthy'")).rejects.toThrow(/append-only/);
+      await client.query('ROLLBACK');
+    } finally { await client.query('ROLLBACK').catch(() => undefined); client.release(); }
+  });
+
+  it('só profissional registra; recepção e administrador não acessam; plano Solo não inclui odontologia', async () => {
+    const { t, dr, pid } = await setup();
+    const rec = await t.mk('receptionist', 'rita');
+    const adm = await t.mk('admin', 'ana');
+    expect((await rec.c.get(`/api/patients/${pid}/odontogram`)).statusCode).toBe(403);
+    expect((await adm.c.get(`/api/patients/${pid}/odontogram`)).statusCode).toBe(403);
+    expect((await t.owner.post(`/api/patients/${pid}/odontogram/findings`, { tooth: '11', condition: 'crown' })).statusCode).toBe(403); // dono lê, não registra
+    expect((await t.owner.get(`/api/patients/${pid}/odontogram`)).statusCode).toBe(200);
+    expect((await dr.c.get(`/api/patients/${pid}/odontogram`)).statusCode).toBe(200);
+
+    const solo = await setup('solo');
+    const r = await solo.dr.c.get(`/api/patients/${solo.pid}/odontogram`);
+    expect(r.statusCode).toBe(403);
+    expect(r.json().error).toBe('capability_unavailable');
+  });
+
+  it('clínica B não vê odontograma de paciente da A', async () => {
+    const a = await setup();
+    const b = await setup();
+    await a.dr.c.post(`/api/patients/${a.pid}/odontogram/findings`, { tooth: '21', condition: 'implant' });
+    const r = await b.dr.c.get(`/api/patients/${a.pid}/odontogram`);
+    expect(r.json().findings).toHaveLength(0);
+    expect((await b.dr.c.post(`/api/patients/${a.pid}/odontogram/findings`, { tooth: '21', condition: 'implant' })).statusCode).toBe(400); // FK composta
+  });
+
+  it('plano de tratamento: total em aberto, transições, cobrança única e finalizado é imutável', async () => {
+    const { t, dr, pid } = await setup();
+    const mk = async (procedure: string, priceCents: number, tooth?: string) =>
+      (await dr.c.post(`/api/patients/${pid}/dental-plan`, { procedure, priceCents, tooth, priority: 1 })).json().id as string;
+    const a = await mk('Restauração', 25000, '16');
+    const b = await mk('Limpeza', 12050);
+    let plan = (await dr.c.get(`/api/patients/${pid}/dental-plan`)).json();
+    expect(plan.openTotalCents).toBe('37050');
+    expect((await dr.c.patch(`/api/dental-plan/${a}`, { status: 'in_progress' })).statusCode).toBe(200);
+    const done = await dr.c.patch(`/api/dental-plan/${a}`, { status: 'done', charge: true });
+    expect(done.json().charged).toBe(true);
+    expect((await dr.c.patch(`/api/dental-plan/${a}`, { status: 'done', charge: true })).statusCode).toBe(409); // já finalizado: sem 2ª cobrança
+    expect((await dr.c.patch(`/api/dental-plan/${a}`, { status: 'cancelled' })).statusCode).toBe(409);
+    expect((await dr.c.patch(`/api/dental-plan/${b}`, { status: 'cancelled' })).statusCode).toBe(200);
+    plan = (await dr.c.get(`/api/patients/${pid}/dental-plan`)).json();
+    expect(plan.openTotalCents).toBe('0');
+    const fin = (await t.owner.get(`/api/patients/${pid}/finance`)).json();
+    expect(fin.balanceCents).toBe('25000');
+    expect((fin.movements as { kind: string }[]).filter((m) => m.kind === 'charge')).toHaveLength(1);
+  });
+
+  it('leitura do odontograma é auditada', async () => {
+    const { t, dr, pid } = await setup();
+    await dr.c.get(`/api/patients/${pid}/odontogram`);
+    const events = (await t.owner.get('/api/audit')).json().events as { action: string }[];
+    expect(events.some((e) => e.action === 'dental.read')).toBe(true);
   });
 });

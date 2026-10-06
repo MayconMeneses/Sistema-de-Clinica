@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 import pg from 'pg';
 import { hashPassword } from '../src/server/auth/password.js';
 import { generateSecret, otpauthUri } from '../src/server/auth/totp.js';
+import { decryptSecret, encryptSecret } from '../src/server/crypto.js';
 
 if (process.env.NODE_ENV === 'production') throw new Error('Seed de demonstração não roda em produção.');
 
@@ -33,10 +34,10 @@ const hash = await hashPassword(DEMO_PASSWORD);
 // Master
 let secret: string;
 const existing = await platform.query<{ totp_secret: string }>('SELECT totp_secret FROM platform_users WHERE email = $1', [MASTER_EMAIL]);
-if (existing.rows[0]) secret = existing.rows[0].totp_secret;
+if (existing.rows[0]) secret = decryptSecret(existing.rows[0].totp_secret);
 else {
   secret = generateSecret();
-  await platform.query('INSERT INTO platform_users (email, name, password_hash, totp_secret) VALUES ($1,$2,$3,$4)', [MASTER_EMAIL, 'Operador Demo', hash, secret]);
+  await platform.query('INSERT INTO platform_users (email, name, password_hash, totp_secret) VALUES ($1,$2,$3,$4)', [MASTER_EMAIL, 'Operador Demo', hash, encryptSecret(secret)]);
 }
 
 async function createClinic(slug: string, name: string, plan: string) {
