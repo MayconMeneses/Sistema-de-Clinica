@@ -2,9 +2,9 @@ import type pg from 'pg';
 import { CHANNELS, type Channel } from '../../integrations/types.js';
 
 export interface EnqueueCtx { tx: pg.PoolClient; tenantId: string; entitlements: Set<string> }
-export type ApptMessageKind = 'confirmation' | 'cancelled' | 'rescheduled';
+export type ApptMessageKind = 'confirmation' | 'cancelled' | 'rescheduled' | 'reminder_only';
 
-const TEMPLATE: Record<ApptMessageKind, string> = {
+const TEMPLATE: Record<Exclude<ApptMessageKind, 'reminder_only'>, string> = {
   confirmation: 'appointment_confirmation', cancelled: 'appointment_cancelled', rescheduled: 'appointment_rescheduled',
 };
 const PURPOSE: Record<Channel, string> = { whatsapp: 'communication_whatsapp', email: 'communication_email', sms: 'communication_sms' };
@@ -41,6 +41,11 @@ export async function enqueueAppointmentMessages(ctx: EnqueueCtx, a: { id: strin
   const epoch = Math.floor(new Date(a.startsAt).getTime() / 1000);
   const base = { patientId: a.patientId, appointmentId: a.id, startsAt: new Date(a.startsAt).toISOString() };
   const channel = await pickChannel(ctx.tx, a.patientId);
+  if (kind === 'reminder_only') {   // ocorrências seguintes de uma série: só o lembrete (a confirmação vai uma vez, na primeira)
+    const remindAt = new Date(new Date(a.startsAt).getTime() - 24 * 3600_000);
+    if (channel && remindAt.getTime() > Date.now()) await insert(ctx, `appt:${a.id}:reminder:${epoch}`, { ...base, channel, template: 'appointment_reminder' }, { at: remindAt });
+    return;
+  }
   if (!channel) {
     await insert(ctx, `appt:${a.id}:${kind}:${epoch}`, { ...base, channel: null, template: TEMPLATE[kind] }, { status: 'skipped', reason: 'no_consent' });
     return;

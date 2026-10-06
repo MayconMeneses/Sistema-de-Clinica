@@ -5,6 +5,7 @@ import { Button, Sheet, TextInput, useToast } from '../ui';
 import { MfaPanel } from './Mfa';
 import { Agenda } from './Agenda';
 import { Dashboard } from './Dashboard';
+import { Reception } from './Reception';
 import { FinancePage } from './Finance';
 import { PatientDetail, Patients } from './Patients';
 import { Team } from './Team';
@@ -17,9 +18,10 @@ export function ClinicShell({ me, hash, onLogout, onRefresh }: { me: Me; hash: s
   const items: NavItem[] = [
     { path: '/', label: 'Início', ico: '⌂', show: true },
     { path: '/agenda', label: 'Agenda', ico: '▦', show: has('schedule.core') && can('agenda.read') },
+    { path: '/recepcao', label: 'Recepção', ico: '☎', show: has('schedule.core') && can('agenda.read') },
     { path: '/pacientes', label: 'Pacientes', ico: '☺', show: has('patient.registry') && can('patients.read') },
     { path: '/financeiro', label: 'Financeiro', ico: '$', show: has('finance.basic') && can('finance.read') },
-    { path: '/equipe', label: 'Equipe', ico: '⚙', show: can('users.manage') },
+    { path: '/equipe', label: 'Gestão', ico: '⚙', show: can('users.manage') || can('org.manage') || can('schedule.manage') },
   ];
   const visible = items.filter((i) => i.show);
   const [menu, setMenu] = useState(false);
@@ -29,9 +31,10 @@ export function ClinicShell({ me, hash, onLogout, onRefresh }: { me: Me; hash: s
   let page;
   if (patientMatch) page = <PatientDetail id={patientMatch[1]!} me={me} />;
   else if (current === '/agenda' && visible.some((i) => i.path === '/agenda')) page = <Agenda me={me} />;
+  else if (current === '/recepcao' && visible.some((i) => i.path === '/recepcao')) page = <Reception canWrite={can('agenda.write')} />;
   else if (current === '/pacientes' && visible.some((i) => i.path === '/pacientes')) page = <Patients me={me} />;
   else if (current === '/financeiro' && visible.some((i) => i.path === '/financeiro')) page = <FinancePage />;
-  else if (current === '/equipe' && visible.some((i) => i.path === '/equipe')) page = <Team />;
+  else if (current === '/equipe' && visible.some((i) => i.path === '/equipe')) page = <Team permissions={me.permissions} />;
   else page = <Dashboard me={me} />;
 
   return (

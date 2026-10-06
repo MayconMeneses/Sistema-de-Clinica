@@ -33,7 +33,7 @@ export const ROLE_LABEL: Record<string, string> = {
   owner: 'Proprietário', admin: 'Administrador', receptionist: 'Recepção', professional: 'Profissional', finance: 'Financeiro',
 };
 export const STATUS_LABEL: Record<string, string> = {
-  scheduled: 'Agendado', confirmed: 'Confirmado', checked_in: 'Na recepção', completed: 'Concluído', cancelled: 'Cancelado', no_show: 'Faltou',
+  scheduled: 'Agendado', confirmed: 'Confirmado', checked_in: 'Na recepção', called: 'Chamado', in_service: 'Em atendimento', completed: 'Concluído', cancelled: 'Cancelado', no_show: 'Faltou',
 };
 export const METHOD_LABEL: Record<string, string> = { pix: 'Pix', card: 'Cartão', cash: 'Dinheiro' };
 export const KIND_LABEL: Record<string, string> = { charge: 'Cobrança', payment: 'Pagamento', refund: 'Estorno' };

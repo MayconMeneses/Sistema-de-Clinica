@@ -1,6 +1,6 @@
 # Clínica One — plataforma SaaS de gestão clínica
 
-**Versão 0.5.0 · funcional em ambiente de desenvolvimento · NÃO pronta para produção nem para dados reais de pacientes.**
+**Versão 0.6.0 · funcional em ambiente de desenvolvimento · NÃO pronta para produção nem para dados reais de pacientes.**
 Interface em português do Brasil, **mobile-first** (menu inferior no celular, barra lateral no desktop, instalável na tela inicial).
 Convênios/TISS estão bloqueados globalmente nesta fase.
 
@@ -26,7 +26,7 @@ Para testar no celular, abra `http://<IP-da-máquina>:3000` na mesma rede (cooki
 
 | Comando | O que faz |
 |---|---|
-| `npm run check` | typecheck (servidor + web) e 104 testes (PostgreSQL real) |
+| `npm run check` | typecheck (servidor + web) e 120 testes (PostgreSQL real) |
 | `npm run drill` | backup → restore em banco temporário → valida dados, RLS e isolamento (reprova se algo divergir) |
 | `npm run build` | typecheck + build do frontend em `web/dist` |
 | `npm run e2e` | smoke no Chromium em celular e desktop (`E2E_URL=http://127.0.0.1:3000`), com screenshots |
@@ -39,7 +39,9 @@ Para testar no celular, abra `http://<IP-da-máquina>:3000` na mesma rede (cooki
 
 **Sistema da clínica** — login por clínica; sessões server-side revogáveis; troca de senha encerra outras sessões; suspender usuário derruba sessões na hora.
 - Pacientes: cadastro, busca, edição, alerta clínico (visível só à equipe clínica).
-- Agenda: dia/profissional, agendar, confirmar, chegada, concluir, faltou, reagendar, cancelar com motivo. **Conflito de horário decidido pelo PostgreSQL** (restrição de exclusão), inclusive sob concorrência.
+- Agenda: dia/profissional, agendar, confirmar, reagendar, cancelar com motivo, faltou. **Conflito de profissional, paciente e sala decidido pelo PostgreSQL** (restrição de exclusão), inclusive sob concorrência. Horário de atendimento por profissional (fora dele só como **encaixe**, pela recepção), **bloqueios** (feriado, folga, manutenção; o banco recusa agendar sobre eles), **séries semanais** (tudo-ou-nada ou pulando datas com conflito) e **lista de espera**.
+- Recepção: fila do dia com chegada (com prioridade), chamada, atendimento e conclusão; atualiza sozinha; concluir gera a cobrança uma única vez.
+- Gestão: unidades, salas/cadeiras/equipamentos, horários e bloqueios.
 - Prontuário: rascunho, assinatura, **assinado é imutável**, correção só por adendo com justificativa, leitura auditada, texto preservado no aparelho até salvar.
 - Financeiro particular: cobrança, pagamento (Pix/cartão/dinheiro), estorno limitado ao pago, saldo derivado de movimentos imutáveis, valores em centavos, lançamento idempotente; concluir consulta gera a cobrança uma única vez.
 - Equipe: criar usuário, suspender/reativar, redefinir senha e 2 etapas, trilha de auditoria.

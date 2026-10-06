@@ -33,7 +33,7 @@ export function errorHandler(err: unknown, req: FastifyRequest, reply: FastifyRe
 /** Erros do PostgreSQL com significado de negócio. */
 export function mapDbError(err: unknown): never {
   const e = err as { code?: string; constraint?: string; message?: string };
-  if (e.code === '23P01') throw conflict('Horário em conflito com outro agendamento.');
+  if (e.code === '23P01') throw conflict(/bloqueado/.test(e.message ?? '') ? 'Horário bloqueado na agenda.' : /resource/.test(e.constraint ?? '') ? 'A sala ou equipamento já está ocupado neste horário.' : /availability/.test(e.constraint ?? '') ? 'Este horário se sobrepõe a outro já cadastrado.' : 'Horário em conflito com outro agendamento.');
   if (e.code === '23505') throw conflict('Registro duplicado.');
   if (e.code === '23503') throw badRequest('Referência inválida.');
   if (e.code === '42501' && /imutável|append-only|excluído/.test(e.message ?? '')) throw conflict('Registro imutável: use um adendo/novo movimento.');

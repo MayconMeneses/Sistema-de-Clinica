@@ -54,7 +54,8 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
   await page.getByRole('navigation', { name: 'Principal' }).waitFor();
   must(true, 'recepção entra na clínica');
   must(await page.getByRole('link', { name: 'Agenda' }).isVisible(), 'menu inferior mostra Agenda');
-  must(!(await page.getByRole('link', { name: 'Equipe' }).count()), 'recepção NÃO vê Equipe');
+  must(await page.getByRole('link', { name: 'Recepção' }).isVisible(), 'menu mostra a fila de Recepção');
+  must(await page.getByRole('link', { name: 'Gestão' }).isVisible(), 'recepção vê Gestão (horários e bloqueios)');
   await noHorizontalScroll(page, 'dashboard');
   await page.screenshot({ path: `${SHOTS}/02-inicio-mobile.png` });
 
@@ -68,6 +69,7 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
   await page.getByLabel('Paciente').fill('Joao');
   await page.getByLabel('Paciente').fill('João');
   await page.getByRole('button', { name: 'João Pereira' }).click();
+  await page.getByRole('dialog').getByLabel('Profissional').selectOption({ label: 'Dr. Paulo Profissional' });
   await page.getByLabel('Horário').fill('09:30'); // conflita com a consulta de Maria? (09:00-09:50 do profissional) → deve dar conflito
   await page.getByRole('button', { name: 'Agendar consulta' }).click();
   await page.getByRole('alert').waitFor();
@@ -107,6 +109,7 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
   await page.getByRole('button', { name: 'Novo agendamento' }).click();
   await page.getByLabel('Paciente').fill('Beatriz');
   await page.getByRole('button', { name: 'Beatriz Lima' }).click();
+  await page.getByRole('dialog').getByLabel('Profissional').selectOption({ label: 'Dr. Paulo Profissional' });
   const future = new Date(Date.now() + (7 + (Math.floor(Date.now() / 60000) % 50)) * 86400000).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
   await page.getByLabel('Data').fill(future);
   await page.getByLabel('Horário').fill('14:00');
@@ -194,10 +197,105 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
   await page.getByLabel('Senha').fill(PW);
   await page.getByRole('button', { name: 'Entrar' }).click();
   await page.getByRole('navigation', { name: 'Principal' }).waitFor();
-  await page.getByRole('link', { name: 'Equipe' }).click();
+  await page.getByRole('link', { name: 'Gestão' }).click();
   await page.getByText('Ana Admin').waitFor();
   must(true, 'dono vê a equipe');
   await page.screenshot({ path: `${SHOTS}/08-equipe-desktop.png` });
+
+  // ---- Agenda e recepção (dados novos a cada execução: profissional e paciente exclusivos) ----
+  const H = { 'x-requested-with': 'clinica-one', 'content-type': 'application/json' };
+  const stamp = Date.now().toString(36);
+  const proName = `Dr. E2E ${stamp}`, patName = `Paciente E2E ${stamp}`, unitName = `Unidade E2E ${stamp}`, roomName = `Sala ${stamp}`;
+  const apiOk = async (r: { ok(): boolean; status(): number }, what: string) => { if (!r.ok()) problems.push(`API ${what} falhou: HTTP ${r.status()}`); };
+  const mkPro = await ctx.request.post(`${BASE}/api/users`, { headers: H, data: { name: proName, email: `e2e-${stamp}@demo.demo`, role: 'professional', password: PW } });
+  await apiOk(mkPro, 'criar profissional');
+  const mkPat = await ctx.request.post(`${BASE}/api/patients`, { headers: H, data: { name: patName, phone: '+5511955554444' } });
+  await apiOk(mkPat, 'criar paciente');
+  const patId = (await mkPat.json()).id as string;
+  const proId = ((await (await ctx.request.get(`${BASE}/api/professionals`)).json()).professionals as { id: string; name: string }[]).find((p) => p.name === proName)!.id;
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+  await apiOk(await ctx.request.post(`${BASE}/api/appointments`, { headers: H, data: { patientId: patId, professionalId: proId, startsAt: new Date(`${today}T09:00:00-03:00`).toISOString(), endsAt: new Date(`${today}T09:30:00-03:00`).toISOString(), priceCents: 12000 } }), 'agendar hoje');
+
+  // Recepção: chegou com prioridade → chamar → iniciar → concluir
+  await page.getByRole('link', { name: 'Recepção' }).click();
+  const arriving = page.getByRole('listitem').filter({ hasText: patName });
+  await arriving.getByRole('button', { name: 'Chegou com prioridade' }).click();
+  await page.getByRole('heading', { name: /Fila de espera \(\d+\)/ }).waitFor();
+  const queued = page.getByRole('listitem').filter({ hasText: patName });
+  await queued.locator('.badge', { hasText: 'Prioridade' }).waitFor();
+  must(true, 'recepção: paciente entra na fila com prioridade');
+  await queued.getByRole('button', { name: 'Chamar' }).click();
+  await queued.locator('.badge', { hasText: 'Chamado' }).waitFor();
+  must(true, 'recepção: paciente chamado');
+  await queued.getByRole('button', { name: 'Iniciar atendimento' }).click();
+  await page.getByRole('heading', { name: 'Em atendimento (1)' }).waitFor().catch(async () => { await page.getByRole('heading', { name: /Em atendimento \(\d+\)/ }).waitFor(); });
+  const serving = page.getByRole('listitem').filter({ hasText: patName });
+  await serving.getByRole('button', { name: 'Concluir atendimento' }).click();
+  await page.getByText('Atendimento concluído.').waitFor();
+  must(true, 'recepção: atendimento concluído (cobrança gerada)');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await noHorizontalScroll(page, 'recepcao-mobile');
+  await page.screenshot({ path: `${SHOTS}/08b-recepcao-mobile.png`, fullPage: true });
+  await page.setViewportSize({ width: 1280, height: 800 });
+
+  // Agenda: série semanal pela interface (3 consultas) e lista de espera
+  await page.getByRole('link', { name: 'Agenda' }).click();
+  await page.getByRole('button', { name: 'Novo agendamento' }).click();
+  await page.getByLabel('Paciente').fill(patName);
+  await page.getByRole('button', { name: patName }).click();
+  await page.getByRole('dialog').getByLabel('Profissional').selectOption({ label: proName });
+  const future = new Date(Date.now() + 60 * 86400000).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+  await page.getByLabel('Data').fill(future);
+  await page.getByLabel('Horário').fill('10:00');
+  await page.getByLabel('Repetir semanalmente').check();
+  await page.getByLabel('Quantas consultas no total').fill('3');
+  await page.getByRole('button', { name: 'Agendar série' }).click();
+  await page.getByText('3 consultas agendadas.').waitFor();
+  must(true, 'agenda: série semanal de 3 consultas criada');
+  await page.getByRole('region', { name: /Lista de espera/ }).getByRole('button', { name: 'Adicionar' }).click();
+  await page.getByRole('dialog').getByLabel('Paciente').fill(patName);
+  await page.getByRole('dialog').getByRole('button', { name: patName }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Adicionar à lista' }).click();
+  const wl = page.getByRole('region', { name: /Lista de espera/ }).getByRole('listitem').filter({ hasText: patName });
+  await wl.waitFor();
+  must(true, 'agenda: paciente entra na lista de espera');
+  await wl.getByRole('button', { name: 'Remover da lista' }).click();
+  await wl.waitFor({ state: 'detached' });
+  must(true, 'agenda: paciente removido da lista de espera');
+
+  // Gestão: unidade → sala → horário → bloqueio (e remoção com confirmação)
+  await page.getByRole('link', { name: 'Gestão' }).click();
+  await page.getByRole('tab', { name: 'Unidades e salas' }).click();
+  await page.getByRole('button', { name: 'Nova unidade' }).click();
+  await page.getByLabel('Nome da unidade').fill(unitName);
+  await page.getByRole('dialog').getByRole('button', { name: 'Criar unidade' }).click();
+  await page.getByText(unitName).waitFor();
+  await page.getByRole('button', { name: 'Nova sala ou equipamento' }).click();
+  await page.getByRole('dialog').getByLabel('Unidade').selectOption({ label: unitName });
+  await page.getByRole('dialog').getByLabel('Nome').fill(roomName);
+  await page.getByRole('dialog').getByRole('button', { name: 'Cadastrar' }).click();
+  await page.getByText(`Sala: ${roomName}`).waitFor();
+  must(true, 'gestão: unidade e sala cadastradas');
+  await page.getByRole('tab', { name: 'Horários' }).click();
+  await page.getByRole('button', { name: 'Adicionar horário' }).click();
+  await page.getByRole('dialog').getByLabel('Profissional').selectOption({ label: proName });
+  await page.getByRole('dialog').getByLabel('Dia da semana').selectOption({ label: 'Segunda' });
+  await page.getByRole('dialog').getByRole('button', { name: 'Adicionar horário' }).click();
+  await page.getByRole('listitem').filter({ hasText: proName }).getByText('Segunda · 08:00–12:00').waitFor();
+  must(true, 'gestão: horário de atendimento cadastrado');
+  await page.getByRole('tab', { name: 'Bloqueios' }).click();
+  await page.getByRole('button', { name: 'Novo bloqueio' }).click();
+  await page.getByRole('dialog').getByLabel('Início (data)').fill('2032-01-01');
+  await page.getByRole('dialog').getByLabel('Fim (data)').fill('2032-01-01');
+  await page.getByRole('dialog').getByLabel('Motivo').fill(`Feriado E2E ${stamp}`);
+  await page.getByRole('dialog').getByRole('button', { name: 'Criar bloqueio' }).click();
+  const blk = page.getByRole('listitem').filter({ hasText: `Feriado E2E ${stamp}` });
+  await blk.waitFor();
+  must(true, 'gestão: bloqueio de agenda criado');
+  page.once('dialog', (d) => void d.accept());
+  await blk.getByRole('button', { name: 'Remover bloqueio' }).click();
+  await blk.waitFor({ state: 'detached' });
+  must(true, 'gestão: bloqueio removido com confirmação');
   await page.getByRole('link', { name: 'Agenda' }).click();
   await page.getByText('Maria Souza').first().waitFor();
   await page.screenshot({ path: `${SHOTS}/09-agenda-desktop.png` });

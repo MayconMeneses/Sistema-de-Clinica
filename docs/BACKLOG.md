@@ -22,8 +22,9 @@ Legenda: ✅ IMPLEMENTADO e testado localmente · 🟡 PARCIAL · ⬜ PLANEJADO
 
 ## Fase 2 — Operação clínica essencial
 - ✅ Pacientes, agenda com conflito transacional, prontuário com assinatura/adendo, financeiro particular
-- 🟡 Recepção (check-in simples; falta fila, triagem, formulários, sala)
-- ⬜ Unidades/salas/recursos, responsáveis/dependentes, consentimentos, anexos, documentos, recorrência, lista de espera, caixa (abertura/fechamento), merge de pacientes
+- ✅ Unidades/salas/equipamentos, horário de atendimento, encaixe, bloqueios, séries semanais, lista de espera, fila da recepção (chegada→chamada→atendimento→conclusão)
+- 🟡 Recepção (falta triagem, formulários pendentes, checkout com pagamento)
+- ⬜ Responsáveis/dependentes, anexos, documentos, caixa (abertura/fechamento), merge de pacientes, visão semanal/mensal da agenda
 
 ## Fase 3
 - ✅ Odontograma com histórico imutável e plano de tratamento com cobrança

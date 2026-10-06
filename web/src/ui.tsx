@@ -96,7 +96,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<{ id: number; msg: string; tone: 'ok' | 'bad' }[]>([]);
   const push = useCallback((msg: string, tone: 'ok' | 'bad' = 'ok') => {
     const id = Date.now() + Math.random();
-    setItems((s) => [...s, { id, msg, tone }]);
+    setItems((s) => [...s, { id, msg, tone }].slice(-3)); // no máximo 3 avisos visíveis
     setTimeout(() => setItems((s) => s.filter((i) => i.id !== id)), 4500);
   }, []);
   return (
