@@ -27,7 +27,20 @@ function watch(page: Page, label: string) {
 }
 async function noHorizontalScroll(page: Page, label: string) {
   const over = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-  if (over > 1) problems.push(`[${label}] rolagem horizontal de ${over}px`);
+  if (over > 1) {
+    const who = await page.evaluate(() => [...document.querySelectorAll('body *')].filter((e) => e.getBoundingClientRect().right > window.innerWidth + 1)
+      .map((e) => `${e.tagName.toLowerCase()}.${(e as HTMLElement).className || '-'}`).slice(0, 5));
+    problems.push(`[${label}] rolagem horizontal de ${over}px (elementos: ${who.join(', ')})`);
+  }
+}
+
+/** Navega pelo menu principal; no celular, itens extras ficam atrás de "Mais". */
+async function go(page: Page, name: string) {
+  const nav = page.getByRole('navigation', { name: 'Principal' });
+  const link = nav.getByRole('link', { name, exact: true });
+  if (await link.isVisible()) { await link.click(); return; }
+  await nav.getByRole('link', { name: 'Mais', exact: true }).click();
+  await page.getByRole('main').getByRole('link', { name: new RegExp(name) }).click();
 }
 function step(msg: string) { console.log(`✓ ${msg}`); }
 function must(cond: unknown, msg: string) { if (!cond) { problems.push(`ASSERT: ${msg}`); console.log(`✗ ${msg}`); } else step(msg); }
@@ -55,7 +68,7 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
   must(true, 'recepção entra na clínica');
   must(await page.getByRole('link', { name: 'Agenda' }).isVisible(), 'menu inferior mostra Agenda');
   must(await page.getByRole('link', { name: 'Recepção' }).isVisible(), 'menu mostra a fila de Recepção');
-  must(await page.getByRole('link', { name: 'Gestão' }).isVisible(), 'recepção vê Gestão (horários e bloqueios)');
+  must(await page.getByRole('navigation', { name: 'Principal' }).getByRole('link', { name: 'Mais', exact: true }).isVisible(), 'menu inferior agrupa o restante em "Mais" no celular');
   await noHorizontalScroll(page, 'dashboard');
   await page.screenshot({ path: `${SHOTS}/02-inicio-mobile.png` });
   // Menu inferior: nenhum rótulo visível pode ficar cortado em celulares estreitos (360px é a largura Android mais comum).
@@ -71,7 +84,7 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
   }
   await page.setViewportSize({ width: 390, height: 844 });
 
-  await page.getByRole('link', { name: 'Agenda' }).click();
+  await go(page, 'Agenda');
   await page.getByText('Maria Souza').first().waitFor();
   must(true, 'agenda lista consultas do dia');
   await noHorizontalScroll(page, 'agenda');
@@ -105,7 +118,7 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
   await page.screenshot({ path: `${SHOTS}/04-agenda-conflito-mobile.png` });
   await page.getByRole('button', { name: 'Fechar' }).click();
 
-  await page.getByRole('link', { name: 'Pacientes' }).click();
+  await go(page, 'Pacientes');
   await page.getByText('Beatriz Lima').waitFor();
   await noHorizontalScroll(page, 'pacientes');
   await page.screenshot({ path: `${SHOTS}/05-pacientes-mobile.png` });
@@ -133,7 +146,7 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
   await wa.getByText('Autorizado', { exact: true }).first().waitFor();
   must(true, 'recepção registra a autorização de WhatsApp do paciente');
   await page.screenshot({ path: `${SHOTS}/06b-consentimento-mobile.png`, fullPage: true });
-  await page.getByRole('link', { name: 'Agenda' }).click();
+  await go(page, 'Agenda');
   await page.getByRole('button', { name: 'Novo agendamento' }).click();
   await page.getByLabel('Paciente').fill('Beatriz');
   await page.getByRole('button', { name: 'Beatriz Lima' }).click();
@@ -149,7 +162,7 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
   }
   if (!booked) throw new Error(`agendamento futuro não confirmou. Alertas na tela: ${JSON.stringify(await page.getByRole('alert').allInnerTexts())}`);
   must(true, 'agendamento futuro criado');
-  await page.getByRole('link', { name: 'Pacientes' }).click();
+  await go(page, 'Pacientes');
   await page.getByRole('link', { name: /Beatriz Lima/ }).click();
   await page.getByRole('tab', { name: 'Mensagens' }).click();
   // A mais recente aparece primeiro; ela precisa sair da fila e ficar "Enviada" (a tela se atualiza sozinha).
@@ -175,7 +188,7 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
   await page.getByRole('button', { name: 'Entrar' }).click();
   await page.getByRole('navigation', { name: 'Principal' }).waitFor();
 
-  await page.getByRole('link', { name: 'Financeiro' }).click();
+  await go(page, 'Financeiro');
   await page.getByRole('heading', { name: 'Caixa' }).waitFor();
   if (await page.getByRole('button', { name: 'Abrir caixa' }).count()) { // idempotente: o caixa pode ter ficado aberto de uma execução anterior
     await page.getByRole('button', { name: 'Abrir caixa' }).click();
@@ -189,7 +202,7 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
   await page.screenshot({ path: `${SHOTS}/08-caixa-mobile.png`, fullPage: true });
 
   // cobrança → pedido de desconto → aprovação
-  await page.getByRole('link', { name: 'Pacientes' }).click();
+  await go(page, 'Pacientes');
   await page.getByRole('link', { name: /Beatriz Lima/ }).click();
   await page.getByRole('tab', { name: 'Financeiro' }).click();
   await page.getByRole('button', { name: 'Registrar lançamento' }).click();
@@ -203,7 +216,7 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
   await page.getByRole('button', { name: 'Enviar pedido' }).click();
   await page.getByText('Pedido enviado para aprovação.').waitFor();
   must(true, 'pedido de desconto enviado para aprovação');
-  await page.getByRole('link', { name: 'Financeiro' }).click();
+  await go(page, 'Financeiro');
   await page.getByRole('heading', { name: 'Descontos' }).waitFor();
   await page.getByRole('button', { name: 'Aprovar' }).first().click();
   await page.getByText('Desconto aprovado.').waitFor();
@@ -219,7 +232,7 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
   must(await page.getByText(/sem diferença/i).first().isVisible(), 'fechamento sem diferença');
 
   // recibo
-  await page.getByRole('link', { name: 'Pacientes' }).click();
+  await go(page, 'Pacientes');
   await page.getByRole('link', { name: /Beatriz Lima/ }).click();
   await page.getByRole('tab', { name: 'Financeiro' }).click();
   await page.getByRole('link', { name: /Ver recibo/ }).first().click();
@@ -227,6 +240,69 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
   must(await page.getByText(/não substitui nota fiscal/).isVisible(), 'recibo informa que não é documento fiscal');
   await noHorizontalScroll(page, 'recibo');
   await page.screenshot({ path: `${SHOTS}/08c-recibo-mobile.png` });
+
+  // Estoque: item com mínimo, entrada, alerta de estoque baixo, saída e histórico
+  const itemName = `Luva e2e ${Date.now()}`;
+  await go(page, 'Estoque');
+  await page.getByRole('heading', { name: 'Estoque' }).waitFor();
+  await page.getByRole('button', { name: 'Novo item' }).first().click();
+  await page.getByLabel('Nome', { exact: true }).fill(itemName);
+  await page.getByLabel('Estoque mínimo').fill('5');
+  await page.getByRole('button', { name: 'Salvar item' }).click();
+  await page.getByText('Item salvo.').waitFor();
+  const row = page.getByRole('listitem').filter({ hasText: itemName });
+  await row.getByRole('button', { name: 'Entrada' }).click();
+  await page.getByLabel(/^Quantidade/).fill('3');
+  await page.getByRole('dialog').getByRole('button', { name: 'Registrar entrada' }).click();
+  await page.getByText('Entrada registrada.').waitFor();
+  await row.getByText('Baixo', { exact: true }).waitFor();
+  must(true, 'estoque: entrada abaixo do mínimo mostra o alerta "Baixo"');
+  await row.getByRole('button', { name: 'Saída' }).click();
+  await page.getByLabel(/^Quantidade/).fill('9');
+  await page.getByRole('dialog').getByRole('button', { name: 'Registrar saída' }).click();
+  await page.getByRole('alert').filter({ hasText: /Saldo insuficiente/ }).waitFor();
+  must(true, 'estoque: saída maior que o saldo é recusada');
+  await page.getByRole('button', { name: 'Fechar' }).click();
+  await row.getByRole('button', { name: 'Histórico' }).click();
+  await page.getByRole('dialog').getByText('Entrada').first().waitFor();
+  await noHorizontalScroll(page, 'estoque');
+  await page.screenshot({ path: `${SHOTS}/09-estoque-mobile.png` });
+  await page.getByRole('button', { name: 'Fechar' }).click();
+
+  // CRM: lead → contatado → anotação → conversão em paciente
+  const leadName = `Lead E2E ${Date.now()}`;
+  await go(page, 'CRM');
+  await page.getByRole('heading', { name: 'CRM' }).waitFor();
+  await page.getByRole('button', { name: 'Novo lead' }).first().click();
+  await page.getByLabel('Nome', { exact: true }).fill(leadName);
+  await page.getByLabel('Telefone').fill('(11) 97777-6543');
+  await page.getByRole('dialog').getByRole('button', { name: 'Cadastrar lead' }).click();
+  await page.getByText('Lead cadastrado.').waitFor();
+  const lead = page.getByRole('listitem').filter({ hasText: leadName });
+  await lead.getByRole('button', { name: 'Contatado' }).click();
+  await page.getByText('Marcado como contatado.').waitFor();
+  await lead.getByRole('button', { name: 'Anotar' }).click();
+  await page.getByLabel('O que aconteceu').fill('Ligou pedindo orçamento de clareamento');
+  await page.getByRole('dialog').getByRole('button', { name: 'Salvar anotação' }).click();
+  await page.getByText('Anotação salva.').waitFor();
+  await lead.getByRole('button', { name: 'Histórico' }).click();
+  await page.getByRole('dialog').getByText('Anotação').first().waitFor();
+  must(true, 'CRM: histórico do lead registra a anotação');
+  await noHorizontalScroll(page, 'crm');
+  await page.screenshot({ path: `${SHOTS}/10-crm-mobile.png` });
+  await page.getByRole('button', { name: 'Fechar' }).click();
+  await lead.getByRole('button', { name: 'Virou paciente' }).click();
+  await page.getByRole('heading', { name: leadName }).waitFor();
+  must(true, 'CRM: lead convertido abre a ficha do novo paciente');
+
+  // Indicadores
+  await go(page, 'Indicadores');
+  await page.getByRole('heading', { name: 'Indicadores' }).waitFor();
+  await page.getByText('Taxa de falta', { exact: true }).first().waitFor();
+  await page.getByRole('heading', { name: 'CRM' }).waitFor();
+  must(true, 'indicadores mostram atendimentos, financeiro e CRM');
+  await noHorizontalScroll(page, 'indicadores');
+  await page.screenshot({ path: `${SHOTS}/11-indicadores-mobile.png`, fullPage: true });
   await ctx.close();
 }
 
@@ -241,7 +317,7 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
   await page.getByLabel('Senha').fill(PW);
   await page.getByRole('button', { name: 'Entrar' }).click();
   await page.getByRole('navigation', { name: 'Principal' }).waitFor();
-  await page.getByRole('link', { name: 'Pacientes' }).click();
+  await go(page, 'Pacientes');
   await page.getByRole('link', { name: /Carlos Mendes/ }).click();
   await page.getByRole('tab', { name: 'Prontuário' }).click();
   const marker = `Evolução e2e ${Date.now()}`;
@@ -321,7 +397,7 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
   await page.getByLabel('Senha').fill(PW);
   await page.getByRole('button', { name: 'Entrar' }).click();
   await page.getByRole('navigation', { name: 'Principal' }).waitFor();
-  await page.getByRole('link', { name: 'Gestão' }).click();
+  await go(page, 'Gestão');
   await page.getByText('Ana Admin').waitFor();
   must(true, 'dono vê a equipe');
   await page.screenshot({ path: `${SHOTS}/08-equipe-desktop.png` });
@@ -341,7 +417,7 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
   await apiOk(await ctx.request.post(`${BASE}/api/appointments`, { headers: H, data: { patientId: patId, professionalId: proId, startsAt: new Date(`${today}T09:00:00-03:00`).toISOString(), endsAt: new Date(`${today}T09:30:00-03:00`).toISOString(), priceCents: 12000 } }), 'agendar hoje');
 
   // Recepção: chegou com prioridade → chamar → iniciar → concluir
-  await page.getByRole('link', { name: 'Recepção' }).click();
+  await go(page, 'Recepção');
   const arriving = page.getByRole('listitem').filter({ hasText: patName });
   await arriving.getByRole('button', { name: 'Chegou com prioridade' }).click();
   await page.getByRole('heading', { name: /Fila de espera \(\d+\)/ }).waitFor();
@@ -363,7 +439,7 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
   await page.setViewportSize({ width: 1280, height: 800 });
 
   // Agenda: série semanal pela interface (3 consultas) e lista de espera
-  await page.getByRole('link', { name: 'Agenda' }).click();
+  await go(page, 'Agenda');
   await page.getByRole('button', { name: 'Novo agendamento' }).click();
   await page.getByLabel('Paciente').fill(patName);
   await page.getByRole('button', { name: patName }).click();
@@ -388,7 +464,7 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
   must(true, 'agenda: paciente removido da lista de espera');
 
   // Pacientes: aviso de duplicidade, responsáveis, privacidade/exportação e mesclagem
-  await page.getByRole('link', { name: 'Pacientes' }).click();
+  await go(page, 'Pacientes');
   await page.getByRole('button', { name: 'Novo paciente' }).click();
   await page.getByRole('dialog').getByLabel('Nome completo').fill('Maria Souza');
   await page.getByRole('dialog').getByLabel('Telefone').fill('(11) 99999-0001');
@@ -416,7 +492,7 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
   const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Exportar dados do paciente' }).click()]);
   const exported = JSON.parse(await (await import('node:fs/promises')).readFile((await download.path())!, 'utf8'));
   must(exported.format === 'clinica-one/export/v1' && exported.records[0].name === patName && exported.guardians.length === 1, 'pacientes: exportação baixa o arquivo com os dados do paciente');
-  await page.getByRole('link', { name: 'Gestão' }).click();
+  await go(page, 'Gestão');
   await page.getByRole('tab', { name: 'Privacidade' }).click();
   const req = page.getByRole('listitem').filter({ hasText: patName });
   await req.getByRole('button', { name: 'Concluir' }).click();
@@ -427,7 +503,7 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
 
   const docNum = `9${String(Date.now()).slice(-10)}`;
   for (const n of ['A', 'B']) await apiOk(await ctx.request.post(`${BASE}/api/patients`, { headers: H, data: { name: `Dup ${n} ${stamp}`, document: docNum, confirmNotDuplicate: true } }), `criar duplicado ${n}`);
-  await page.getByRole('link', { name: 'Pacientes' }).click();
+  await go(page, 'Pacientes');
   await page.getByRole('button', { name: 'Possíveis duplicados' }).click();
   const pair = page.getByRole('listitem').filter({ hasText: `Dup A ${stamp}` });
   await pair.getByText('mesmo documento').waitFor();
@@ -438,7 +514,7 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
   must(true, 'pacientes: duplicados revisados e mesclados pela interface');
 
   // Gestão: unidade → sala → horário → bloqueio (e remoção com confirmação)
-  await page.getByRole('link', { name: 'Gestão' }).click();
+  await go(page, 'Gestão');
   await page.getByRole('tab', { name: 'Unidades e salas' }).click();
   await page.getByRole('button', { name: 'Nova unidade' }).click();
   await page.getByLabel('Nome da unidade').fill(unitName);
@@ -470,7 +546,7 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
   await blk.getByRole('button', { name: 'Remover bloqueio' }).click();
   await blk.waitFor({ state: 'detached' });
   must(true, 'gestão: bloqueio removido com confirmação');
-  await page.getByRole('link', { name: 'Agenda' }).click();
+  await go(page, 'Agenda');
   await page.getByText('Maria Souza').first().waitFor();
   await page.screenshot({ path: `${SHOTS}/09-agenda-desktop.png` });
 

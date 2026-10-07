@@ -18,7 +18,7 @@ Plataforma SaaS multiempresa de gestão clínica (Brasil, português). Este cofr
 
 ## Entender o sistema
 - [[04 - Arquitetura]] · [[05 - Multi-tenancy e banco de dados]] · [[06 - Segurança e privacidade]] · [[07 - Planos e capabilities]]
-- Módulos: [[Módulos/Identidade e MFA]] · [[Módulos/Painel Master]] · [[Módulos/Pacientes e privacidade]] · [[Módulos/Agenda e recepção]] · [[Módulos/Prontuário]] · [[Módulos/Odontologia]] · [[Módulos/Financeiro]] · [[Módulos/Comunicação e integrações]]
+- Módulos: [[Módulos/Identidade e MFA]] · [[Módulos/Painel Master]] · [[Módulos/Pacientes e privacidade]] · [[Módulos/Agenda e recepção]] · [[Módulos/Prontuário]] · [[Módulos/Odontologia]] · [[Módulos/Financeiro]] · [[Módulos/Estoque]] · [[Módulos/CRM]] · [[Módulos/Indicadores (BI)]] · [[Módulos/Comunicação e integrações]]
 - Decisões: [[Decisões/0001-stack]] · [[Decisões/0002-multi-tenancy]] · [[Decisões/0003-identidade]] · [[Decisões/0004-deploy]]
 
 ## Qualidade e operação

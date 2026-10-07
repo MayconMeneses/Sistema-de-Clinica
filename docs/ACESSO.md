@@ -36,6 +36,10 @@ Requisitos: Node.js 22 e PostgreSQL 16 instalados. Veja `README.md` (seção "Ro
 | Recepção | idem | `demo` | `ritarecepcao@demo.demo` | `Demo@12345` |
 | Profissional (prontuário, odontograma) | idem | `demo` | `drpauloprofissional@demo.demo` | `Demo@12345` |
 | Financeiro | idem | `demo` | `fabiofinanceiro@demo.demo` | `Demo@12345` |
+| Gerente de unidade | idem | `demo` | `gabigerente@demo.demo` | `Demo@12345` |
+| Estoque | idem | `demo` | `eduestoque@demo.demo` | `Demo@12345` |
+| Marketing | idem | `demo` | `martamarketing@demo.demo` | `Demo@12345` |
+| Auditor interno (só leitura) | idem | `demo` | `alineauditoria@demo.demo` | `Demo@12345` |
 | Consultório individual (plano Solo) | idem | `solo-demo` | `dono@solo-demo.demo` | `Demo@12345` |
 | **Painel da plataforma (Master)** | http://localhost:3010/#/master | (não tem) | `master@demo.local` | `Demo@12345` + código MFA |
 

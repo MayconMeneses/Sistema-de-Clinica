@@ -26,7 +26,8 @@ Legenda: ✅ IMPLEMENTADO e testado localmente · 🟡 PARCIAL · ⬜ PLANEJADO
 - 🟡 Recepção (falta triagem, formulários pendentes, checkout com pagamento)
 - ✅ Responsáveis, detecção e revisão de duplicidade, mesclagem auditada, exportação do paciente, solicitações de privacidade (LGPD: ferramentas)
 - ✅ Caixa (abertura/fechamento com conferência), descontos com aprovação, recibos numerados (não fiscais) — exigem o plano com financeiro avançado
-- ⬜ Anexos e documentos, visão semanal/mensal da agenda, sangria/suprimento do caixa, caixa por unidade
+- ✅ Agenda em visão de dia, semana e mês (contagem por dia calculada no banco)
+- ⬜ Anexos e documentos, sangria/suprimento do caixa, caixa por unidade
 
 ## Fase 3
 - ✅ Odontograma com histórico imutável e plano de tratamento com cobrança
@@ -37,4 +38,11 @@ Legenda: ✅ IMPLEMENTADO e testado localmente · 🟡 PARCIAL · ⬜ PLANEJADO
 - ⬜ Inbox, templates editáveis, automações, opt-out por resposta, portal inicial
 
 ## Fases 4–6
-⬜ Comunicação, portal, CRM, estoque, BI, NFS-e, integrações, regulados, IA. Convênios/TISS: bloqueado globalmente.
+- ✅ Papéis: gerente de unidade, estoque, marketing e auditor interno (alcance: clínica toda; **escopo por unidade ainda não existe**)
+- ✅ Estoque: itens, livro de movimentos imutável (entrada/saída/ajuste explicado), saldo derivado que nunca fica negativo, alerta de mínimo
+- ✅ CRM: leads, funil (novo → contatado → agendado → paciente/perdido), histórico imutável, consentimento de marketing registrado, conversão em paciente com aviso de duplicidade
+- ✅ Indicadores (BI básico): atendimentos, faltas, pacientes novos, financeiro, CRM e estoque, por período; cada seção respeita plano e perfil
+- ⬜ Estoque: lotes e validade, inventário por contagem, fornecedores e pedidos de compra, consumo ligado ao procedimento
+- ⬜ CRM: campanhas e envio (depende de provedor de mensagens), agendamento direto a partir do lead
+- ⬜ BI: catálogo de métricas versionado, exportação, comparação entre períodos, ocupação por sala/profissional
+- ⬜ Papéis da plataforma (Master), portal do paciente, NFS-e, integrações reais, regulados, IA. Convênios/TISS: bloqueado globalmente.

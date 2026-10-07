@@ -129,7 +129,6 @@ input[aria-invalid='true'] { border-color: var(--danger); }
 /* ---------- tablet/desktop ---------- */
 @media (min-width: 640px) {
   .grid2 { grid-template-columns: 1fr 1fr; }
-  .stats { grid-template-columns: repeat(4, 1fr); }
   .sheet { margin: auto; max-width: 560px; }
   .sheet-body { border-radius: 18px; padding-bottom: 1rem; }
   .toasts { bottom: 1rem; }
@@ -208,3 +207,18 @@ details summary { cursor: pointer; font-weight: 700; min-height: 44px; display: 
   .weekgrid { grid-template-columns: repeat(7, minmax(0, 1fr)); align-items: start; }
   .month-cell { min-height: 4.5rem; }
 }
+
+/* Indicadores: barras com <meter> (sem estilo inline, compatível com a CSP) */
+.barrow { display: grid; grid-template-columns: minmax(6rem, 9rem) 1fr auto; gap: .6rem; align-items: center; padding: .2rem 0; }
+.barrow meter { width: 100%; height: .9rem; }
+/* Menu inferior: itens extras ficam atrás de "Mais" no celular */
+.nav-more { display: none; }
+@media (max-width: 899px) {
+  .nav .nav-extra { display: none; }
+  .nav .nav-more { display: flex; }
+}
+/* Valores grandes (ex.: R$ 12.345,00): a grade se adapta à largura e o número encolhe, sem quebrar nem alargar a página */
+.stats { grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr)); }
+.stats > .stat { min-width: 0; }
+.stat b { font-size: clamp(1.05rem, 4.8vw, 1.5rem); white-space: nowrap; }
+@media (min-width: 900px) { .stat b { font-size: 1.5rem; } }

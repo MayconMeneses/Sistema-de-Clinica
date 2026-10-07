@@ -7,7 +7,7 @@ import { hasPermission } from '../auth/rbac.js';
 import { badRequest, conflict, forbidden, notFound } from '../http.js';
 
 const idParam = z.object({ id: z.string().uuid() });
-const ROLES = ['admin', 'receptionist', 'professional', 'finance'] as const; // owner só é criado pelo Master
+const ROLES = ['admin', 'unit_manager', 'receptionist', 'professional', 'finance', 'stock', 'marketing', 'auditor'] as const; // owner só é criado pelo Master
 
 export function teamRoutes(app: FastifyInstance) {
   clinicRoute(app, 'GET', '/api/users', { perm: 'users.manage' }, async (ctx) => {

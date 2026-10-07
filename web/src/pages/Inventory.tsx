@@ -1,0 +1,148 @@
+import { useEffect, useState, type FormEvent } from 'react';
+import { get, patch, post } from '../api';
+import { brl, dateTimeOf, parseMoney } from '../format';
+import { Badge, Button, Empty, ErrorBox, Field, Sheet, Spinner, TextInput, useLoad, useToast } from '../ui';
+
+interface Item { id: string; name: string; sku: string | null; unit: string; minQuantity: string; active: boolean; balance: string; low: boolean }
+interface Move { id: string; kind: 'in' | 'out' | 'adjust'; delta: string; unitCostCents: string | null; reason: string | null; createdAt: string; authorName: string | null }
+
+/** "1,5" | "1.5" | "2" → número; null se inválido (no máximo 3 casas). */
+function parseQty(input: string): number | null {
+  const s = input.trim().replace(',', '.');
+  if (!/^-?\d+(\.\d{1,3})?$/.test(s)) return null;
+  return Number(s);
+}
+const fmt = (v: string) => Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 3 });
+const KIND: Record<string, string> = { in: 'Entrada', out: 'Saída', adjust: 'Ajuste' };
+
+export function InventoryPage({ canWrite }: { canWrite: boolean }) {
+  const toast = useToast();
+  const [q, setQ] = useState('');
+  const [debounced, setDebounced] = useState('');
+  const [lowOnly, setLowOnly] = useState(false);
+  useEffect(() => { const t = setTimeout(() => setDebounced(q.trim()), 250); return () => clearTimeout(t); }, [q]);
+  const list = useLoad(() => get<{ items: Item[]; lowCount: number }>(`/api/inventory/items?${new URLSearchParams({ ...(debounced ? { q: debounced } : {}), ...(lowOnly ? { lowOnly: '1' } : {}), includeInactive: '1' })}`), [debounced, lowOnly]);
+  const [move, setMove] = useState<{ item: Item; kind: 'in' | 'out' | 'adjust' } | null>(null);
+  const [editing, setEditing] = useState<Item | 'new' | null>(null);
+  const [history, setHistory] = useState<Item | null>(null);
+  const [f, setF] = useState({ qty: '', cost: '', reason: '', name: '', sku: '', unit: 'un', min: '' });
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [key, setKey] = useState(() => crypto.randomUUID());
+
+  const openMove = (item: Item, kind: 'in' | 'out' | 'adjust') => { setF({ ...f, qty: '', cost: '', reason: '' }); setError(null); setMove({ item, kind }); };
+  const openEdit = (item: Item | 'new') => {
+    setError(null); setEditing(item);
+    setF(item === 'new' ? { ...f, name: '', sku: '', unit: 'un', min: '' } : { ...f, name: item.name, sku: item.sku ?? '', unit: item.unit, min: String(Number(item.minQuantity)).replace('.', ',') });
+  };
+
+  async function submitMove(e: FormEvent) {
+    e.preventDefault();
+    if (!move) return;
+    const qty = parseQty(f.qty);
+    if (qty === null || qty === 0 || (move.kind !== 'adjust' && qty < 0)) { setError(move.kind === 'adjust' ? 'Informe a quantidade (use − para reduzir), com até 3 casas.' : 'Informe uma quantidade positiva, com até 3 casas.'); return; }
+    const cost = f.cost.trim() ? parseMoney(f.cost) : undefined;
+    if (cost === null) { setError('Custo inválido. Use o formato 25,00.'); return; }
+    setBusy(true); setError(null);
+    try {
+      await post('/api/inventory/movements', { itemId: move.item.id, kind: move.kind, quantity: qty, unitCostCents: move.kind === 'in' ? cost : undefined, reason: f.reason || undefined, idempotencyKey: key });
+      toast(`${KIND[move.kind]} registrada.`); setMove(null); setKey(crypto.randomUUID()); list.reload();
+    } catch (err) { setError((err as Error).message); } finally { setBusy(false); }
+  }
+
+  async function submitItem(e: FormEvent) {
+    e.preventDefault();
+    const min = f.min.trim() ? parseQty(f.min) : 0;
+    if (f.name.trim().length < 2) { setError('Informe o nome do item.'); return; }
+    if (min === null || min < 0) { setError('Estoque mínimo inválido.'); return; }
+    setBusy(true); setError(null);
+    try {
+      if (editing === 'new') await post('/api/inventory/items', { name: f.name, sku: f.sku || undefined, unit: f.unit || 'un', minQuantity: min });
+      else if (editing) await patch(`/api/inventory/items/${editing.id}`, { name: f.name, minQuantity: min });
+      toast('Item salvo.'); setEditing(null); list.reload();
+    } catch (err) { setError((err as Error).message); } finally { setBusy(false); }
+  }
+
+  async function toggleActive(item: Item) {
+    try { await patch(`/api/inventory/items/${item.id}`, { active: !item.active }); toast(item.active ? 'Item inativado.' : 'Item reativado.'); list.reload(); }
+    catch (err) { toast((err as Error).message, 'bad'); }
+  }
+
+  return (
+    <>
+      <div className="page-head"><h1>Estoque</h1>{canWrite && <Button onClick={() => openEdit('new')}>Novo item</Button>}</div>
+      {list.data && list.data.lowCount > 0 && <div className="banner" role="note">⚠ {list.data.lowCount} {list.data.lowCount === 1 ? 'item está' : 'itens estão'} no estoque mínimo ou abaixo.</div>}
+      <div className="card">
+        <Field label="Buscar item" hint="Nome ou código (SKU).">{(id, d) => <input id={id} type="search" value={q} onChange={(e) => setQ(e.target.value)} aria-describedby={d} autoComplete="off" />}</Field>
+        <label className="row"><input type="checkbox" checked={lowOnly} onChange={(e) => setLowOnly(e.target.checked)} /> Só itens no mínimo ou abaixo</label>
+      </div>
+      {list.loading && !list.data && <Spinner />}
+      {list.error && <ErrorBox message={list.error} onRetry={list.reload} />}
+      {list.data && list.data.items.length === 0 && <Empty title={lowOnly ? 'Nenhum item abaixo do mínimo' : 'Nenhum item cadastrado'}>{canWrite && !lowOnly && <Button onClick={() => openEdit('new')}>Cadastrar o primeiro item</Button>}</Empty>}
+      <ul className="list">
+        {list.data?.items.map((i) => (
+          <li key={i.id} className="list-item stack">
+            <div className="row between">
+              <strong>{i.name}</strong>
+              <span className="row">{!i.active && <Badge>Inativo</Badge>}{i.low && i.active && <Badge tone="bad">Baixo</Badge>}<strong>{fmt(i.balance)} {i.unit}</strong></span>
+            </div>
+            <span className="small muted">{i.sku ? `Código ${i.sku} · ` : ''}mínimo {fmt(i.minQuantity)} {i.unit}</span>
+            <div className="row">
+              {canWrite && i.active && <><Button className="btn-sm" onClick={() => openMove(i, 'in')}>Entrada</Button>
+                <Button variant="secondary" className="btn-sm" onClick={() => openMove(i, 'out')}>Saída</Button>
+                <Button variant="secondary" className="btn-sm" onClick={() => openMove(i, 'adjust')}>Ajustar</Button></>}
+              <Button variant="ghost" className="btn-sm" onClick={() => setHistory(i)}>Histórico</Button>
+              {canWrite && <><Button variant="ghost" className="btn-sm" onClick={() => openEdit(i)}>Editar</Button>
+                <Button variant="ghost" className="btn-sm" onClick={() => toggleActive(i)}>{i.active ? 'Inativar' : 'Reativar'}</Button></>}
+            </div>
+          </li>
+        ))}
+      </ul>
+
+      <Sheet open={move !== null} title={move ? `${KIND[move.kind]}: ${move.item.name}` : ''} onClose={() => setMove(null)}>
+        {move && (
+          <form onSubmit={submitMove} noValidate>
+            <p className="small muted">Saldo atual: {fmt(move.item.balance)} {move.item.unit}</p>
+            <TextInput label={`Quantidade (${move.item.unit})`} value={f.qty} onChange={(v) => setF({ ...f, qty: v })} inputMode="decimal" hint={move.kind === 'adjust' ? 'Use − para reduzir o saldo (ex.: -2).' : undefined} />
+            {move.kind === 'in' && <TextInput label="Custo unitário (R$, opcional)" value={f.cost} onChange={(v) => setF({ ...f, cost: v })} inputMode="decimal" />}
+            <TextInput label={move.kind === 'adjust' ? 'Motivo do ajuste (obrigatório)' : 'Observação (opcional)'} value={f.reason} onChange={(v) => setF({ ...f, reason: v })} />
+            {error && <p className="field-msg error" role="alert">{error}</p>}
+            <Button type="submit" busy={busy} className="btn-block">Registrar {(KIND[move.kind] ?? '').toLowerCase()}</Button>
+          </form>
+        )}
+      </Sheet>
+
+      <Sheet open={editing !== null} title={editing === 'new' ? 'Novo item' : 'Editar item'} onClose={() => setEditing(null)}>
+        <form onSubmit={submitItem} noValidate>
+          <TextInput label="Nome" value={f.name} onChange={(v) => setF({ ...f, name: v })} />
+          {editing === 'new' && <div className="grid2"><TextInput label="Código (opcional)" value={f.sku} onChange={(v) => setF({ ...f, sku: v })} /><TextInput label="Unidade" value={f.unit} onChange={(v) => setF({ ...f, unit: v })} hint="un, cx, ml…" /></div>}
+          <TextInput label="Estoque mínimo" value={f.min} onChange={(v) => setF({ ...f, min: v })} inputMode="decimal" hint="Abaixo ou igual a este valor o item aparece como baixo." />
+          {error && <p className="field-msg error" role="alert">{error}</p>}
+          <Button type="submit" busy={busy} className="btn-block">Salvar item</Button>
+        </form>
+      </Sheet>
+
+      <History item={history} onClose={() => setHistory(null)} />
+    </>
+  );
+}
+
+function History({ item, onClose }: { item: Item | null; onClose: () => void }) {
+  const h = useLoad(() => (item ? get<{ movements: Move[] }>(`/api/inventory/items/${item.id}/movements`) : Promise.resolve({ movements: [] as Move[] })), [item?.id]);
+  return (
+    <Sheet open={item !== null} title={item ? `Histórico: ${item.name}` : ''} onClose={onClose}>
+      {h.loading && <Spinner />}
+      {h.error && <ErrorBox message={h.error} onRetry={h.reload} />}
+      {h.data?.movements.length === 0 && <Empty title="Sem movimentos" />}
+      <ul className="list">
+        {h.data?.movements.map((m) => (
+          <li key={m.id} className="list-item row between">
+            <div><strong>{KIND[m.kind]}</strong>{m.unitCostCents ? ` · ${brl(m.unitCostCents)}/${item?.unit}` : ''}<br /><span className="small muted">{dateTimeOf(m.createdAt)} · {m.authorName ?? '—'}{m.reason ? ` · ${m.reason}` : ''}</span></div>
+            <strong>{Number(m.delta) > 0 ? '+' : ''}{fmt(m.delta)}</strong>
+          </li>
+        ))}
+      </ul>
+      <p className="small muted">O histórico não pode ser alterado: erros se corrigem com um ajuste explicado.</p>
+    </Sheet>
+  );
+}

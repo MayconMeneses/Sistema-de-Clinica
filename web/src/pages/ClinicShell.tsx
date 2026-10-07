@@ -8,6 +8,9 @@ import { Dashboard } from './Dashboard';
 import { Reception } from './Reception';
 import { FinancePage } from './Finance';
 import { Receipt } from './Receipt';
+import { CrmPage } from './Crm';
+import { InventoryPage } from './Inventory';
+import { ReportsPage } from './Reports';
 import { PatientDetail, Patients } from './Patients';
 import { Team } from './Team';
 
@@ -22,9 +25,15 @@ export function ClinicShell({ me, hash, onLogout, onRefresh }: { me: Me; hash: s
     { path: '/recepcao', label: 'Recepção', ico: '☎', show: has('schedule.core') && can('agenda.read') },
     { path: '/pacientes', label: 'Pacientes', ico: '☺', show: has('patient.registry') && can('patients.read') },
     { path: '/financeiro', label: 'Financeiro', ico: '$', show: has('finance.basic') && can('finance.read') },
-    { path: '/equipe', label: 'Gestão', ico: '⚙', show: can('users.manage') || can('org.manage') || can('schedule.manage') },
+    { path: '/estoque', label: 'Estoque', ico: '▤', show: has('inventory.core') && can('inventory.read') },
+    { path: '/crm', label: 'CRM', ico: '☆', show: has('crm.pipeline') && can('crm.read') },
+    { path: '/indicadores', label: 'Indicadores', ico: '◔', show: has('analytics.bi') && can('reports.read') },
+    { path: '/equipe', label: 'Gestão', ico: '⚙', show: can('users.manage') || can('org.manage') || can('schedule.manage') || can('audit.read') },
   ];
   const visible = items.filter((i) => i.show);
+  // No celular cabem 5 itens: com mais que isso, os 4 primeiros ficam no menu e o restante fica atrás de "Mais".
+  const overflow = visible.length > 5;
+  const extra = overflow ? visible.slice(4) : [];
   const [menu, setMenu] = useState(false);
 
   const patientMatch = /^\/pacientes\/([0-9a-f-]{36})$/i.exec(hash);
@@ -38,6 +47,10 @@ export function ClinicShell({ me, hash, onLogout, onRefresh }: { me: Me; hash: s
   else if (current === '/pacientes' && visible.some((i) => i.path === '/pacientes')) page = <Patients me={me} />;
   else if (current === '/financeiro' && visible.some((i) => i.path === '/financeiro')) page = <FinancePage me={me} />;
   else if (current === '/equipe' && visible.some((i) => i.path === '/equipe')) page = <Team permissions={me.permissions} />;
+  else if (current === '/estoque' && visible.some((i) => i.path === '/estoque')) page = <InventoryPage canWrite={can('inventory.write')} />;
+  else if (current === '/crm' && visible.some((i) => i.path === '/crm')) page = <CrmPage canWrite={can('crm.write')} canConvert={can('patients.write')} />;
+  else if (current === '/indicadores' && visible.some((i) => i.path === '/indicadores')) page = <ReportsPage />;
+  else if (current === '/mais' && overflow) page = <MorePage items={extra} />;
   else page = <Dashboard me={me} />;
 
   return (
@@ -47,15 +60,31 @@ export function ClinicShell({ me, hash, onLogout, onRefresh }: { me: Me; hash: s
         <Button variant="ghost" className="btn-sm" onClick={() => setMenu(true)} aria-label={`Conta de ${me.user.name}`}>{me.user.name.split(' ')[0]} ▾</Button>
       </header>
       <nav className="nav" aria-label="Principal">
-        {visible.map((i) => (
-          <a key={i.path} href={`#${i.path}`} aria-current={current === i.path ? 'page' : undefined}>
+        {visible.map((i, n) => (
+          <a key={i.path} href={`#${i.path}`} className={overflow && n >= 4 ? 'nav-extra' : undefined} aria-current={current === i.path ? 'page' : undefined}>
             <span className="ico" aria-hidden="true">{i.ico}</span><span className="lbl">{i.label}</span>
           </a>
         ))}
+        {overflow && (
+          <a href="#/mais" className="nav-more" aria-current={current === '/mais' || extra.some((e) => e.path === current) ? 'page' : undefined}>
+            <span className="ico" aria-hidden="true">≡</span><span className="lbl">Mais</span>
+          </a>
+        )}
       </nav>
       <main className="content" id="main">{page}</main>
       <AccountSheet open={menu} me={me} onClose={() => setMenu(false)} onLogout={onLogout} onRefresh={onRefresh} />
     </div>
+  );
+}
+
+function MorePage({ items }: { items: NavItem[] }) {
+  return (
+    <>
+      <div className="page-head"><h1>Mais</h1></div>
+      <ul className="list">
+        {items.map((i) => <li key={i.path}><a className="list-item link" href={`#${i.path}`}><span aria-hidden="true">{i.ico}</span> {i.label}</a></li>)}
+      </ul>
+    </>
   );
 }
 

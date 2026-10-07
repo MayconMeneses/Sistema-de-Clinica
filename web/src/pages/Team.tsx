@@ -102,7 +102,7 @@ function AddUser({ open, onClose, onDone }: { open: boolean; onClose: () => void
         <TextInput label="Nome" value={f.name} onChange={(v) => setF({ ...f, name: v })} />
         <TextInput label="E-mail" type="email" value={f.email} onChange={(v) => setF({ ...f, email: v })} inputMode="email" />
         <Select label="Perfil" value={f.role} onChange={(v) => setF({ ...f, role: v })}>
-          {['receptionist', 'professional', 'finance', 'admin'].map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
+          {['receptionist', 'professional', 'finance', 'admin', 'unit_manager', 'stock', 'marketing', 'auditor'].map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
         </Select>
         <TextInput label="Senha provisória" type="password" value={f.password} onChange={(v) => setF({ ...f, password: v })} autoComplete="new-password" hint="Mínimo de 10 caracteres. Peça para a pessoa trocar no primeiro acesso." />
         {error && <p className="field-msg error" role="alert">{error}</p>}

@@ -18,7 +18,7 @@ Estado em v0.7.0. "Testado" = teste automatizado em PostgreSQL real (ver `npm ru
 | 6 | Capabilities e entitlement no backend | 🟡 | plano, override, dependência, status, indisponibilidade global, RBAC ✅; add-ons, quotas, feature flag, rollout, inadimplência, unidade, política de segurança ⬜ |
 | 7 | Catálogo de add-ons, medição e alertas de consumo | ⬜ | |
 | 8 | Papéis da plataforma | 🟡 | operador único; faltam papéis (financeiro, suporte, auditor…) |
-| 8 | Papéis da clínica | 🟡 | 5 de 13 (dono, admin, recepção, profissional, financeiro); permissões novas: gestão da organização, horários/bloqueios, encaixe |
+| 8 | Papéis da clínica | 🟡 | 9 de 13 (dono, admin, gerente de unidade, recepção, profissional, financeiro, estoque, marketing, auditor interno); **gerente de unidade ainda tem o alcance da clínica toda (sem escopo por unidade)**; faltam os demais papéis do prompt |
 | 8 | RBAC + ABAC, deny-by-default | 🟡 | RBAC ✅ deny-by-default ✅; ABAC só por permissão clínica (falta unidade/relacionamento/finalidade) |
 | 9 | Organização/unidades/salas/recursos | 🟡 | unidades, salas/cadeiras/equipamentos com API e tela (Gestão) ✅; endereço, contatos, horários da unidade, feriados da unidade, identidade visual, equipamentos com manutenção ⬜ |
 | 10 | Pacientes | 🟡 | cadastro, busca, alerta restrito, consentimento de comunicação versionado, **responsáveis**, **aviso e revisão de duplicidade**, **mesclagem auditada** (histórico imutável preservado por alias), **exportação** respeitando permissões, **solicitações de privacidade** com prazo ✅; anexos/documentos, dependentes como cadastro ligado, identificadores adicionais, histórico de alterações campo a campo, origem do paciente/lead ⬜ |
@@ -30,8 +30,10 @@ Estado em v0.7.0. "Testado" = teste automatizado em PostgreSQL real (ver `npm ru
 | 16 | Financeiro particular | 🟡 | cobrança/pagamento/estorno por movimentos imutáveis, centavos, idempotência ✅; caixa (abertura/fechamento, diferença explicada), descontos com aprovação e segregação de funções, recibos numerados ✅; contas a pagar, conciliação, comissões, pacotes, inadimplência, sangria/suprimento, caixa por unidade, NFS-e ⬜ |
 | 17 | TISS futuro | 🟡 | capability bloqueada; sem modelo de dados |
 | 18 | Comunicação | 🟡 | canais (porta+sandbox+adaptador), confirmação/lembrete/cancelamento/remarcação, consentimento ✅; inbox, templates editáveis, automações, opt-out por resposta, SLA, bot ⬜ |
-| 19–21 | CRM, estoque, teleatendimento | ⬜ | |
-| 22 | Relatórios/BI | 🟡 | indicadores básicos no início; catálogo de métricas (definição/fórmula/owner) ⬜ |
+| 19 | CRM | 🟡 | leads, funil, histórico imutável, consentimento de marketing, conversão com aviso de duplicidade ✅; campanhas/envio (depende de provedor), agendamento a partir do lead ⬜ |
+| 20 | Estoque | 🟡 | itens, livro de movimentos imutável, saldo que nunca fica negativo (decidido pelo banco), alerta de mínimo ✅; lotes/validade, inventário, fornecedores, compras ⬜ |
+| 21 | Teleatendimento | ⬜ | |
+| 22 | Relatórios/BI | 🟡 | tela de indicadores por período (atendimentos, faltas, financeiro, CRM, estoque), só agregados, por seção conforme plano e perfil ✅; catálogo de métricas versionado (definição/fórmula/owner), exportação, comparação entre períodos ⬜ |
 | 23 | Integrações: adaptador, idempotência, retry/backoff/jitter, timeout, webhooks assinados com replay/dedupe/dead-letter, outbox, health | ✅ | `tests/integrations.test.ts` (29); ⬜ rate limit por integração, custo, reconciliação, exit strategy |
 | 23 | Provedores reais (WhatsApp, e-mail, SMS) | ⛔ | adaptadores escritos, **não validados** com o provedor |
 | 23 | Pagamentos, calendários, NFS-e, assinatura, error tracking | ⛔ | decisões pendentes |
@@ -39,7 +41,7 @@ Estado em v0.7.0. "Testado" = teste automatizado em PostgreSQL real (ver `npm ru
 | 25 | Stack por ADR | 🟡 | ADR-0001 **proposta** (aguarda confirmação) |
 | 26 | Multi-tenancy RLS; testes negativos | ✅ | dados, HTTP, arquivo (storage), webhook/evento cruzado; cache/relatório n/a (não existem) |
 | 27 | Entidades principais | 🟡 | cerca de metade |
-| 28 | Regras de dados | ✅ | UUID, UTC, centavos, imutabilidade, movimentos, conflito no banco; ⬜ estoque, retenção/descarte, tabela de anexos |
+| 28 | Regras de dados | ✅ | UUID, UTC, centavos, imutabilidade, movimentos, conflito no banco; estoque ✅, ⬜ retenção/descarte, tabela de anexos |
 | 29 | Autenticação/sessões | 🟡 | login, logout, troca de senha, MFA, revogação, expiração, rate limit ✅; convite, recuperação, lista de dispositivos, rotação ⬜ |
 | 30 | Segurança | 🟡 | RLS, CSP, CSRF, headers, validação, payload, logs sem dado de paciente, `npm audit` 0, varredura de segredos ✅; SAST, pentest, incidente, upload seguro (rota), rotação ⬜ |
 | 31 | LGPD | 🟡 | ferramentas: consentimento versionado, acesso/exportação, registro e prazo de solicitações do titular, trilha de auditoria, minimização nos logs; **faltam**: base legal por finalidade, retenção/descarte, anonimização, incidentes, RIPD, suboperadores, textos jurídicos. Exige revisão humana especializada; nada aqui declara conformidade |
