@@ -104,8 +104,8 @@ export function dentalRoutes(app: FastifyInstance) {
       if (b.status === 'done' && b.charge && BigInt(item.price_cents) > 0n) {
         if (!ctx.entitlements.has('finance.basic')) throw conflict('O financeiro não está disponível no plano contratado.');
         const ins = await ctx.tx.query(
-          `INSERT INTO financial_movements (tenant_id, patient_id, kind, amount_cents, note, idempotency_key, created_by)
-           VALUES ($1,$2,'charge',$3,'Procedimento odontológico concluído',$4,$5) ON CONFLICT (tenant_id, idempotency_key) DO NOTHING`,
+          `INSERT INTO financial_movements (tenant_id, patient_id, kind, amount_cents, note, idempotency_key, created_by, professional_id)
+           VALUES ($1,$2,'charge',$3,'Procedimento odontológico concluído',$4,$5,$5) ON CONFLICT (tenant_id, idempotency_key) DO NOTHING`,
           [ctx.tenantId, item.patient_id, item.price_cents, `dental:${id}:charge`, ctx.user.id]);
         charged = (ins.rowCount ?? 0) > 0;
       }
