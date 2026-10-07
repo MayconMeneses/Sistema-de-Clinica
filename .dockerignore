@@ -1,0 +1,7 @@
+node_modules
+web/dist
+.git
+.data
+e2e-shots
+*.log
+.env

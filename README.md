@@ -4,7 +4,10 @@
 Interface em português do Brasil, **mobile-first** (menu inferior no celular, barra lateral no desktop, instalável na tela inicial).
 Convênios/TISS estão bloqueados globalmente nesta fase.
 
-## Rodar (requer Node 22 e PostgreSQL 16 locais)
+## Como acessar
+O sistema roda no seu computador, não há link público. **Passo a passo com Docker (um comando) e acessos de demonstração: [`docs/ACESSO.md`](docs/ACESSO.md).**
+
+## Rodar sem Docker (requer Node 22 e PostgreSQL 16 locais)
 
 ```bash
 npm install

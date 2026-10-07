@@ -1,0 +1,31 @@
+# Sobe o banco (PostgreSQL 16) e o sistema com dados FICTÍCIOS de demonstração.
+#   docker compose up --build
+# Depois abra http://localhost:3000  (acessos: docs/ACESSO.md ou `docker compose logs app`)
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: postgres        # só para demonstração local
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGHOST: db
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      SEED_DEMO: "1"                     # "0" para não criar os dados de demonstração
+    ports:
+      - "127.0.0.1:3000:3000"            # só este computador. Para abrir no celular na mesma rede, troque por "3000:3000"
+                                         # (cuidado: qualquer pessoa da rede verá a tela de login com acessos de demonstração)
+volumes:
+  pgdata:
