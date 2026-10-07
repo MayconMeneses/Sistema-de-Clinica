@@ -137,7 +137,7 @@ export function PatientDetail({ id, me }: { id: string; me: Me }) {
       {tab === 'mensagens' && <MessageHistory patientId={id} />}
       {tab === 'prontuario' && <Notes patientId={id} meId={me.user.id} />}
       {tab === 'odontograma' && <Odontogram patientId={id} canWrite={can('dental.write')} hasFinance={has('finance.basic')} />}
-      {tab === 'financeiro' && <PatientFinance patientId={id} canWrite={can('finance.write')} />}
+      {tab === 'financeiro' && <PatientFinance patientId={id} canWrite={can('finance.write')} canDiscount={has('finance.advanced') && can('finance.write')} />}
     </>
   );
 }
@@ -235,11 +235,11 @@ function AddendumSheet({ note, onClose, onDone }: { note: Note | null; onClose: 
   );
 }
 
-interface Movement { id: string; kind: string; method: string | null; amountCents: string; note: string | null; createdAt: string }
+interface Movement { id: string; kind: string; method: string | null; amountCents: string; note: string | null; createdAt: string; receiptNumber: number | null }
 
-export function PatientFinance({ patientId, canWrite }: { patientId: string; canWrite: boolean }) {
+export function PatientFinance({ patientId, canWrite, canDiscount }: { patientId: string; canWrite: boolean; canDiscount: boolean }) {
   const toast = useToast();
-  const fin = useLoad(() => get<{ movements: Movement[]; balanceCents: string; chargedCents: string; paidCents: string }>(`/api/patients/${patientId}/finance`), [patientId]);
+  const fin = useLoad(() => get<{ movements: Movement[]; balanceCents: string; chargedCents: string; paidCents: string; discountedCents: string }>(`/api/patients/${patientId}/finance`), [patientId]);
   const [open, setOpen] = useState(false);
   const [kind, setKind] = useState('payment');
   const [method, setMethod] = useState('pix');
@@ -248,6 +248,20 @@ export function PatientFinance({ patientId, canWrite }: { patientId: string; can
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [key, setKey] = useState(() => crypto.randomUUID()); // evita lançamento duplicado em duplo clique
+  const [discOpen, setDiscOpen] = useState(false);
+  const [discAmount, setDiscAmount] = useState('');
+  const [discReason, setDiscReason] = useState('');
+
+  async function submitDiscount(e: FormEvent) {
+    e.preventDefault();
+    const cents = parseMoney(discAmount);
+    if (!cents || cents <= 0) { setError('Informe um valor válido, como 20,00.'); return; }
+    setBusy(true); setError(null);
+    try {
+      await post('/api/finance/discount-requests', { patientId, amountCents: cents, reason: discReason });
+      toast('Pedido enviado para aprovação.'); setDiscOpen(false); setDiscAmount(''); setDiscReason('');
+    } catch (err) { setError((err as Error).message); } finally { setBusy(false); }
+  }
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -270,13 +284,20 @@ export function PatientFinance({ patientId, canWrite }: { patientId: string; can
         <div className="stat"><b>{brl(fin.data.paidCents)}</b><span>Pago</span></div>
         <div className="stat"><b>{brl(fin.data.balanceCents)}</b><span>{owed > 0n ? 'Em aberto' : owed < 0n ? 'Crédito' : 'Quitado'}</span></div>
       </div>
-      {canWrite && <Button onClick={() => setOpen(true)}>Registrar lançamento</Button>}
+      {BigInt(fin.data.discountedCents) > 0n && <p className="small muted">Desconto aplicado: {brl(fin.data.discountedCents)}</p>}
+      {(canWrite || canDiscount) && (
+        <div className="row">
+          {canWrite && <Button onClick={() => { setError(null); setOpen(true); }}>Registrar lançamento</Button>}
+          {canDiscount && owed > 0n && <Button variant="secondary" onClick={() => { setError(null); setDiscOpen(true); }}>Pedir desconto</Button>}
+        </div>
+      )}
       {fin.data.movements.length === 0 && <Empty title="Sem movimentos financeiros" />}
       <ul className="list">
         {fin.data.movements.map((m) => (
           <li key={m.id} className="list-item row between">
-            <div><strong>{KIND_LABEL[m.kind]}</strong>{m.method && <> · {METHOD_LABEL[m.method]}</>}<br /><span className="small muted">{dateTimeOf(m.createdAt)}{m.note ? ` · ${m.note}` : ''}</span></div>
-            <strong>{m.kind === 'payment' ? '+' : m.kind === 'refund' ? '−' : ''}{brl(m.amountCents)}</strong>
+            <div><strong>{KIND_LABEL[m.kind]}</strong>{m.method && <> · {METHOD_LABEL[m.method]}</>}<br /><span className="small muted">{dateTimeOf(m.createdAt)}{m.note ? ` · ${m.note}` : ''}</span>
+              {m.kind === 'payment' && <><br /><a className="small" href={`#/recibo/${m.id}`}>Ver recibo{m.receiptNumber ? ` nº ${m.receiptNumber}` : ''}</a></>}</div>
+            <strong>{m.kind === 'payment' ? '+' : m.kind === 'refund' || m.kind === 'discount' ? '−' : ''}{brl(m.amountCents)}</strong>
           </li>
         ))}
       </ul>
@@ -288,6 +309,15 @@ export function PatientFinance({ patientId, canWrite }: { patientId: string; can
           <TextInput label="Observação (opcional)" value={note} onChange={setNote} />
           {error && <p className="field-msg error" role="alert">{error}</p>}
           <Button type="submit" busy={busy} className="btn-block">Registrar</Button>
+        </form>
+      </Sheet>
+      <Sheet open={discOpen} title="Pedir desconto" onClose={() => setDiscOpen(false)}>
+        <form onSubmit={submitDiscount} noValidate>
+          <p className="small muted">O desconto só vale depois da aprovação de quem gerencia o financeiro. Ele não pode passar do valor em aberto ({brl(fin.data.balanceCents)}).</p>
+          <TextInput label="Valor do desconto (R$)" value={discAmount} onChange={setDiscAmount} inputMode="decimal" placeholder="20,00" />
+          <TextInput label="Motivo" value={discReason} onChange={setDiscReason} />
+          {error && <p className="field-msg error" role="alert">{error}</p>}
+          <Button type="submit" busy={busy} className="btn-block">Enviar pedido</Button>
         </form>
       </Sheet>
     </div>

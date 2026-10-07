@@ -180,3 +180,11 @@ details summary { cursor: pointer; font-weight: 700; min-height: 44px; display: 
   .nav a:not([aria-current='page']) .lbl { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .nav a .ico { font-size: 1.45rem; }
 }
+
+/* Recibo: na impressão, só o documento */
+@media print {
+  .topbar, .nav, .no-print, .banner { display: none !important; }
+  .shell, .content { display: block; padding: 0; max-width: none; }
+  .receipt { border: 0; padding: 0; }
+  body { background: #fff; }
+}

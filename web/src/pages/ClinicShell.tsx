@@ -7,6 +7,7 @@ import { Agenda } from './Agenda';
 import { Dashboard } from './Dashboard';
 import { Reception } from './Reception';
 import { FinancePage } from './Finance';
+import { Receipt } from './Receipt';
 import { PatientDetail, Patients } from './Patients';
 import { Team } from './Team';
 
@@ -27,13 +28,15 @@ export function ClinicShell({ me, hash, onLogout, onRefresh }: { me: Me; hash: s
   const [menu, setMenu] = useState(false);
 
   const patientMatch = /^\/pacientes\/([0-9a-f-]{36})$/i.exec(hash);
-  const current = patientMatch ? '/pacientes' : hash.split('?')[0]!;
+  const receiptMatch = /^\/recibo\/([0-9a-f-]{36})$/i.exec(hash);
+  const current = patientMatch ? '/pacientes' : receiptMatch ? '/financeiro' : hash.split('?')[0]!;
   let page;
-  if (patientMatch) page = <PatientDetail id={patientMatch[1]!} me={me} />;
+  if (receiptMatch && can('finance.read') && has('finance.basic')) page = <Receipt id={receiptMatch[1]!} />;
+  else if (patientMatch) page = <PatientDetail id={patientMatch[1]!} me={me} />;
   else if (current === '/agenda' && visible.some((i) => i.path === '/agenda')) page = <Agenda me={me} />;
   else if (current === '/recepcao' && visible.some((i) => i.path === '/recepcao')) page = <Reception canWrite={can('agenda.write')} />;
   else if (current === '/pacientes' && visible.some((i) => i.path === '/pacientes')) page = <Patients me={me} />;
-  else if (current === '/financeiro' && visible.some((i) => i.path === '/financeiro')) page = <FinancePage />;
+  else if (current === '/financeiro' && visible.some((i) => i.path === '/financeiro')) page = <FinancePage me={me} />;
   else if (current === '/equipe' && visible.some((i) => i.path === '/equipe')) page = <Team permissions={me.permissions} />;
   else page = <Dashboard me={me} />;
 
