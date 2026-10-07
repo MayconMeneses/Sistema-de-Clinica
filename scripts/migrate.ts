@@ -19,10 +19,13 @@ export async function migrate(connectionString: string): Promise<string[]> {
     const files = (await readdir(dir)).filter((f) => f.endsWith('.sql')).sort();
     for (const file of files) {
       const sql = await readFile(join(dir, file), 'utf8');
-      const checksum = createHash('sha256').update(sql).digest('hex');
+      const sha = (t: string) => createHash('sha256').update(t).digest('hex');
+      const lf = sql.replace(/\r\n/g, '\n');
+      const checksum = sha(lf);
       const prev = done.get(file);
       if (prev) {
-        if (prev !== checksum) throw new Error(`Migration ${file} foi alterada após aplicada`);
+        // Só a quebra de linha (LF/CRLF, comum ao clonar no Windows) é tolerada; qualquer outra alteração continua barrada.
+        if (prev !== checksum && prev !== sha(sql) && prev !== sha(lf.replace(/\n/g, '\r\n'))) throw new Error(`Migration ${file} foi alterada após aplicada`);
         continue;
       }
       await client.query('BEGIN');
