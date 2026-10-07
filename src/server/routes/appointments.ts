@@ -107,6 +107,21 @@ export function appointmentRoutes(app: FastifyInstance) {
     return { appointments: r.rows };
   });
 
+  // Contagem por dia (fuso de São Paulo) para a visão mensal; não carrega as consultas.
+  clinicRoute(app, 'GET', '/api/appointments/summary', { cap: 'schedule.core', perm: 'agenda.read' }, async (ctx) => {
+    const q = z.object({ from: iso, to: iso, professionalId: z.string().uuid().optional() }).parse(ctx.req.query);
+    if (new Date(q.to).getTime() - new Date(q.from).getTime() > 62 * 86400_000) throw badRequest('Período máximo: 62 dias.');
+    const r = await ctx.tx.query(
+      `SELECT to_char((a.starts_at AT TIME ZONE 'America/Sao_Paulo')::date, 'YYYY-MM-DD') AS day,
+              COUNT(*) FILTER (WHERE a.status NOT IN ('cancelled','no_show'))::int AS active,
+              COUNT(*) FILTER (WHERE a.status = 'completed')::int AS completed,
+              COUNT(*) FILTER (WHERE a.status IN ('cancelled','no_show'))::int AS lost
+         FROM appointments a
+        WHERE a.starts_at >= $1 AND a.starts_at < $2 AND ($3::uuid IS NULL OR a.professional_id = $3)
+        GROUP BY 1 ORDER BY 1`, [q.from, q.to, q.professionalId ?? null]);
+    return { days: r.rows };
+  });
+
   clinicRoute(app, 'POST', '/api/appointments', { cap: 'schedule.core', perm: 'agenda.write' }, async (ctx) => {
     const b = baseBody.parse(ctx.req.body);
     const startsAt = new Date(b.startsAt), endsAt = new Date(b.endsAt);
