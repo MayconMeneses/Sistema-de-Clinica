@@ -1,4 +1,5 @@
-import { existsSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import cookie from '@fastify/cookie';
 import fastifyStatic from '@fastify/static';
@@ -89,8 +90,15 @@ export async function buildApp(opts: { logger?: boolean; logStream?: NodeJS.Writ
   await webhookRoutes(app);
 
   const webDir = join(import.meta.dirname, '..', '..', 'web', 'dist');
+  // Versão do frontend = hash do index.html (que referencia os arquivos com hash). O app aberto compara e se atualiza sozinho.
+  const indexFile = join(webDir, 'index.html');
+  const webVersion = existsSync(indexFile) ? createHash('sha256').update(readFileSync(indexFile)).digest('hex').slice(0, 16) : 'dev';
+  app.get('/api/version', async () => ({ version: webVersion }));
   if (existsSync(webDir)) {
-    await app.register(fastifyStatic, { root: webDir });
+    await app.register(fastifyStatic, {
+      root: webDir,
+      setHeaders: (res, path) => { if (path.endsWith('.html') || path.endsWith('manifest.webmanifest')) res.header('cache-control', 'no-cache'); },
+    });
     app.setNotFoundHandler((req, reply) => {
       if (req.method === 'GET' && !req.url.startsWith('/api/')) return reply.type('text/html').sendFile('index.html');
       return reply.status(404).send({ error: 'not_found', message: 'Não encontrado.', requestId: req.id });

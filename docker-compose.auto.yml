@@ -1,0 +1,46 @@
+# Versão com ATUALIZAÇÃO AUTOMÁTICA: usa a imagem pronta publicada no GitHub e um "vigia" (Watchtower)
+# que, a cada 5 minutos, baixa a imagem nova e reinicia o sistema sozinho. Os dados (banco) são preservados.
+#   docker compose -f docker-compose.auto.yml up -d
+# Pré-requisito (uma vez): o pacote da imagem precisa ser público em
+#   https://github.com/MayconMeneses?tab=packages  ->  sistema-de-clinica  ->  Package settings  ->  Change visibility -> Public
+# Dados do sistema são FICTÍCIOS de demonstração; o banco fica no volume "pgdata".
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: postgres        # só para demonstração local
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  app:
+    image: ghcr.io/mayconmeneses/sistema-de-clinica:latest
+    restart: unless-stopped
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGHOST: db
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      SEED_DEMO: "1"
+      HOST_PORT: "${APP_PORT:-3010}"
+    ports:
+      - "127.0.0.1:${APP_PORT:-3010}:3000"
+
+  atualizador:
+    image: containrrr/watchtower
+    restart: unless-stopped
+    command: --label-enable --interval 300 --cleanup
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+volumes:
+  pgdata:
