@@ -11,6 +11,7 @@ import { appointmentRoutes } from './routes/appointments.js';
 import { authRoutes } from './routes/auth.js';
 import { cashRoutes } from './routes/cash.js';
 import { communicationRoutes } from './routes/communications.js';
+import { dentalQuoteRoutes } from './routes/dental-quotes.js';
 import { dentalRoutes } from './routes/dental.js';
 import { financeRoutes } from './routes/finance.js';
 import { masterRoutes } from './routes/master.js';
@@ -85,6 +86,7 @@ export async function buildApp(opts: { logger?: boolean; logStream?: NodeJS.Writ
   scheduleRoutes(app);
   noteRoutes(app);
   dentalRoutes(app);
+  dentalQuoteRoutes(app);
   financeRoutes(app);
   cashRoutes(app);
   teamRoutes(app);
