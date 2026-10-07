@@ -19,6 +19,8 @@ O sistema avisa a equipe da plataforma no Telegram quando algo dá errado, dizen
    - Vários chats: separe por vírgula (`TELEGRAM_CHAT_IDS=123456789,-100987654321`).
 4. Envie `/testar` ao bot: deve chegar "Teste de alerta". Se o token vazar, revogue no @BotFather (`/revoke`).
 
+**Token cifrado (opcional):** em vez de `TELEGRAM_BOT_TOKEN`, use `TELEGRAM_BOT_TOKEN_ENC`, gerado por `echo -n "TOKEN" | npx tsx scripts/encrypt-secret.ts` (AES-256-GCM). Só protege de verdade se `DATA_ENCRYPTION_KEY` for uma chave real (`openssl rand -base64 32`) guardada separada do `.env`; no Docker de demonstração a chave é a fixa de desenvolvimento e a cifra é apenas ofuscação.
+
 Sem token e chat: em desenvolvimento os avisos ficam só na memória (sandbox); em produção o canal fica desligado (o sistema funciona igual, só não avisa).
 
 ## O que gera um aviso

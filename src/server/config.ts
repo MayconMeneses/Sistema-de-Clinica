@@ -1,3 +1,5 @@
+import { decryptSecret } from './crypto.js';
+
 const isProd = process.env.NODE_ENV === 'production';
 
 function url(name: string, devDefault: string): string {
@@ -41,7 +43,8 @@ export function integrationEnv() {
     mercadopago: { apiBase: e.MERCADOPAGO_API_BASE ?? 'https://api.mercadopago.com' },
     /** Alertas operacionais por Telegram. Sem token e chats, em desenvolvimento vale o sandbox (memória) e em produção fica desligado. */
     alerts: {
-      token: e.TELEGRAM_BOT_TOKEN,
+      // Aceita o token em claro ou cifrado (TELEGRAM_BOT_TOKEN_ENC, gerado por scripts/encrypt-secret.ts com a mesma DATA_ENCRYPTION_KEY).
+      token: e.TELEGRAM_BOT_TOKEN || (e.TELEGRAM_BOT_TOKEN_ENC ? decryptSecret(e.TELEGRAM_BOT_TOKEN_ENC) : undefined),
       chatIds: (e.TELEGRAM_CHAT_IDS ?? '').split(',').map((x) => x.trim()).filter((x) => /^-?\d{3,20}$/.test(x)),
       apiBase: e.TELEGRAM_API_BASE ?? 'https://api.telegram.org',
       envLabel: e.ALERTS_ENV_LABEL || (isProd ? 'produção' : 'desenvolvimento'),
