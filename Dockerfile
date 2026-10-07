@@ -5,6 +5,8 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
+# Windows pode converter quebras de linha (CRLF); o Linux do container precisa de LF
+RUN sed -i "s/\r$//" scripts/*.sh
 RUN npm run build
 EXPOSE 3000
 CMD ["bash", "scripts/docker-entrypoint.sh"]
