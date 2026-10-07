@@ -44,7 +44,8 @@ Legenda: ✅ IMPLEMENTADO e testado localmente · 🟡 PARCIAL · ⬜ PLANEJADO
 - ✅ Estoque: itens, livro de movimentos imutável (entrada/saída/ajuste explicado), saldo derivado que nunca fica negativo, alerta de mínimo
 - ✅ CRM: leads, funil (novo → contatado → agendado → paciente/perdido), histórico imutável, consentimento de marketing registrado, conversão em paciente com aviso de duplicidade
 - ✅ Indicadores (BI básico): atendimentos, faltas, pacientes novos, financeiro, CRM e estoque, por período; cada seção respeita plano e perfil
-- ⬜ Estoque: lotes e validade, inventário por contagem, fornecedores e pedidos de compra, consumo ligado ao procedimento
+- ✅ Estoque: lotes e validade (entrada com lote, saída pelo que vence antes, vencido não sai nem conta no mínimo, baixa por vencimento, alertas)
+- ⬜ Estoque: inventário por contagem, fornecedores e pedidos de compra, consumo ligado ao procedimento
 - ⬜ CRM: campanhas e envio (depende de provedor de mensagens), agendamento direto a partir do lead
 - ⬜ BI: catálogo de métricas versionado, exportação, comparação entre períodos, ocupação por sala/profissional
 - ✅ **Pagamentos online (Mercado Pago):** Pix e link, confirmação por webhook assinado ou botão Verificar, conciliação com recibo, cancelamento e estorno; credenciais por clínica, cifradas. **Não validado com o Mercado Pago real** (roteiro em `docs/PAGAMENTOS.md`)
