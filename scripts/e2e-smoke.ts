@@ -199,6 +199,18 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
   }
   await page.getByText('Dinheiro esperado').waitFor();
   must(true, 'proprietário abre o caixa e vê o dinheiro esperado');
+  await page.getByRole('button', { name: 'Suprimento', exact: true }).click();
+  await page.getByLabel('Valor colocado no caixa (R$)').fill('20,00');
+  await page.getByLabel('Motivo').fill('Reforço de troco e2e');
+  await page.getByRole('dialog').getByRole('button', { name: 'Registrar suprimento' }).click();
+  await page.getByText('Suprimento registrado.').waitFor();
+  await page.getByRole('button', { name: 'Sangria', exact: true }).click();
+  await page.getByLabel('Valor retirado do caixa (R$)').fill('5,00');
+  await page.getByLabel('Motivo').fill('Depósito e2e');
+  await page.getByRole('dialog').getByRole('button', { name: 'Registrar sangria' }).click();
+  await page.getByText('Sangria registrada.').waitFor();
+  await page.getByText('Reforço de troco e2e').waitFor();
+  must(true, 'suprimento e sangria registrados e listados no caixa');
   await noHorizontalScroll(page, 'caixa');
   await page.screenshot({ path: `${SHOTS}/08-caixa-mobile.png`, fullPage: true });
 

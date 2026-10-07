@@ -20,7 +20,7 @@ const SESSION_JOIN = `FROM cash_sessions s
   LEFT JOIN users uo ON uo.tenant_id = s.tenant_id AND uo.id = s.opened_by
   LEFT JOIN users uc ON uc.tenant_id = s.tenant_id AND uc.id = s.closed_by`;
 
-/** Movimentos do caixa: dinheiro esperado = abertura + dinheiro recebido − dinheiro devolvido. */
+/** Movimentos do caixa: dinheiro esperado = abertura + dinheiro recebido − dinheiro devolvido + suprimentos − sangrias. */
 async function sessionTotals(ctx: ClinicCtx, sessionId: string) {
   const r = await ctx.tx.query<{ method: string; received: string; refunded: string; n: string }>(
     `SELECT method,
@@ -30,8 +30,22 @@ async function sessionTotals(ctx: ClinicCtx, sessionId: string) {
        FROM financial_movements WHERE cash_session_id = $1 GROUP BY method`, [sessionId]);
   const byMethod = r.rows.map((x) => ({ method: x.method, receivedCents: x.received, refundedCents: x.refunded, count: Number(x.n) }));
   const cash = r.rows.find((x) => x.method === 'cash');
-  const cashNet = cash ? BigInt(cash.received) - BigInt(cash.refunded) : 0n;
-  return { byMethod, cashNet };
+  const adj = await ctx.tx.query<{ withdrawals: string; supplies: string }>(
+    `SELECT COALESCE(SUM(amount_cents) FILTER (WHERE kind='withdrawal'),0)::text AS withdrawals,
+            COALESCE(SUM(amount_cents) FILTER (WHERE kind='supply'),0)::text AS supplies
+       FROM cash_adjustments WHERE cash_session_id = $1`, [sessionId]);
+  const withdrawals = BigInt(adj.rows[0]?.withdrawals ?? '0');
+  const supplies = BigInt(adj.rows[0]?.supplies ?? '0');
+  const cashNet = (cash ? BigInt(cash.received) - BigInt(cash.refunded) : 0n) + supplies - withdrawals;
+  return { byMethod, cashNet, withdrawals, supplies };
+}
+
+async function adjustmentsOf(ctx: ClinicCtx, sessionId: string) {
+  const r = await ctx.tx.query(
+    `SELECT a.id, a.kind, a.amount_cents::text AS "amountCents", a.reason, a.created_at AS "createdAt", u.name AS "createdByName"
+       FROM cash_adjustments a LEFT JOIN users u ON u.tenant_id = a.tenant_id AND u.id = a.created_by
+      WHERE a.cash_session_id = $1 ORDER BY a.created_at, a.id`, [sessionId]);
+  return r.rows;
 }
 
 export function cashRoutes(app: FastifyInstance) {
@@ -41,7 +55,30 @@ export function cashRoutes(app: FastifyInstance) {
     const s = r.rows[0];
     if (!s) return { session: null };
     const t = await sessionTotals(ctx, s.id);
-    return { session: s, byMethod: t.byMethod, expectedCashCents: (BigInt(s.openingCents) + t.cashNet).toString() };
+    return {
+      session: s, byMethod: t.byMethod, expectedCashCents: (BigInt(s.openingCents) + t.cashNet).toString(),
+      withdrawalsCents: t.withdrawals.toString(), suppliesCents: t.supplies.toString(), adjustments: await adjustmentsOf(ctx, s.id),
+    };
+  });
+
+  // Sangria (retirada) e suprimento (reforço de troco): imutáveis, só com o caixa aberto; sangria não passa do dinheiro esperado.
+  clinicRoute(app, 'POST', '/api/cash/adjustments', { ...ADV, perm: 'cash.operate' }, async (ctx) => {
+    const b = z.object({ kind: z.enum(['withdrawal', 'supply']), amountCents: z.number().int().min(1).max(100_000_000), reason: z.string().trim().min(3).max(200) }).parse(ctx.req.body);
+    const open = await ctx.tx.query<{ id: string; opening: string }>('SELECT id, opening_cents::text AS opening FROM cash_sessions WHERE closed_at IS NULL FOR UPDATE');
+    const s = open.rows[0];
+    if (!s) throw conflict('Abra o caixa antes de lançar sangria ou suprimento.');
+    if (b.kind === 'withdrawal') {
+      const t = await sessionTotals(ctx, s.id);
+      const expected = BigInt(s.opening) + t.cashNet;
+      if (BigInt(b.amountCents) > expected) throw badRequest('A sangria é maior que o dinheiro esperado no caixa.');
+    }
+    try {
+      const r = await ctx.tx.query<{ id: string }>(
+        'INSERT INTO cash_adjustments (tenant_id, cash_session_id, kind, amount_cents, reason, created_by) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id',
+        [ctx.tenantId, s.id, b.kind, b.amountCents, b.reason, ctx.user.id]);
+      await audit(ctx, `cash.${b.kind}`, 'cash_session', s.id, { amountCents: b.amountCents });
+      return { id: r.rows[0]!.id };
+    } catch (e) { return mapDbError(e); }
   });
 
   clinicRoute(app, 'POST', '/api/cash/open', { ...ADV, perm: 'cash.operate' }, async (ctx) => {
@@ -84,7 +121,7 @@ export function cashRoutes(app: FastifyInstance) {
     const r = await ctx.tx.query<SessionRow>(`SELECT ${SESSION_COLS} ${SESSION_JOIN} WHERE s.id = $1`, [id]);
     if (!r.rows[0]) throw notFound('Caixa não encontrado.');
     const t = await sessionTotals(ctx, id);
-    return { session: r.rows[0], byMethod: t.byMethod };
+    return { session: r.rows[0], byMethod: t.byMethod, withdrawalsCents: t.withdrawals.toString(), suppliesCents: t.supplies.toString(), adjustments: await adjustmentsOf(ctx, id) };
   });
 
   // ------------------------------------------------------------------ Descontos com aprovação

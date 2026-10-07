@@ -28,7 +28,8 @@ Legenda: ✅ IMPLEMENTADO e testado localmente · 🟡 PARCIAL · ⬜ PLANEJADO
 - ✅ Responsáveis, detecção e revisão de duplicidade, mesclagem auditada, exportação do paciente, solicitações de privacidade (LGPD: ferramentas)
 - ✅ Caixa (abertura/fechamento com conferência), descontos com aprovação, recibos numerados (não fiscais) — exigem o plano com financeiro avançado
 - ✅ Agenda em visão de dia, semana e mês (contagem por dia calculada no banco)
-- ⬜ Anexos e documentos, sangria/suprimento do caixa, caixa por unidade
+- ✅ Sangria e suprimento do caixa (imutáveis, só com caixa aberto, entram no dinheiro esperado)
+- ⬜ Anexos e documentos, caixa por unidade
 
 ## Fase 3
 - ✅ Odontograma com histórico imutável e plano de tratamento com cobrança

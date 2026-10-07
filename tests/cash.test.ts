@@ -216,3 +216,47 @@ describe('descontos com aprovação', () => {
     expect((await b.owner.post(`/api/finance/discount-requests/${id}/decide`, { decision: 'reject', note: 'x y z' })).statusCode).toBe(404);
   });
 });
+
+describe('sangria e suprimento', () => {
+  it('ajustam o dinheiro esperado, exigem motivo e caixa aberto, e são imutáveis', async () => {
+    const t = await tenant('cashadj');
+    const pid = await patientWithCharge(t, 50000);
+    const bad = { kind: 'withdrawal', amountCents: 100, reason: 'depósito' };
+    expect((await t.owner.post('/api/cash/adjustments', bad)).statusCode).toBe(409); // sem caixa aberto
+    expect((await t.owner.post('/api/cash/open', { openingCents: 5000 })).statusCode).toBe(200);
+    expect((await t.owner.post('/api/finance/movements', { patientId: pid, kind: 'payment', method: 'cash', amountCents: 10000, idempotencyKey: key() })).statusCode).toBe(200);
+
+    expect((await t.owner.post('/api/cash/adjustments', { ...bad, reason: 'x' })).statusCode).toBe(400);      // motivo curto
+    expect((await t.owner.post('/api/cash/adjustments', { ...bad, amountCents: 0 })).statusCode).toBe(400);   // valor inválido
+    expect((await t.owner.post('/api/cash/adjustments', { ...bad, amountCents: 99999 })).statusCode).toBe(400); // maior que o esperado (15000)
+    expect((await t.owner.post('/api/cash/adjustments', { kind: 'withdrawal', amountCents: 6000, reason: 'Depósito no banco' })).statusCode).toBe(200);
+    expect((await t.owner.post('/api/cash/adjustments', { kind: 'supply', amountCents: 2000, reason: 'Reforço de troco' })).statusCode).toBe(200);
+
+    const cur = (await t.owner.get('/api/cash/current')).json();
+    expect(cur.expectedCashCents).toBe('11000'); // 5000 + 10000 − 6000 + 2000
+    expect(cur.withdrawalsCents).toBe('6000'); expect(cur.suppliesCents).toBe('2000');
+    expect((cur.adjustments as unknown[]).length).toBe(2);
+
+    // imutável no banco, mesmo para o papel da aplicação
+    await expect(withTenant(appPool, t.id, (tx) => tx.query('UPDATE cash_adjustments SET amount_cents = 1'))).rejects.toThrow();
+    await expect(withTenant(appPool, t.id, (tx) => tx.query('DELETE FROM cash_adjustments'))).rejects.toThrow();
+
+    const closed = await t.owner.post('/api/cash/close', { countedCents: 11000 });
+    expect(closed.json().expectedCents).toBe('11000');
+    expect(closed.json().differenceCents).toBe('0');
+    expect((await t.owner.post('/api/cash/adjustments', { kind: 'supply', amountCents: 100, reason: 'depois de fechar' })).statusCode).toBe(409);
+    const detail = (await t.owner.get(`/api/cash/sessions/${closed.json().id}`)).json();
+    expect(detail.adjustments).toHaveLength(2);
+  });
+
+  it('quem não opera o caixa não lança sangria; outra clínica não enxerga', async () => {
+    const t = await tenant('cashadjperm');
+    const dr = await t.mk('professional', 'dra');
+    await t.owner.post('/api/cash/open', { openingCents: 1000 });
+    expect((await dr.c.post('/api/cash/adjustments', { kind: 'supply', amountCents: 100, reason: 'reforço' })).statusCode).toBe(403);
+    const other = await tenant('cashadjother');
+    await other.owner.post('/api/cash/open', { openingCents: 500 });
+    expect((await other.owner.get('/api/cash/current')).json().adjustments).toEqual([]);
+  });
+});
+

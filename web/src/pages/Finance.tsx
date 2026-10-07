@@ -51,18 +51,20 @@ export function FinancePage({ me }: { me: Me }) {
   );
 }
 
+const SHEET_TITLE = { open: 'Abrir caixa', close: 'Fechar caixa', withdrawal: 'Registrar sangria', supply: 'Registrar suprimento' } as const;
+
 function CashDesk({ canOperate, onChange }: { canOperate: boolean; onChange: () => void }) {
   const toast = useToast();
-  const cur = useLoad(() => get<{ session: CashSession | null; byMethod?: ByMethod[]; expectedCashCents?: string }>('/api/cash/current'), []);
+  const cur = useLoad(() => get<{ session: CashSession | null; byMethod?: ByMethod[]; expectedCashCents?: string; withdrawalsCents?: string; suppliesCents?: string; adjustments?: { id: string; kind: 'withdrawal' | 'supply'; amountCents: string; reason: string; createdAt: string; createdByName: string | null }[] }>('/api/cash/current'), []);
   const hist = useLoad(() => get<{ sessions: CashSession[] }>('/api/cash/sessions'), []);
-  const [sheet, setSheet] = useState<'open' | 'close' | null>(null);
+  const [sheet, setSheet] = useState<'open' | 'close' | 'withdrawal' | 'supply' | null>(null);
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ expectedCents: string; countedCents: string; differenceCents: string } | null>(null);
 
-  function openSheet(kind: 'open' | 'close') { setSheet(kind); setAmount(''); setNote(''); setError(null); }
+  function openSheet(kind: 'open' | 'close' | 'withdrawal' | 'supply') { setSheet(kind); setAmount(''); setNote(''); setError(null); }
   const refresh = () => { cur.reload(); hist.reload(); onChange(); };
 
   async function submit(e: FormEvent) {
@@ -72,7 +74,11 @@ function CashDesk({ canOperate, onChange }: { canOperate: boolean; onChange: () 
     setBusy(true); setError(null);
     try {
       if (sheet === 'open') { await post('/api/cash/open', { openingCents: cents }); toast('Caixa aberto.'); }
-      else { setResult(await post('/api/cash/close', { countedCents: cents, note: note || undefined })); toast('Caixa fechado.'); }
+      else if (sheet === 'withdrawal' || sheet === 'supply') {
+        if (cents < 1) { setError('Informe um valor maior que zero.'); setBusy(false); return; }
+        await post('/api/cash/adjustments', { kind: sheet, amountCents: cents, reason: note });
+        toast(sheet === 'withdrawal' ? 'Sangria registrada.' : 'Suprimento registrado.');
+      } else { setResult(await post('/api/cash/close', { countedCents: cents, note: note || undefined })); toast('Caixa fechado.'); }
       setSheet(null); refresh();
     } catch (err) { setError((err as Error).message); } finally { setBusy(false); }
   }
@@ -99,7 +105,23 @@ function CashDesk({ canOperate, onChange }: { canOperate: boolean; onChange: () 
             <div className="stat"><b>{brl(cur.data.expectedCashCents ?? '0')}</b><span>Dinheiro esperado</span></div>
             {cur.data.byMethod?.map((m) => <div className="stat" key={m.method}><b>{brl((BigInt(m.receivedCents) - BigInt(m.refundedCents)).toString())}</b><span>{METHOD_LABEL[m.method]} no caixa ({m.count})</span></div>)}
           </div>
-          {canOperate && <div><Button variant="secondary" onClick={() => openSheet('close')}>Fechar caixa</Button></div>}
+          {cur.data.adjustments && cur.data.adjustments.length > 0 && (
+            <ul className="list">
+              {cur.data.adjustments.map((a) => (
+                <li key={a.id} className="list-item row between">
+                  <div><strong>{a.kind === 'withdrawal' ? 'Sangria' : 'Suprimento'}</strong><br /><span className="small muted">{a.reason} · {a.createdByName ?? '—'} · {dateTimeOf(a.createdAt)}</span></div>
+                  <strong>{a.kind === 'withdrawal' ? '−' : '+'}{brl(a.amountCents)}</strong>
+                </li>
+              ))}
+            </ul>
+          )}
+          {canOperate && (
+            <div className="row">
+              <Button variant="secondary" onClick={() => openSheet('supply')}>Suprimento</Button>
+              <Button variant="secondary" onClick={() => openSheet('withdrawal')}>Sangria</Button>
+              <Button variant="secondary" onClick={() => openSheet('close')}>Fechar caixa</Button>
+            </div>
+          )}
         </div>
       )}
       {result && (
@@ -121,13 +143,14 @@ function CashDesk({ canOperate, onChange }: { canOperate: boolean; onChange: () 
           </ul>
         </>
       )}
-      <Sheet open={sheet !== null} title={sheet === 'open' ? 'Abrir caixa' : 'Fechar caixa'} onClose={() => setSheet(null)}>
+      <Sheet open={sheet !== null} title={SHEET_TITLE[sheet ?? 'open']} onClose={() => setSheet(null)}>
         <form onSubmit={submit} noValidate>
-          <TextInput label={sheet === 'open' ? 'Troco inicial em dinheiro (R$)' : 'Dinheiro contado na gaveta (R$)'} value={amount} onChange={setAmount} inputMode="decimal" placeholder="0,00"
+          <TextInput label={sheet === 'open' ? 'Troco inicial em dinheiro (R$)' : sheet === 'close' ? 'Dinheiro contado na gaveta (R$)' : sheet === 'withdrawal' ? 'Valor retirado do caixa (R$)' : 'Valor colocado no caixa (R$)'} value={amount} onChange={setAmount} inputMode="decimal" placeholder="0,00"
             hint={sheet === 'close' ? 'Conte o dinheiro físico. Se houver diferença, explique abaixo.' : undefined} />
           {sheet === 'close' && <TextInput label="Observação (obrigatória se houver diferença)" value={note} onChange={setNote} />}
+          {(sheet === 'withdrawal' || sheet === 'supply') && <TextInput label="Motivo" value={note} onChange={setNote} hint={sheet === 'withdrawal' ? 'Exemplo: depósito no banco, pagamento de fornecedor.' : 'Exemplo: reforço de troco.'} />}
           {error && <p className="field-msg error" role="alert">{error}</p>}
-          <Button type="submit" busy={busy} className="btn-block">{sheet === 'open' ? 'Abrir caixa' : 'Fechar caixa'}</Button>
+          <Button type="submit" busy={busy} className="btn-block">{SHEET_TITLE[sheet ?? 'open']}</Button>
         </form>
       </Sheet>
     </div>
