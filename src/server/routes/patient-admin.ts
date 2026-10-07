@@ -179,6 +179,9 @@ export function patientAdminRoutes(app: FastifyInstance) {
     await gate('finance', 'finance.basic', 'finance.read', `SELECT kind, method, amount_cents::text AS "amountCents", note, created_at AS "createdAt" FROM financial_movements WHERE patient_id = ANY($1::uuid[]) ORDER BY created_at`);
     await gate('dentalFindings', 'dental.odontogram', 'dental.read', `SELECT tooth, surface, condition, note, created_at AS "createdAt" FROM dental_findings WHERE patient_id = ANY($1::uuid[]) ORDER BY seq`);
     await gate('dentalPlan', 'dental.odontogram', 'dental.read', `SELECT tooth, procedure, price_cents::text AS "priceCents", status, created_at AS "createdAt" FROM dental_plan_items WHERE patient_id = ANY($1::uuid[]) ORDER BY created_at`);
+    await gate('dentalQuotes', 'dental.odontogram', 'dental.read', `SELECT q.version, q.status, q.notes, q.valid_until AS "validUntil", q.created_at AS "createdAt", q.presented_at AS "presentedAt", q.decided_at AS "decidedAt", q.accepted_by_name AS "acceptedByName", q.accepted_by_role AS "acceptedByRole",
+      (SELECT json_agg(json_build_object('tooth', i.tooth, 'procedure', i.procedure, 'priceCents', i.price_cents::text) ORDER BY i.position) FROM dental_quote_items i WHERE i.tenant_id = q.tenant_id AND i.quote_id = q.id) AS items
+      FROM dental_quotes q WHERE q.patient_id = ANY($1::uuid[]) ORDER BY q.created_at`);
     await gate('messages', 'communication.inbox', 'comm.read', `SELECT payload->>'template' AS template, payload->>'channel' AS channel, status, created_at AS "createdAt" FROM outbox_events WHERE topic = 'message.send' AND payload->>'patientId' = ANY($1::text[]) ORDER BY created_at`);
     out.omitted = omitted;
     await audit(ctx, 'patient.export', 'patient', id, { sections: Object.keys(out).filter((k) => !['generatedAt', 'generatedBy', 'format', 'omitted'].includes(k)), omitted: omitted.map((o) => o.section) });

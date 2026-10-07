@@ -29,7 +29,7 @@ Para testar no celular, abra `http://<IP-da-máquina>:3000` na mesma rede (cooki
 
 | Comando | O que faz |
 |---|---|
-| `npm run check` | typecheck (servidor + web) e 145 testes (PostgreSQL real) |
+| `npm run check` | typecheck (servidor + web) e 151 testes (PostgreSQL real) |
 | `npm run drill` | backup → restore em banco temporário → valida dados, RLS e isolamento (reprova se algo divergir) |
 | `npm run build` | typecheck + build do frontend em `web/dist` |
 | `npm run e2e` | smoke no Chromium em celular e desktop (`E2E_URL=http://127.0.0.1:3000`), com screenshots |

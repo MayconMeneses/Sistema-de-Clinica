@@ -262,6 +262,29 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
   await page.getByText('Restauração em resina').first().waitFor();
   must(true, 'profissional adiciona item ao plano de tratamento');
   await page.screenshot({ path: `${SHOTS}/07c-odontograma-mobile.png`, fullPage: true });
+
+  // Orçamento com versões e aceite → plano de tratamento
+  const quoteProc = `Clareamento e2e ${Date.now()}`;
+  await page.getByRole('button', { name: 'Novo orçamento' }).click();
+  await page.getByRole('dialog').getByLabel('Procedimento', { exact: true }).fill(quoteProc);
+  await page.getByRole('dialog').getByLabel('Valor (R$)').fill('300,00');
+  await page.getByRole('button', { name: 'Salvar rascunho' }).click();
+  await page.getByText('Rascunho criado.').waitFor();
+  await page.getByRole('button', { name: 'Apresentar' }).first().click();
+  await page.getByText('Orçamento apresentado.').waitFor();
+  must(true, 'profissional cria e apresenta um orçamento');
+  await page.getByRole('button', { name: 'Nova versão' }).first().click();
+  await page.getByText('Nova versão criada como rascunho.').waitFor();
+  await page.getByRole('button', { name: 'Apresentar' }).first().click();
+  await page.getByText('Versões anteriores (1)').first().waitFor();
+  must(true, 'nova versão do orçamento substitui a anterior');
+  await page.screenshot({ path: `${SHOTS}/07d-orcamento-mobile.png`, fullPage: true });
+  await page.getByRole('button', { name: 'Registrar aceite' }).first().click();
+  await page.getByLabel('Nome de quem aceitou').fill('Carlos Mendes');
+  await page.getByRole('dialog').getByRole('button', { name: 'Registrar aceite' }).click();
+  await page.getByText(/Aceito por/).first().waitFor();
+  must((await page.getByText(quoteProc).count()) >= 2, 'aceite leva o procedimento do orçamento para o plano de tratamento');
+  await noHorizontalScroll(page, 'orcamento');
   await ctx.close();
 }
 

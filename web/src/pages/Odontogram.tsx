@@ -1,6 +1,7 @@
 import { useMemo, useState, type FormEvent } from 'react';
 import { get, patch, post } from '../api';
 import { brl, dateTimeOf, parseMoney } from '../format';
+import { Quotes } from './Quotes';
 import { Badge, Button, Empty, ErrorBox, Select, Sheet, Spinner, TextInput, useLoad, useToast } from '../ui';
 
 interface Finding { tooth: string; surface: string | null; condition: string; note: string | null; createdAt: string }
@@ -30,6 +31,7 @@ const LAYOUT = {
 export function Odontogram({ patientId, canWrite, hasFinance }: { patientId: string; canWrite: boolean; hasFinance: boolean }) {
   const [dentition, setDentition] = useState<'permanent' | 'deciduous'>('permanent');
   const [tooth, setTooth] = useState<string | null>(null);
+  const [planKey, setPlanKey] = useState(0); // recarrega o plano quando um orçamento aceito o alimenta
   const data = useLoad(() => get<{ findings: Finding[] }>(`/api/patients/${patientId}/odontogram`), [patientId]);
 
   const byTooth = useMemo(() => {
@@ -81,7 +83,8 @@ export function Odontogram({ patientId, canWrite, hasFinance }: { patientId: str
         <p className="small muted">Letras M, D, O, V, L indicam as faces com achado (mesial, distal, oclusal, vestibular, lingual).</p>
       </details>
       <ToothSheet patientId={patientId} tooth={tooth} canWrite={canWrite} onClose={() => setTooth(null)} onSaved={data.reload} />
-      <TreatmentPlan patientId={patientId} canWrite={canWrite} hasFinance={hasFinance} teeth={layout.quads.flatMap((q) => [...q.teeth])} />
+      <TreatmentPlan patientId={patientId} canWrite={canWrite} hasFinance={hasFinance} teeth={layout.quads.flatMap((q) => [...q.teeth])} reloadKey={planKey} />
+      <Quotes patientId={patientId} canWrite={canWrite} teeth={layout.quads.flatMap((q) => [...q.teeth])} onAccepted={() => setPlanKey((k) => k + 1)} />
     </div>
   );
 }
@@ -141,9 +144,9 @@ const STATUS: Record<string, { label: string; tone: 'neutral' | 'info' | 'ok' | 
 };
 const PRIORITY: Record<number, string> = { 1: 'Alta', 2: 'Média', 3: 'Baixa' };
 
-function TreatmentPlan({ patientId, canWrite, hasFinance, teeth }: { patientId: string; canWrite: boolean; hasFinance: boolean; teeth: string[] }) {
+function TreatmentPlan({ patientId, canWrite, hasFinance, teeth, reloadKey }: { patientId: string; canWrite: boolean; hasFinance: boolean; teeth: string[]; reloadKey: number }) {
   const toast = useToast();
-  const plan = useLoad(() => get<{ items: PlanItem[]; openTotalCents: string }>(`/api/patients/${patientId}/dental-plan`), [patientId]);
+  const plan = useLoad(() => get<{ items: PlanItem[]; openTotalCents: string }>(`/api/patients/${patientId}/dental-plan`), [patientId, reloadKey]);
   const [adding, setAdding] = useState(false);
   const [f, setF] = useState({ procedure: '', tooth: '', price: '', priority: '2' });
   const [error, setError] = useState<string | null>(null);
