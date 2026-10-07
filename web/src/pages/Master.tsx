@@ -237,6 +237,45 @@ interface IntegrationsData {
 const KIND_LABEL: Record<string, string> = { whatsapp: 'WhatsApp', email: 'E-mail', sms: 'SMS', payments: 'Pagamentos online', storage: 'Armazenamento de arquivos', calendar: 'Calendários', nfse: 'NFS-e', signature: 'Assinatura eletrônica' };
 const QUEUE_LABEL: Record<string, string> = { pending: 'Na fila', processing: 'Processando', sent: 'Enviadas', failed: 'Com nova tentativa', dead: 'Falharam (dead-letter)', skipped: 'Não enviadas (regra)' };
 
+interface AlertsData { transport: string; live: boolean; env: string | null; mutedUntil: number | null; recent: { at: string; severity: string; component: string; title: string; tenant?: string; route?: string; result: string }[] }
+const ALERT_RESULT: Record<string, string> = { sent: 'enviado', deduped: 'repetido (agrupado)', muted: 'silenciado', flood: 'limite de volume', failed: 'FALHOU ao enviar', disabled: 'canal desligado' };
+
+function AlertsCard() {
+  const toast = useToast();
+  const a = useLoad(() => get<AlertsData>('/api/master/alerts'), []);
+  const [busy, setBusy] = useState<string | null>(null);
+  async function test(kind: 'simple' | 'error') {
+    setBusy(kind);
+    try {
+      const r = await post<{ result: string; transport: string }>('/api/master/alerts/test', { kind });
+      toast(r.result === 'sent' ? (r.transport === 'telegram' ? 'Alerta enviado: confira o Telegram.' : 'Enviado ao modo de demonstração (nada saiu do servidor).') : `Não foi enviado: ${ALERT_RESULT[r.result] ?? r.result}.`);
+      a.reload();
+    } catch (err) { toast((err as Error).message); } finally { setBusy(null); }
+  }
+  return (
+    <div className="card">
+      <div className="row between"><h2>Alertas de erro (Telegram)</h2>
+        {a.data && (a.data.live ? <Badge tone="ok">Ligado</Badge> : <Badge tone="warn">{a.data.transport === 'sandbox' ? 'Demonstração' : 'Desligado'}</Badge>)}</div>
+      {a.error && <ErrorBox message={a.error} onRetry={a.reload} />}
+      <p className="small muted">Erros do sistema chegam no Telegram com o componente, a clínica, a rota e o local no código. Os comandos do bot (/status, /erros, /fila…) estão em docs/ALERTAS.md.</p>
+      <div className="row">
+        <Button busy={busy === 'simple'} onClick={() => test('simple')}>Enviar alerta de teste</Button>
+        <Button variant="secondary" busy={busy === 'error'} onClick={() => test('error')}>Simular um erro</Button>
+      </div>
+      {a.data && a.data.recent.length > 0 && (
+        <>
+          <h3>Últimos avisos deste servidor</h3>
+          <ul className="list">
+            {a.data.recent.map((r, i) => (
+              <li key={i} className="list-item"><strong>{r.title}</strong><br /><span className="small muted">{dateTimeOf(r.at)} · {r.component}{r.tenant ? ` · ${r.tenant}` : ''}{r.route ? ` · ${r.route}` : ''} · {ALERT_RESULT[r.result] ?? r.result}</span></li>
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
+  );
+}
+
 function Integrations() {
   const toast = useToast();
   const d = useLoad(() => get<IntegrationsData>('/api/master/integrations'), []);
@@ -262,6 +301,7 @@ function Integrations() {
     <>
       <div className="page-head"><h1>Integrações</h1></div>
       <p className="muted">Estado dos provedores no servidor. As credenciais ficam em variáveis de ambiente e nunca aparecem aqui. Sem credenciais, o envio acontece em modo de demonstração (simulado).</p>
+      <AlertsCard />
       <ul className="list">
         {d.data.providers.map((p) => (
           <li key={p.kind} className="list-item stack">

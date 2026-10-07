@@ -1,16 +1,16 @@
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { FastifyInstance } from 'fastify';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { sandboxAlerts, TelegramClient, TelegramTransport, type AlertTransport } from '../src/integrations/alerts/telegram.js';
 import { AdapterError } from '../src/integrations/types.js';
-import { Notifier, safeErrorSummary, scrub } from '../src/ops/alerts.js';
+import { locateError, Notifier, safeErrorSummary, scrub } from '../src/ops/alerts.js';
 import { handleUpdate, runCommand, type BotDeps } from '../src/ops/telegram-bot.js';
 
 const { buildApp } = await import('../src/server/app.js');
 const { clinicRoute } = await import('../src/server/context.js');
 const { appPool, platformPool, workerPool } = await import('../src/server/db.js');
-const { tenant, state } = await import('./api-helpers.js');
+const { master, tenant, state } = await import('./api-helpers.js');
 
 const TOKEN = '123456789:AAHfake_token_value_that_must_never_leak_1234';
 
@@ -59,6 +59,18 @@ describe('adaptador Telegram (contra servidor falso)', () => {
     const r = await new TelegramTransport(TOKEN, ['111', '222'], base).send('oi');
     expect(r).toEqual({ delivered: 1, failed: 1 });
     expect(calls.map((c) => c.body.chat_id)).toEqual(['111', '222']);
+  });
+});
+
+describe('localização do erro', () => {
+  it('aponta arquivo:linha do nosso código, sem enviar a pilha', () => {
+    expect(locateError(Object.assign(new Error('y'), { stack: 'Error: y\n    at f (/app/src/server/routes/finance.ts:123:9)\n    at g (/app/node_modules/x/y.js:1:1)' }))).toBe('src/server/routes/finance.ts:123');
+    expect(locateError({})).toBeUndefined();
+  });
+  it('o aviso inclui "Onde" e o código para buscar nos logs', () => {
+    const { n } = fake();
+    const m = n.format({ ...base1, where: 'src/server/routes/finance.ts:123', ref: 'req-1234' });
+    expect(m).toContain('Onde: <code>src/server/routes/finance.ts:123</code>'); expect(m).toContain('Buscar nos logs');
   });
 });
 
@@ -172,6 +184,7 @@ describe('alerta de erro real no servidor', () => {
     app = await buildApp(); state.app = app;
     clinicRoute(app, 'GET', '/api/_boom', {}, async () => { throw new Error('quebrou para jane@x.com'); });
   });
+  beforeEach(async () => { const pos = Date.now() % 30000; if (pos > 25000) await new Promise((r) => setTimeout(r, 30000 - pos + 300)); }); // TOTP do Master
   afterAll(async () => { await app.close(); await appPool.end(); await platformPool.end(); await workerPool.end(); });
 
   it('um 500 avisa componente, clínica e rota (padrão), sem vazar dados', async () => {
@@ -183,6 +196,21 @@ describe('alerta de erro real no servidor', () => {
     const m = sandboxAlerts.map((a) => a.text).join('\n');
     expect(m).toContain('Erro interno (500)'); expect(m).toContain('api'); expect(m).toContain('Clínica alerta'); expect(m).toContain('GET /api/_boom');
     expect(m).not.toContain('jane'); expect(m).not.toMatch(/\bat \w+.*\(/); // sem stack
+  });
+  it('o teste do Painel Master usa o próprio sistema e mostra onde o erro nasceu', async () => {
+    const m = await master();
+    sandboxAlerts.length = 0;
+    const st = (await m.c.get('/api/master/alerts')).json();
+    expect(st.transport).toBeDefined();
+    const ok = await m.c.post('/api/master/alerts/test', { kind: 'simple' });
+    expect(ok.statusCode).toBe(200); expect(ok.json().result).toBe('sent');
+    const er = await m.c.post('/api/master/alerts/test', { kind: 'error' });
+    expect(er.json().result).toBe('sent');
+    const txt = sandboxAlerts.map((a) => a.text).join('\n');
+    expect(txt).toContain('Teste de alerta feito pelo Painel Master');
+    expect(txt).toMatch(/Onde: <code>src\/server\/routes\/master\.ts:\d+<\/code>/);
+    expect(txt).toContain('POST /api/master/alerts/test'); expect(txt).toContain('Clínica de exemplo');
+    expect((await new (await import('./api-helpers.js')).Client('ms').post('/api/master/alerts/test', { kind: 'simple' })).statusCode).toBe(401);
   });
   it('erro do navegador vira aviso "web", limitado por IP', async () => {
     sandboxAlerts.length = 0;

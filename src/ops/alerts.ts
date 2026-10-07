@@ -18,6 +18,10 @@ export interface AlertInput {
   title: string;
   detail?: string;
   route?: string;
+  /** Onde no código o erro nasceu (arquivo:linha). Vem de `locateError`; nunca contém dados. */
+  where?: string;
+  /** Código para buscar o caso nos logs (id da requisição). */
+  ref?: string;
   tenant?: { id?: string; name?: string } | null;
   /** Agrupa alertas repetidos; padrão: componente + rota + título sem números. */
   fingerprint?: string;
@@ -51,6 +55,18 @@ export function safeErrorSummary(err: unknown): string {
   if (!e || typeof e !== 'object') return 'erro desconhecido';
   const parts = [e.name ?? 'Error', e.code ? `[${String(e.code).slice(0, 20)}]` : '', e.message ? scrub(String(e.message), 200) : ''];
   return parts.filter(Boolean).join(' ');
+}
+
+/** Primeiro ponto do NOSSO código na pilha do erro (arquivo:linha). Ignora node_modules e internos do Node; a pilha em si nunca é enviada. */
+export function locateError(err: unknown): string | undefined {
+  const stack = (err as { stack?: string } | null)?.stack;
+  if (typeof stack !== 'string') return undefined;
+  for (const line of stack.split('\n').slice(1)) {
+    if (line.includes('node_modules') || line.includes('node:internal')) continue;
+    const m = line.match(/((?:src|scripts)\/[\w./-]+\.(?:ts|js|tsx)):(\d+)(?::\d+)?/);
+    if (m) return `${m[1]}:${m[2]}`;
+  }
+  return undefined;
 }
 
 export const routePattern = (req: { routeOptions?: { url?: string }; method?: string }) =>
@@ -118,7 +134,9 @@ export class Notifier {
     ];
     if (a.tenant?.name || a.tenant?.id) lines.push(`Clínica: ${escapeHtml(scrub(a.tenant.name ?? '', 80) || '—')}${a.tenant.id ? ` (${a.tenant.id.slice(0, 8)})` : ''}`);
     if (a.route) lines.push(`Rota: <code>${escapeHtml(scrub(a.route, 120))}</code>`);
+    if (a.where) lines.push(`Onde: <code>${escapeHtml(scrub(a.where, 120))}</code>`);
     if (a.detail) lines.push(escapeHtml(scrub(a.detail, 300)));
+    if (a.ref) lines.push(`Buscar nos logs: <code>${escapeHtml(scrub(a.ref, 40))}</code>`);
     if (repeats > 0) lines.push(`↻ repetido ${repeats}x desde o último aviso`);
     lines.push(`🕒 ${fmtTime(new Date(this.now()))}`);
     return lines.join('\n');
@@ -174,7 +192,7 @@ export function resetAlertsForTests() { current = null; }
 
 export function notify(a: AlertInput): void { void current?.notify(a); }
 export function reportError(err: unknown, ctx: Omit<AlertInput, 'severity' | 'title' | 'detail'> & { severity?: Severity; title?: string }): void {
-  notify({ severity: 'critical', title: 'Erro inesperado', ...ctx, detail: safeErrorSummary(err) });
+  notify({ severity: 'critical', title: 'Erro inesperado', where: locateError(err), ...ctx, detail: safeErrorSummary(err) });
 }
 
 /** Captura falhas que escapariam de tudo (processo prestes a cair). Chamar uma vez por processo. */

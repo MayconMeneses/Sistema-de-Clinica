@@ -30,8 +30,13 @@ export function startWorker(log: (msg: string, extra?: object) => void = () => u
       const o = await processOutbox({ workerPool, appPool });
       const r = await processReceipts(workerPool);
       if (o.claimed || r.processed || r.dead) log('worker', { outbox: o, receipts: r });
-      if (o.dead) notify({ severity: 'warning', component: 'mensageria', title: 'Mensagens esgotaram as tentativas', detail: `${o.dead} mensagem(ns) foram para a fila de falhas (aviso aos pacientes não saiu). Veja o Painel Master.`, fingerprint: 'outbox-dead' });
-      if (r.dead) notify({ severity: 'warning', component: 'pagamentos', title: 'Notificações de gateway sem correspondência', detail: `${r.dead} webhook(s) não puderam ser conciliados.`, fingerprint: 'receipts-dead' });
+      if (o.dead) {
+        // Diz QUAL clínica tem mensagens paradas (o worker enxerga só o diretório slug→clínica, nunca dados dela).
+        const who = await workerPool.query<{ slug: string; n: number }>(`SELECT d.slug, count(*)::int AS n FROM outbox_events e JOIN tenant_directory d ON d.tenant_id = e.tenant_id WHERE e.status = 'dead' GROUP BY d.slug ORDER BY n DESC LIMIT 5`).catch(() => ({ rows: [] }));
+        const names = who.rows.map((r) => `${r.slug} (${r.n})`).join(', ');
+        notify({ severity: 'warning', component: 'mensageria', title: 'Mensagens esgotaram as tentativas', detail: `${o.dead} nova(s). Clínicas com mensagens paradas: ${names || '—'}. O aviso ao paciente não saiu.`, where: 'Painel Master → Integrações → Falhas definitivas', fingerprint: 'outbox-dead' });
+      }
+      if (r.dead) notify({ severity: 'warning', component: 'pagamentos', title: 'Notificações de gateway sem correspondência', detail: `${r.dead} webhook(s) não puderam ser conciliados.`, where: 'Painel Master → Integrações → Recibos de webhook', fingerprint: 'receipts-dead' });
       failures = 0;
     } catch (e) {
       log('worker_error', { name: (e as Error).name });
