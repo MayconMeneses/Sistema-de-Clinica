@@ -30,6 +30,7 @@ services:
       PGHOST: db
       PGUSER: postgres
       PGPASSWORD: postgres
+      DEMO_SKIP_MASTER_MFA: "1"          # DEMONSTRAÇÃO: Master entra sem código MFA (a porta só abre neste computador). Nunca em produção: o sistema recusa iniciar.
       SEED_DEMO: "1"
       HOST_PORT: "${APP_PORT:-3010}"
       TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN:-}"   # alertas de erro por Telegram (docs/ALERTAS.md); vazio = desligado

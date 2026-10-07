@@ -17,6 +17,14 @@ function secretKey(): string {
   return Buffer.from('dev-only-key-do-not-use-in-prod!!').subarray(0, 32).toString('base64');
 }
 
+/**
+ * MODO DEMONSTRAÇÃO: dispensa o código MFA do Painel Master (login e ações críticas). Só vale fora de produção e é ligado
+ * por DEMO_SKIP_MASTER_MFA=1 (já vem ligado nos docker-compose de demonstração, que só abrem a porta neste computador).
+ * Em produção o sistema recusa iniciar se a variável estiver definida.
+ */
+if (isProd && process.env.DEMO_SKIP_MASTER_MFA === '1') throw new Error('DEMO_SKIP_MASTER_MFA não pode ser usada em produção');
+export const masterMfaRequired = () => process.env.DEMO_SKIP_MASTER_MFA !== '1';
+
 export const config = {
   dataEncryptionKey: secretKey(),
   isProd,

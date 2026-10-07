@@ -34,3 +34,7 @@ export interface Me {
   entitlements: string[];
   mfaEnabled: boolean;
 }
+
+/** O servidor de demonstração pode dispensar o código MFA do Master (DEMO_SKIP_MASTER_MFA). */
+let mfaRequiredCache: Promise<boolean> | null = null;
+export const masterMfaRequired = () => (mfaRequiredCache ??= get<{ mfaRequired: boolean }>('/api/master/auth-info').then((r) => r.mfaRequired).catch(() => true));
