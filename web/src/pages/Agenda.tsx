@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { ApiError, get, patch, post, type Me } from '../api';
 import { brl, dayLabel, dayRange, parseMoney, shiftDay, STATUS_LABEL, timeOf, todayYmd, toIso } from '../format';
+import { MonthGrid, shiftMonth, weekStartOf, WeekView } from './AgendaViews';
 import { Badge, Button, Empty, ErrorBox, Select, Sheet, Spinner, TextInput, useLoad, useToast } from '../ui';
 
 interface Appt { id: string; startsAt: string; endsAt: string; status: string; service: string; priceCents: string; cancelReason: string | null; priority: string; seriesId: string | null; outsideHours: boolean; patientId: string; patientName: string; professionalId: string; professionalName: string; resourceName: string | null }
@@ -20,10 +21,20 @@ const NEXT: Record<string, { to: string; label: string }[]> = {
 export function Agenda({ me }: { me: Me }) {
   const toast = useToast();
   const [day, setDay] = useState(todayYmd());
+  const [view, setView] = useState<'day' | 'week' | 'month'>('day');
   const [pro, setPro] = useState('');
   const pros = useLoad(() => get<{ professionals: Pro[] }>('/api/professionals'), []);
-  const range = dayRange(day);
-  const list = useLoad(() => get<{ appointments: Appt[] }>(`/api/appointments?from=${encodeURIComponent(range.from)}&to=${encodeURIComponent(range.to)}${pro ? `&professionalId=${pro}` : ''}`), [day, pro]);
+  const weekStart = weekStartOf(day);
+  const monthStart = `${day.slice(0, 7)}-01`;
+  const range = view === 'week' ? { from: dayRange(weekStart).from, to: dayRange(shiftDay(weekStart, 7)).from }
+    : view === 'month' ? { from: dayRange(monthStart).from, to: dayRange(shiftMonth(monthStart, 1)).from }
+    : dayRange(day);
+  const proQ = pro ? `&professionalId=${pro}` : '';
+  const list = useLoad(() => (view === 'month' ? Promise.resolve({ appointments: [] as Appt[] })
+    : get<{ appointments: Appt[] }>(`/api/appointments?from=${encodeURIComponent(range.from)}&to=${encodeURIComponent(range.to)}${proQ}`)), [view, day, pro]);
+  const summary = useLoad(() => (view === 'month'
+    ? get<{ days: { day: string; active: number; completed: number; lost: number }[] }>(`/api/appointments/summary?from=${encodeURIComponent(range.from)}&to=${encodeURIComponent(range.to)}${proQ}`)
+    : Promise.resolve({ days: [] })), [view, day, pro]);
   const blocks = useLoad(() => get<{ blocks: Block[] }>('/api/blocks'), []);
   const wait = useLoad(() => get<{ entries: WaitEntry[] }>('/api/waitlist'), []);
   const [creating, setCreating] = useState(false);
@@ -49,25 +60,34 @@ export function Agenda({ me }: { me: Me }) {
         <h1>Agenda</h1>
         {canWrite && <Button onClick={() => { setPrefill(null); setCreating(true); }}>Novo agendamento</Button>}
       </div>
+      <div className="switch" role="group" aria-label="Visão da agenda">
+        <button type="button" aria-pressed={view === 'day'} onClick={() => setView('day')}>Dia</button>
+        <button type="button" aria-pressed={view === 'week'} onClick={() => setView('week')}>Semana</button>
+        <button type="button" aria-pressed={view === 'month'} onClick={() => setView('month')}>Mês</button>
+      </div>
       <div className="daynav">
-        <Button variant="secondary" className="btn-sm" onClick={() => setDay(shiftDay(day, -1))} aria-label="Dia anterior">‹</Button>
+        <Button variant="secondary" className="btn-sm" onClick={() => setDay(view === 'month' ? shiftMonth(day, -1) : shiftDay(day, view === 'week' ? -7 : -1))} aria-label={view === 'month' ? 'Mês anterior' : view === 'week' ? 'Semana anterior' : 'Dia anterior'}>‹</Button>
         <input type="date" value={day} onChange={(e) => e.target.value && setDay(e.target.value)} aria-label="Escolher dia" />
-        <Button variant="secondary" className="btn-sm" onClick={() => setDay(shiftDay(day, 1))} aria-label="Próximo dia">›</Button>
+        <Button variant="secondary" className="btn-sm" onClick={() => setDay(view === 'month' ? shiftMonth(day, 1) : shiftDay(day, view === 'week' ? 7 : 1))} aria-label={view === 'month' ? 'Próximo mês' : view === 'week' ? 'Próxima semana' : 'Próximo dia'}>›</Button>
         <Button variant="ghost" className="btn-sm" onClick={() => setDay(todayYmd())}>Hoje</Button>
       </div>
       <Select label="Profissional" value={pro} onChange={setPro}>
         <option value="">Todos</option>
         {pros.data?.professionals.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
       </Select>
-      <h2 className="muted">{dayLabel(day)}</h2>
-      {dayBlocks.map((b) => <div key={b.id} className="banner" role="note">Bloqueado: {b.reason} ({b.professionalName ?? b.resourceName ?? 'clínica inteira'}), {timeOf(b.startsAt)}–{timeOf(b.endsAt)}</div>)}
+      <h2 className="muted">{view === 'day' ? dayLabel(day) : view === 'week' ? `Semana de ${weekStart.split('-').reverse().slice(0, 2).join('/')} a ${shiftDay(weekStart, 6).split('-').reverse().slice(0, 2).join('/')}` : new Date(`${monthStart}T12:00:00Z`).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric', timeZone: 'UTC' })}</h2>
+      {view === 'day' && dayBlocks.map((b) => <div key={b.id} className="banner" role="note">Bloqueado: {b.reason} ({b.professionalName ?? b.resourceName ?? 'clínica inteira'}), {timeOf(b.startsAt)}–{timeOf(b.endsAt)}</div>)}
       {list.loading && !list.data && <Spinner />}
       {list.error && <ErrorBox message={list.error} onRetry={list.reload} />}
-      {list.data && list.data.appointments.length === 0 && (
+      {view === 'week' && list.data && <WeekView weekStart={weekStart} appointments={list.data.appointments} blocks={dayBlocks} onOpenDay={(d) => { setDay(d); setView('day'); }} />}
+      {view === 'week' && list.data?.appointments.length === 500 && <p className="small muted" role="note">Mostrando as primeiras 500 consultas da semana. Filtre por profissional para ver o restante.</p>}
+      {view === 'month' && summary.error && <ErrorBox message={summary.error} onRetry={summary.reload} />}
+      {view === 'month' && summary.data && <MonthGrid monthStart={monthStart} days={summary.data.days} blocks={dayBlocks} onOpenDay={(d) => { setDay(d); setView('day'); }} />}
+      {view === 'day' && list.data && list.data.appointments.length === 0 && (
         <Empty title="Nenhuma consulta neste dia">{canWrite && <Button onClick={() => { setPrefill(null); setCreating(true); }}>Agendar consulta</Button>}</Empty>
       )}
       <ul className="list">
-        {list.data?.appointments.map((a) => (
+        {view === 'day' && list.data?.appointments.map((a) => (
           <li key={a.id} className="list-item appt">
             <div className="row between">
               <span className="appt-time">{timeOf(a.startsAt)}–{timeOf(a.endsAt)}</span>

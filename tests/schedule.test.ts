@@ -305,3 +305,26 @@ describe('lista de espera', () => {
     expect((await b.rec.c.post('/api/waitlist', { patientId: p1 })).statusCode).toBe(400);  // paciente de outra clínica
   });
 });
+
+describe('resumo da agenda (visão mensal)', () => {
+  it('conta por dia no fuso de São Paulo, separa canceladas, filtra por profissional e respeita o limite do período', async () => {
+    const c = await clinic();
+    const p1 = await c.patient('Resumo Um'); const p2 = await c.patient('Resumo Dois'); const p3 = await c.patient('Resumo Três');
+    const d1 = at('2031-08-04', '09:00'); const d2 = at('2031-08-05', '23:30'); // 23:30 em SP ainda é dia 5 (02:30Z do dia 6)
+    const a1 = (await c.book(c.t.owner, { patientId: p1, professionalId: c.A, startsAt: d1, endsAt: plus(d1, 30) })).json().id as string;
+    await c.book(c.t.owner, { patientId: p2, professionalId: c.B, startsAt: plus(d1, 60), endsAt: plus(d1, 90) });
+    await c.book(c.t.owner, { patientId: p3, professionalId: c.A, startsAt: d2, endsAt: plus(d2, 20) });
+    expect((await c.t.owner.patch(`/api/appointments/${a1}`, { status: 'cancelled', reason: 'Paciente desistiu' })).statusCode).toBe(200);
+
+    const q = `from=${encodeURIComponent(at('2031-08-01', '00:00'))}&to=${encodeURIComponent(at('2031-09-01', '00:00'))}`;
+    const all = (await c.rec.c.get(`/api/appointments/summary?${q}`)).json().days as { day: string; active: number; completed: number; lost: number }[];
+    expect(all).toEqual([{ day: '2031-08-04', active: 1, completed: 0, lost: 1 }, { day: '2031-08-05', active: 1, completed: 0, lost: 0 }]);
+    const onlyB = (await c.rec.c.get(`/api/appointments/summary?${q}&professionalId=${c.B}`)).json().days as { day: string }[];
+    expect(onlyB).toHaveLength(1);
+    expect((await c.rec.c.get(`/api/appointments/summary?from=${encodeURIComponent(at('2031-01-01', '00:00'))}&to=${encodeURIComponent(at('2031-06-01', '00:00'))}`)).statusCode).toBe(400);
+    expect((await c.dr.c.get(`/api/appointments/summary?${q}`)).statusCode).toBe(200);
+
+    const other = await clinic();
+    expect((await other.rec.c.get(`/api/appointments/summary?${q}`)).json().days).toEqual([]); // outra clínica não vê
+  });
+});

@@ -86,7 +86,7 @@ input[aria-invalid='true'] { border-color: var(--danger); }
 .auth-card { width: 100%; max-width: 420px; }
 .brand { display: flex; align-items: center; gap: .6rem; font-weight: 800; font-size: 1.25rem; margin-bottom: 1rem; }
 .brand-mark { width: 36px; height: 36px; border-radius: 10px; background: var(--accent); color: var(--accent-text); display: grid; place-items: center; font-weight: 800; }
-.switch { display: grid; grid-template-columns: 1fr 1fr; gap: .25rem; background: var(--surface-2); padding: .25rem; border-radius: 12px; margin-bottom: 1rem; }
+.switch { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); grid-auto-flow: column; gap: .25rem; background: var(--surface-2); padding: .25rem; border-radius: 12px; margin-bottom: 1rem; }
 .switch button { min-height: 40px; border: 0; background: transparent; font: inherit; font-weight: 600; color: var(--muted); border-radius: 9px; cursor: pointer; }
 .switch button[aria-pressed='true'] { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.15); }
 
@@ -187,4 +187,24 @@ details summary { cursor: pointer; font-weight: 700; min-height: 44px; display: 
   .shell, .content { display: block; padding: 0; max-width: none; }
   .receipt { border: 0; padding: 0; }
   body { background: #fff; }
+}
+
+/* Agenda: visões semana e mês */
+.weekgrid { display: grid; gap: .6rem; margin-bottom: 1rem; }
+.weekday { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: .6rem .75rem; }
+.weekday.today { border-color: var(--brand, #0f766e); box-shadow: 0 0 0 1px var(--brand, #0f766e); }
+.weekday-head { display: flex; justify-content: space-between; align-items: center; width: 100%; background: none; border: 0; padding: .3rem 0; font: inherit; cursor: pointer; color: inherit; text-align: left; }
+.weekitem { display: grid; grid-template-columns: auto 1fr; gap: .1rem .6rem; padding: .35rem 0; border-top: 1px solid var(--border); }
+.weekitem .small, .weekitem .badge { grid-column: 2; justify-self: start; }
+.monthgrid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: .25rem; margin-bottom: 1rem; }
+.month-wd { text-align: center; text-transform: uppercase; font-size: .7rem; }
+.month-cell { position: relative; min-height: 3.1rem; background: var(--surface); border: 1px solid var(--border); border-radius: .5rem; padding: .25rem; font: inherit; color: inherit; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: space-between; }
+.month-cell.busy { background: var(--info-soft); }
+.month-cell.today { border-color: var(--brand, #0f766e); box-shadow: 0 0 0 1px var(--brand, #0f766e); }
+.month-num { font-weight: 700; font-variant-numeric: tabular-nums; }
+.month-count { font-size: .75rem; font-weight: 800; color: var(--info); }
+.month-block { position: absolute; top: 1px; right: 2px; font-size: .6rem; }
+@media (min-width: 900px) {
+  .weekgrid { grid-template-columns: repeat(7, minmax(0, 1fr)); align-items: start; }
+  .month-cell { min-height: 4.5rem; }
 }

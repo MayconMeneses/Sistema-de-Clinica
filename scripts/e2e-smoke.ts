@@ -76,6 +76,22 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
   must(true, 'agenda lista consultas do dia');
   await noHorizontalScroll(page, 'agenda');
   await page.screenshot({ path: `${SHOTS}/03-agenda-mobile.png` });
+  await page.getByRole('button', { name: 'Semana', exact: true }).click();
+  await page.getByRole('heading', { name: /^Semana de/ }).waitFor();
+  await page.getByText('Maria Souza').first().waitFor();
+  await noHorizontalScroll(page, 'agenda-semana');
+  must(true, 'agenda: visão semanal lista as consultas da semana');
+  await page.screenshot({ path: `${SHOTS}/03b-agenda-semana-mobile.png`, fullPage: true });
+  await page.getByRole('button', { name: 'Mês', exact: true }).click();
+  await page.getByRole('group', { name: 'Calendário do mês' }).waitFor();
+  await noHorizontalScroll(page, 'agenda-mes');
+  await page.screenshot({ path: `${SHOTS}/03c-agenda-mes-mobile.png` });
+  const busy = page.getByRole('group', { name: 'Calendário do mês' }).getByRole('button', { name: /: [1-9]\d* consulta/ }).first();
+  await busy.waitFor();
+  must(true, 'agenda: visão mensal mostra a contagem de consultas por dia');
+  await busy.click();
+  await page.getByText('Maria Souza').first().waitFor();
+  must(await page.getByRole('button', { name: 'Dia', exact: true }).getAttribute('aria-pressed') === 'true', 'agenda: tocar num dia do mês abre a visão do dia');
 
   await page.getByRole('button', { name: 'Novo agendamento' }).click();
   await page.getByLabel('Paciente').fill('Joao');
@@ -122,11 +138,16 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
   await page.getByLabel('Paciente').fill('Beatriz');
   await page.getByRole('button', { name: 'Beatriz Lima' }).click();
   await page.getByRole('dialog').getByLabel('Profissional').selectOption({ label: 'Dr. Paulo Profissional' });
-  const future = new Date(Date.now() + (7 + (Math.floor(Date.now() / 60000) % 50)) * 86400000).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
-  await page.getByLabel('Data').fill(future);
-  await page.getByLabel('Horário').fill('14:00');
-  await page.getByRole('button', { name: 'Agendar consulta' }).click();
-  await page.getByText('Consulta agendada.').waitFor();
+  // Data futura sorteada (o banco do teste pode já ter consultas de execuções anteriores); tenta outra data se colidir.
+  let booked = false; let future = '';
+  for (let attempt = 0; attempt < 6 && !booked; attempt++) {
+    future = new Date(Date.now() + (7 + Math.floor(Math.random() * 600)) * 86400000).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+    await page.getByLabel('Data').fill(future);
+    await page.getByLabel('Horário').fill('14:00');
+    await page.getByRole('button', { name: 'Agendar consulta' }).click();
+    booked = await page.getByText('Consulta agendada.').waitFor({ timeout: 6000 }).then(() => true).catch(() => false);
+  }
+  if (!booked) throw new Error(`agendamento futuro não confirmou. Alertas na tela: ${JSON.stringify(await page.getByRole('alert').allInnerTexts())}`);
   must(true, 'agendamento futuro criado');
   await page.getByRole('link', { name: 'Pacientes' }).click();
   await page.getByRole('link', { name: /Beatriz Lima/ }).click();
@@ -283,7 +304,8 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
   await page.getByLabel('Nome de quem aceitou').fill('Carlos Mendes');
   await page.getByRole('dialog').getByRole('button', { name: 'Registrar aceite' }).click();
   await page.getByText(/Aceito por/).first().waitFor();
-  must((await page.getByText(quoteProc).count()) >= 2, 'aceite leva o procedimento do orçamento para o plano de tratamento');
+  await page.getByText(quoteProc).nth(1).waitFor(); // uma vez no orçamento e outra no plano, que recarrega após o aceite
+  must(true, 'aceite leva o procedimento do orçamento para o plano de tratamento');
   await noHorizontalScroll(page, 'orcamento');
   await ctx.close();
 }
