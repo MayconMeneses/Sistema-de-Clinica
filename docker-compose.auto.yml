@@ -36,7 +36,7 @@ services:
       - "127.0.0.1:${APP_PORT:-3010}:3000"
 
   atualizador:
-    image: containrrr/watchtower
+    image: nickfedor/watchtower:latest   # fork mantido do Watchtower (o original, containrrr, parou de funcionar com o Docker novo)
     restart: unless-stopped
     command: --label-enable --interval 300 --cleanup
     volumes:
