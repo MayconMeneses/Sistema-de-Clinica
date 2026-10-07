@@ -80,6 +80,31 @@ if (demo.created) {
   });
 }
 
+// Complementos idempotentes (também valem para um banco de demonstração criado numa versão anterior).
+await inTenant(demo.id, async (c) => {
+  for (const [role, name] of [['unit_manager', 'Gabi Gerente'], ['stock', 'Edu Estoque'], ['marketing', 'Marta Marketing'], ['auditor', 'Aline Auditoria']] as const) {
+    const slug = name.toLowerCase().normalize('NFD').replace(/[^a-z]/g, '');
+    await c.query('INSERT INTO users (id, tenant_id, email, name, password_hash, role) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING', [randomUUID(), demo.id, `${slug}@demo.demo`, name, hash, role]);
+  }
+  const owner = (await c.query<{ id: string }>("SELECT id FROM users WHERE role = 'owner' LIMIT 1")).rows[0]!.id;
+  if (!(await c.query('SELECT 1 FROM inventory_items LIMIT 1')).rowCount) {
+    for (const [name, sku, unit, min, qty] of [['Luva de procedimento', 'LUV-M', 'cx', 5, 12], ['Resina composta A2', 'RES-A2', 'un', 3, 2], ['Anestésico lidocaína', 'ANE-01', 'un', 10, 25]] as const) {
+      const id = randomUUID();
+      await c.query('INSERT INTO inventory_items (id, tenant_id, name, sku, unit, min_quantity, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7)', [id, demo.id, name, sku, unit, min, owner]);
+      await c.query("INSERT INTO inventory_movements (tenant_id, item_id, kind, delta, reason, created_by) VALUES ($1,$2,'in',$3,'Estoque inicial',$4)", [demo.id, id, qty, owner]);
+    }
+  }
+  if (!(await c.query('SELECT 1 FROM crm_leads LIMIT 1')).rowCount) {
+    for (const [name, phone, source, interest, stage, days] of [['Fernanda Alves', '(11) 98888-1001', 'instagram', 'Clareamento', 'contacted', 1], ['Ricardo Gomes', '(11) 98888-1002', 'referral', 'Avaliação de implante', 'new', -1]] as const) {
+      const id = randomUUID();
+      await c.query(
+        `INSERT INTO crm_leads (id, tenant_id, name, phone, source, interest, stage, next_contact_on, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,(now() AT TIME ZONE 'America/Sao_Paulo')::date + $8::int,$9)`,
+        [id, demo.id, name, phone, source, interest, stage, days, owner]);
+      await c.query("INSERT INTO crm_lead_events (tenant_id, lead_id, kind, to_stage, created_by) VALUES ($1,$2,'created','new',$3)", [demo.id, id, owner]);
+    }
+  }
+});
+
 console.log('\n=== DADOS DE DEMONSTRAÇÃO (fictícios; somente desenvolvimento) ===');
 console.log(`Master   → e-mail: ${MASTER_EMAIL}  senha: ${DEMO_PASSWORD}  (MFA: código do app autenticador ou "npm run totp")`);
 console.log(`           segredo TOTP: ${secret}`);

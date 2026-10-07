@@ -30,7 +30,7 @@ export const dayRange = (ymd: string) => ({ from: `${ymd}T00:00:00-03:00`, to: `
 export const toIso = (ymd: string, hhmm: string) => new Date(`${ymd}T${hhmm}:00-03:00`).toISOString();
 
 export const ROLE_LABEL: Record<string, string> = {
-  owner: 'Proprietário', admin: 'Administrador', receptionist: 'Recepção', professional: 'Profissional', finance: 'Financeiro',
+  owner: 'Proprietário', admin: 'Administrador', unit_manager: 'Gerente de unidade', receptionist: 'Recepção', professional: 'Profissional', finance: 'Financeiro', stock: 'Estoque', marketing: 'Marketing', auditor: 'Auditor interno',
 };
 export const STATUS_LABEL: Record<string, string> = {
   scheduled: 'Agendado', confirmed: 'Confirmado', checked_in: 'Na recepção', called: 'Chamado', in_service: 'Em atendimento', completed: 'Concluído', cancelled: 'Cancelado', no_show: 'Faltou',
