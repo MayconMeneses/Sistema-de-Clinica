@@ -305,6 +305,21 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
   await noHorizontalScroll(page, 'estoque');
   await page.screenshot({ path: `${SHOTS}/09-estoque-mobile.png` });
   await page.getByRole('button', { name: 'Fechar' }).click();
+  // lote com validade próxima: aparece o aviso "Vence" e a lista de lotes
+  const soon = new Date(Date.now() + 10 * 86_400_000).toISOString().slice(0, 10);
+  await row.getByRole('button', { name: 'Entrada' }).click();
+  await page.getByLabel(/^Quantidade/).fill('2');
+  await page.getByLabel('Lote (opcional)').fill('LOTE-E2E');
+  await page.getByLabel('Validade (opcional)').fill(soon);
+  await page.getByRole('dialog').getByRole('button', { name: 'Registrar entrada' }).click();
+  await page.getByText('Entrada registrada.').waitFor();
+  await row.getByText(/^Vence /).waitFor();
+  await row.getByRole('button', { name: 'Lotes' }).click();
+  await page.getByRole('dialog').getByText('Lote LOTE-E2E').waitFor();
+  must(true, 'estoque: entrada com lote e validade mostra "Vence" e lista o lote');
+  await noHorizontalScroll(page, 'estoque-lotes');
+  await page.screenshot({ path: `${SHOTS}/09b-estoque-lotes-mobile.png` });
+  await page.getByRole('button', { name: 'Fechar' }).click();
 
   // CRM: lead → contatado → anotação → conversão em paciente
   const leadName = `Lead E2E ${Date.now()}`;
