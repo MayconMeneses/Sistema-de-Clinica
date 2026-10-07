@@ -32,7 +32,7 @@ jobs:
       - run: npm ci
       - name: Banco de teste e papéis (sem BYPASSRLS)
         run: bash scripts/dev-db-setup.sh
-      - name: Migrations (aplica duas vezes: precisa ser idempotente)
+      - name: "Migrations (aplica duas vezes - precisa ser idempotente)"
         run: npm run db:migrate && npm run db:migrate
       - name: Typecheck (servidor + web)
         run: npm run typecheck
@@ -57,3 +57,28 @@ jobs:
           npm start &
           for i in $(seq 1 30); do curl -sf localhost:3000/api/ready && break; sleep 1; done
           E2E_URL=http://127.0.0.1:3000 npm run e2e
+
+  # Publica a imagem Docker só depois que tudo acima passou. O Watchtower (docker-compose.auto.yml) busca a nova imagem sozinho.
+  publish:
+    needs: verify
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/claude/wizardly-carson-xuhql2')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/mayconmeneses/sistema-de-clinica:latest
+            ghcr.io/mayconmeneses/sistema-de-clinica:${{ github.sha }}

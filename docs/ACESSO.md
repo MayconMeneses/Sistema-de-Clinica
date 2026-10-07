@@ -67,3 +67,19 @@ Acontece no Windows quando o Git converte os scripts `.sh` para quebra de linha 
 git pull origin claude/wizardly-carson-xuhql2
 docker compose up --build
 ```
+
+## Atualização automática
+
+Há duas camadas, e as duas funcionam sem você fazer nada depois de configurar:
+
+1. **App aberto ou instalado (celular/navegador):** a cada minuto o app consulta `/api/version`. Quando o servidor recebe uma versão nova, o app recarrega sozinho. Para não perder o que você está digitando, ele espera sair do campo de texto.
+2. **Servidor (Docker):** a cada push que passa nos testes, o GitHub publica a imagem `ghcr.io/mayconmeneses/sistema-de-clinica:latest`. Suba com a versão automática:
+
+```powershell
+docker compose down
+docker compose -f docker-compose.auto.yml up -d
+```
+
+O vigia (Watchtower) confere a cada 5 minutos, baixa a imagem nova e reinicia o sistema. O banco fica preservado. **Antes, torne o pacote público uma vez** (passos no cabeçalho de `docker-compose.auto.yml`). Sem isso o download é negado.
+
+Estado: configurado, **ainda não validado de ponta a ponta** (a publicação no GitHub e o Watchtower só rodam no seu GitHub e no seu Docker). Quando fizer a primeira atualização, me diga se funcionou. Para atualizar manualmente a qualquer hora: `docker compose -f docker-compose.auto.yml pull && docker compose -f docker-compose.auto.yml up -d`.

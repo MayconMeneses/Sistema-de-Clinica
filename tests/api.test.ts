@@ -24,6 +24,19 @@ beforeEach(async () => {
 });
 afterAll(async () => { await app.close(); await serverAppPool.end(); await platformPool.end(); });
 
+describe('versão do frontend (atualização automática do app)', () => {
+  it('/api/version é público, estável e sem cache; index.html não fica em cache', async () => {
+    const a = await app.inject({ method: 'GET', url: '/api/version' });
+    const b = await app.inject({ method: 'GET', url: '/api/version' });
+    expect(a.statusCode).toBe(200);
+    expect(a.json().version).toBeTypeOf('string');
+    expect(a.json().version).toBe(b.json().version);
+    expect(a.headers['cache-control']).toBe('no-store');
+    const idx = await app.inject({ method: 'GET', url: '/' });
+    if (a.json().version !== 'dev') expect(idx.headers['cache-control']).toContain('no-cache');
+  });
+});
+
 describe('autenticação da clínica', () => {
   it('login emite cookie HttpOnly SameSite=Strict e /api/me responde', async () => {
     const t = await tenant('auth');
