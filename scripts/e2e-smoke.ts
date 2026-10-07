@@ -241,6 +241,30 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
   await noHorizontalScroll(page, 'recibo');
   await page.screenshot({ path: `${SHOTS}/08c-recibo-mobile.png` });
 
+  // Pagamento online (Mercado Pago em modo de teste interno): Pix → simular pagamento → conciliado com recibo
+  await go(page, 'Pacientes');
+  await page.getByRole('link', { name: /Beatriz Lima/ }).click();
+  await page.getByRole('tab', { name: 'Financeiro' }).click();
+  await page.getByRole('button', { name: 'Cobrar online' }).click();
+  await page.getByRole('dialog').getByLabel('Valor (R$)').fill('50,00');
+  await page.getByLabel('E-mail do pagador').fill('beatriz@exemplo.com');
+  await page.getByRole('button', { name: 'Gerar cobrança' }).click();
+  await page.getByRole('heading', { name: 'Pix gerado' }).waitFor();
+  must(await page.getByText(/Aguardando o pagamento/).isVisible(), 'pagamento online: Pix gerado aguarda o pagamento');
+  await page.getByRole('button', { name: 'Fechar' }).click();
+  await page.getByRole('button', { name: 'Simular pagamento (teste)' }).first().click();
+  await page.getByText('Pagamento confirmado.').first().waitFor();
+  await page.getByText('Pago', { exact: true }).first().waitFor();
+  must(true, 'pagamento online: pagamento confirmado e conciliado no financeiro');
+  await noHorizontalScroll(page, 'pagamento-online');
+  await page.screenshot({ path: `${SHOTS}/12-pagamento-online-mobile.png`, fullPage: true });
+  await go(page, 'Gestão');
+  await page.getByRole('tab', { name: 'Pagamentos' }).click();
+  await page.getByRole('heading', { name: 'Mercado Pago' }).waitFor();
+  must(await page.getByText(/não validado com o Mercado Pago real/).isVisible(), 'configuração de pagamentos avisa que o provedor real ainda não foi validado');
+  await noHorizontalScroll(page, 'pagamentos-config');
+  await page.screenshot({ path: `${SHOTS}/12b-pagamentos-config-mobile.png`, fullPage: true });
+
   // Estoque: item com mínimo, entrada, alerta de estoque baixo, saída e histórico
   const itemName = `Luva e2e ${Date.now()}`;
   await go(page, 'Estoque');

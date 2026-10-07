@@ -4,6 +4,7 @@ import { brl, dateTimeOf, KIND_LABEL, METHOD_LABEL, parseMoney } from '../format
 import { Consents, MessageHistory } from './Messages';
 import { Duplicates, Guardians, MergeButton, PrivacyCard } from './PatientAdmin';
 import { Odontogram } from './Odontogram';
+import { OnlineCharges } from './OnlinePayments';
 import { Badge, Button, Empty, ErrorBox, Field, Select, Sheet, Spinner, TextInput, useLoad, useToast } from '../ui';
 
 interface Patient { id: string; name: string; socialName: string | null; birthDate: string | null; phone: string | null; email: string | null; document: string | null; alert: string | null; mergedInto?: string | null }
@@ -137,7 +138,7 @@ export function PatientDetail({ id, me }: { id: string; me: Me }) {
       {tab === 'mensagens' && <MessageHistory patientId={id} />}
       {tab === 'prontuario' && <Notes patientId={id} meId={me.user.id} />}
       {tab === 'odontograma' && <Odontogram patientId={id} canWrite={can('dental.write')} hasFinance={has('finance.basic')} />}
-      {tab === 'financeiro' && <PatientFinance patientId={id} canWrite={can('finance.write')} canDiscount={has('finance.advanced') && can('finance.write')} />}
+      {tab === 'financeiro' && <PatientFinance patientId={id} canWrite={can('finance.write')} canDiscount={has('finance.advanced') && can('finance.write')} online={has('payments.gateway') && can('finance.read') ? { charge: can('payments.charge'), refund: can('finance.approve') } : null} />}
     </>
   );
 }
@@ -237,7 +238,7 @@ function AddendumSheet({ note, onClose, onDone }: { note: Note | null; onClose: 
 
 interface Movement { id: string; kind: string; method: string | null; amountCents: string; note: string | null; createdAt: string; receiptNumber: number | null }
 
-export function PatientFinance({ patientId, canWrite, canDiscount }: { patientId: string; canWrite: boolean; canDiscount: boolean }) {
+export function PatientFinance({ patientId, canWrite, canDiscount, online }: { patientId: string; canWrite: boolean; canDiscount: boolean; online: { charge: boolean; refund: boolean } | null }) {
   const toast = useToast();
   const fin = useLoad(() => get<{ movements: Movement[]; balanceCents: string; chargedCents: string; paidCents: string; discountedCents: string }>(`/api/patients/${patientId}/finance`), [patientId]);
   const [open, setOpen] = useState(false);
@@ -301,6 +302,7 @@ export function PatientFinance({ patientId, canWrite, canDiscount }: { patientId
           </li>
         ))}
       </ul>
+      {online && <OnlineCharges patientId={patientId} balanceCents={fin.data.balanceCents} canCharge={online.charge} canRefund={online.refund} onChanged={fin.reload} />}
       <Sheet open={open} title="Registrar lançamento" onClose={() => setOpen(false)}>
         <form onSubmit={submit} noValidate>
           <Select label="Tipo" value={kind} onChange={setKind}><option value="payment">Pagamento recebido</option><option value="charge">Cobrança</option><option value="refund">Estorno</option></Select>

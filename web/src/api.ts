@@ -2,7 +2,7 @@ export class ApiError extends Error {
   constructor(public status: number, public code: string, message: string, public data: Record<string, unknown> = {}) { super(message); }
 }
 
-export async function api<T = unknown>(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string, body?: unknown): Promise<T> {
+export async function api<T = unknown>(method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', url: string, body?: unknown): Promise<T> {
   let res: Response;
   try {
     res = await fetch(url, {

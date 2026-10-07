@@ -36,7 +36,9 @@ Estado em v0.7.0. "Testado" = teste automatizado em PostgreSQL real (ver `npm ru
 | 22 | Relatórios/BI | 🟡 | tela de indicadores por período (atendimentos, faltas, financeiro, CRM, estoque), só agregados, por seção conforme plano e perfil ✅; catálogo de métricas versionado (definição/fórmula/owner), exportação, comparação entre períodos ⬜ |
 | 23 | Integrações: adaptador, idempotência, retry/backoff/jitter, timeout, webhooks assinados com replay/dedupe/dead-letter, outbox, health | ✅ | `tests/integrations.test.ts` (29); ⬜ rate limit por integração, custo, reconciliação, exit strategy |
 | 23 | Provedores reais (WhatsApp, e-mail, SMS) | ⛔ | adaptadores escritos, **não validados** com o provedor |
-| 23 | Pagamentos, calendários, NFS-e, assinatura, error tracking | ⛔ | decisões pendentes |
+| 23 | Pagamentos (Mercado Pago) | 🟡 | porta, sandbox, adaptador real escrito (Pix, link, estorno), webhook assinado, conciliação idempotente com recibo ✅; **não validado com o provedor real** (`docs/PAGAMENTOS.md`) |
+| 23 | NFS-e, assinatura eletrônica | 🟡 | porta + sandbox prontos; adaptador real ⛔ (decisão do município/provedor) |
+| 23 | Calendários, error tracking | ⛔ | decisões pendentes |
 | 24 | Monólito modular; módulos sem acessar tabelas alheias | 🟡 | módulos `entitlements`, `communications`, rotas por domínio; fronteiras ainda não impostas por ferramenta |
 | 25 | Stack por ADR | 🟡 | ADR-0001 **proposta** (aguarda confirmação) |
 | 26 | Multi-tenancy RLS; testes negativos | ✅ | dados, HTTP, arquivo (storage), webhook/evento cruzado; cache/relatório n/a (não existem) |
@@ -48,7 +50,7 @@ Estado em v0.7.0. "Testado" = teste automatizado em PostgreSQL real (ver `npm ru
 | 32 | Regras profissionais/interoperabilidade | ⛔ | validação humana necessária |
 | 33 | IA | ⬜ | nenhuma IA no produto (intencional) |
 | 34 | Observabilidade | 🟡 | logs estruturados, request id, health/ready ✅; métricas, traces, error tracking, alertas, runbooks ⬜ |
-| 35 | Backup/restore | 🟡 | `npm run drill` valida restore ✅; RPO/RTO ⛔; backup agendado/criptografado/fora do host ⬜ |
+| 35 | Backup/restore | 🟡 | `npm run drill` valida restore ✅; RPO/RTO ⛔; backup cifrado (`scripts/backup-encrypted.sh`, exercitado no CI) ✅; agendamento e envio para fora do host ⬜ (dependem do ambiente) |
 | 36 | UX/acessibilidade | 🟡 | pt-BR, responsivo, labels, foco, estados vazio/erro/loading, confirmação ✅; contraste e teclado **não auditados** formalmente |
 | 37 | API e contratos | 🟡 | validação, erros seguros, request id, idempotência no financeiro ✅; paginação por cursor, OpenAPI, contract tests ⬜ |
 | 38 | Testes | 🟡 | unit, integração, RLS, segurança negativa, concorrência, E2E ✅; carga/stress/soak, acessibilidade automatizada, multi-navegador ⬜ |

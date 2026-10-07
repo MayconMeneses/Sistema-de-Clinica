@@ -51,6 +51,21 @@ jobs:
         run: |
           npm run seed
           npm run drill
+      - name: Backup cifrado (cifra, verifica, rejeita senha errada e adulteração, restaura)
+        run: |
+          export BACKUP_PASSPHRASE=frase-somente-do-ci-123 BACKUP_DIR="$RUNNER_TEMP/bk"
+          f=$(bash scripts/backup-encrypted.sh backup | tail -1)
+          if grep -q PGDMP "$f"; then echo "backup gravado em claro!"; exit 1; fi
+          bash scripts/backup-encrypted.sh verify "$f"
+          if BACKUP_PASSPHRASE=senha-errada-123456 bash scripts/backup-encrypted.sh verify "$f" 2>/dev/null; then echo "aceitou senha errada!"; exit 1; fi
+          cp "$f" "$BACKUP_DIR/adulterado.dump.enc"; cp "$f.sha256" "$BACKUP_DIR/adulterado.dump.enc.sha256"
+          sed -i "s/  .*/  adulterado.dump.enc/" "$BACKUP_DIR/adulterado.dump.enc.sha256"
+          printf 'Z' | dd of="$BACKUP_DIR/adulterado.dump.enc" bs=1 seek=100 conv=notrunc 2>/dev/null
+          if bash scripts/backup-encrypted.sh verify "$BACKUP_DIR/adulterado.dump.enc" 2>/dev/null; then echo "aceitou arquivo adulterado!"; exit 1; fi
+          psql -q -d postgres -c "CREATE DATABASE clinica_bk_restore OWNER clinica_owner"
+          bash scripts/backup-encrypted.sh restore "$f" clinica_bk_restore
+          a=$(psql -tA -d clinica_one -c "select count(*) from patients"); b=$(psql -tA -d clinica_bk_restore -c "select count(*) from patients")
+          echo "pacientes: origem=$a restaurado=$b"; [ "$a" = "$b" ]
       - name: Navegador (E2E em celular e desktop)
         run: |
           npx playwright-core install --with-deps chromium

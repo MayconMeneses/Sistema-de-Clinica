@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { audit, clinicRoute, type ClinicCtx } from '../context.js';
 import { assertActive, family } from '../../modules/patients/family.js';
+import { nextReceiptNumber } from '../../modules/finance/receipt.js';
 import { badRequest, conflict, mapDbError, notFound } from '../http.js';
 
 const FIN = { cap: 'finance.basic' } as const;
@@ -67,10 +68,7 @@ export function financeRoutes(app: FastifyInstance) {
     try {
       let receipt: number | null = null;
       if (b.kind === 'payment') {
-        const c = await ctx.tx.query<{ n: string }>(
-          `INSERT INTO receipt_counters (tenant_id, last_number) VALUES ($1, 1)
-           ON CONFLICT (tenant_id) DO UPDATE SET last_number = receipt_counters.last_number + 1 RETURNING last_number::text AS n`, [ctx.tenantId]);
-        receipt = Number(c.rows[0]!.n);
+        receipt = await nextReceiptNumber(ctx.tx, ctx.tenantId);
       }
       const r = await ctx.tx.query<{ id: string }>(
         `INSERT INTO financial_movements (tenant_id, patient_id, kind, method, amount_cents, note, idempotency_key, created_by, cash_session_id, receipt_number)

@@ -45,4 +45,8 @@ Legenda: ✅ IMPLEMENTADO e testado localmente · 🟡 PARCIAL · ⬜ PLANEJADO
 - ⬜ Estoque: lotes e validade, inventário por contagem, fornecedores e pedidos de compra, consumo ligado ao procedimento
 - ⬜ CRM: campanhas e envio (depende de provedor de mensagens), agendamento direto a partir do lead
 - ⬜ BI: catálogo de métricas versionado, exportação, comparação entre períodos, ocupação por sala/profissional
+- ✅ **Pagamentos online (Mercado Pago):** Pix e link, confirmação por webhook assinado ou botão Verificar, conciliação com recibo, cancelamento e estorno; credenciais por clínica, cifradas. **Não validado com o Mercado Pago real** (roteiro em `docs/PAGAMENTOS.md`)
+- ✅ Catálogo único de integrações (`src/integrations/catalog.ts`); portas e sandbox de **NFS-e** e **assinatura eletrônica** (adaptadores reais pendentes de decisão/contrato)
+- ✅ Backup cifrado (`scripts/backup-encrypted.sh`) exercitado no CI; **sem agendamento nem destino em nuvem** (dependem do ambiente)
+- ⬜ Pagamentos: estorno parcial, parcelamento, taxas do provedor, conciliação bancária
 - ⬜ Papéis da plataforma (Master), portal do paciente, NFS-e, integrações reais, regulados, IA. Convênios/TISS: bloqueado globalmente.

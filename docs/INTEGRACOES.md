@@ -11,16 +11,19 @@ Princípio: tudo que depende de terceiros fica atrás de uma **porta** (interfac
 6. Entrega: pelo menos uma vez; o id do evento vai como `Idempotency-Key` ao provedor.
 
 ## Estado por integração
+O **catálogo único** está em `src/integrations/catalog.ts` (o Painel Master mostra o mesmo conteúdo): para cada integração, o que já está montado, as variáveis que faltam e o que depende de decisão ou contrato.
+
 | Integração | Porta | Sandbox | Adaptador real | Validado com o provedor real | O que falta |
 |---|---|---|---|---|---|
 | WhatsApp (Meta Cloud API) | ✅ | ✅ | ✅ escrito | ❌ | credenciais, número verificado, **templates aprovados** com os nomes `appointment_*`, webhook da Meta |
 | E-mail transacional | ✅ | ✅ | ✅ genérico (POST JSON + Bearer) | ❌ | escolher provedor, domínio/SPF/DKIM; ajustar o formato do corpo ao provedor |
 | SMS | ✅ | ✅ | ✅ genérico | ❌ | escolher provedor e ajustar o formato |
-| Armazenamento de arquivos | ✅ | — | ✅ disco local (isolado por tenant, sem path traversal) | n/a | trocar por S3-compatível (mesma porta); rota de upload com validação de tipo/tamanho/antivírus ainda não existe |
-| Pagamentos (Pix/cartão) | ⬜ | ⬜ | ⬜ | ❌ | **decisão do gateway**; porta, cobrança, webhook de confirmação |
+| **Pagamentos online (Mercado Pago)** | ✅ | ✅ | ✅ escrito (Pix, link, consulta, cancelamento, estorno, webhook assinado) | ❌ | **credenciais de cada clínica** (Access Token e segredo do webhook em Gestão → Pagamentos), `PUBLIC_BASE_URL`, roteiro de validação em `docs/PAGAMENTOS.md` |
+| NFS-e | ✅ porta (`src/integrations/nfse.ts`) | ✅ | ⬜ | ❌ | **município/provedor da prefeitura**, certificado digital, regime tributário, código de serviço; ligar ao recibo |
+| Assinatura eletrônica | ✅ porta (`src/integrations/signature.ts`) | ✅ | ⬜ | ❌ | provedor, nível de assinatura e validade jurídica (validar com especialista); ligar ao aceite do orçamento |
+| Armazenamento de arquivos | ✅ | — | ✅ disco local (isolado por tenant, sem path traversal) | n/a | adaptador S3-compatível (mesma porta); rota de upload com validação de tipo/tamanho/antivírus |
+| Backup cifrado | — | — | ✅ `scripts/backup-encrypted.sh` (cifra, verifica, restaura; exercitado no CI) | ❌ | nuvem/região, agendamento, cofre da senha, papel de backup (ver cabeçalho do script) |
 | Calendários (Google/Microsoft) | ⬜ | ⬜ | ⬜ | ❌ | OAuth, escopos |
-| NFS-e | ⬜ | ⬜ | ⬜ | ❌ | **decisão do município/provedor** |
-| Assinatura eletrônica | ⬜ | ⬜ | ⬜ | ❌ | provedor e regras profissionais (validar) |
 | Error tracking / métricas | ⬜ | — | ⬜ | ❌ | escolher ferramenta |
 
 `validado com o provedor real = ❌` significa: o adaptador foi testado contra um servidor HTTP falso local (classificação de erros, timeout, idempotência, formato da requisição), **não** contra o serviço verdadeiro.

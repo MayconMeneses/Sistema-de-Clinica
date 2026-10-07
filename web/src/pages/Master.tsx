@@ -228,13 +228,13 @@ function PlatformAudit() {
 }
 
 interface IntegrationsData {
-  providers: { kind: string; provider: string; configured: boolean; implemented: boolean; validatedWithProvider: boolean }[];
+  providers: { kind: string; label: string; provider: string; scope: 'platform' | 'clinic'; env: string[]; pending: string; configured: boolean; perClinic: boolean; implemented: boolean; portReady: boolean; sandbox: boolean; validatedWithProvider: boolean }[];
   queue: { status: string; count: number }[];
   deadByTenant: { tenantId: string; name: string; dead: number }[];
   receipts: { status: string; count: number }[];
   connections: { tenantId: string; kind: string; provider: string; mode: string }[];
 }
-const KIND_LABEL: Record<string, string> = { whatsapp: 'WhatsApp', email: 'E-mail', sms: 'SMS', payments: 'Pagamentos (Pix/cartão)', storage: 'Armazenamento de arquivos', calendar: 'Calendários', nfse: 'NFS-e', signature: 'Assinatura eletrônica' };
+const KIND_LABEL: Record<string, string> = { whatsapp: 'WhatsApp', email: 'E-mail', sms: 'SMS', payments: 'Pagamentos online', storage: 'Armazenamento de arquivos', calendar: 'Calendários', nfse: 'NFS-e', signature: 'Assinatura eletrônica' };
 const QUEUE_LABEL: Record<string, string> = { pending: 'Na fila', processing: 'Processando', sent: 'Enviadas', failed: 'Com nova tentativa', dead: 'Falharam (dead-letter)', skipped: 'Não enviadas (regra)' };
 
 function Integrations() {
@@ -265,9 +265,12 @@ function Integrations() {
       <ul className="list">
         {d.data.providers.map((p) => (
           <li key={p.kind} className="list-item stack">
-            <div className="row between"><strong>{KIND_LABEL[p.kind] ?? p.kind}</strong>
-              {p.configured ? <Badge tone="ok">Configurado</Badge> : p.implemented ? <Badge tone="warn">Aguardando credenciais</Badge> : <Badge>Não implementado</Badge>}</div>
-            <span className="small muted">Provedor: {p.provider}{p.implemented && !p.validatedWithProvider ? ' · ainda não validado com o provedor real' : ''}</span>
+            <div className="row between"><strong>{p.label ?? KIND_LABEL[p.kind] ?? p.kind}</strong>
+              {p.configured ? <Badge tone="ok">Configurado</Badge> : p.perClinic ? <Badge tone="info">Credencial por clínica</Badge> : p.implemented ? <Badge tone="warn">Aguardando credenciais</Badge> : <Badge>Não implementado</Badge>}</div>
+            <span className="small muted">Provedor: {p.provider} · credencial {p.scope === 'clinic' ? 'de cada clínica (cifrada no banco)' : 'do servidor (variável de ambiente)'}</span>
+            <span className="small muted">Pronto: {p.portReady ? 'porta' : 'sem porta'} · {p.sandbox ? 'sandbox' : 'sem sandbox'} · {p.implemented ? (p.validatedWithProvider ? 'adaptador real validado' : 'adaptador real escrito, NÃO validado com o provedor') : 'adaptador real ainda não escrito'}</span>
+            {p.env.length > 0 && <span className="small muted">Variáveis: {p.env.join(', ')}</span>}
+            <span className="small">Falta: {p.pending}</span>
           </li>
         ))}
       </ul>

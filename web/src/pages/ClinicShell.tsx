@@ -46,7 +46,7 @@ export function ClinicShell({ me, hash, onLogout, onRefresh }: { me: Me; hash: s
   else if (current === '/recepcao' && visible.some((i) => i.path === '/recepcao')) page = <Reception canWrite={can('agenda.write')} />;
   else if (current === '/pacientes' && visible.some((i) => i.path === '/pacientes')) page = <Patients me={me} />;
   else if (current === '/financeiro' && visible.some((i) => i.path === '/financeiro')) page = <FinancePage me={me} />;
-  else if (current === '/equipe' && visible.some((i) => i.path === '/equipe')) page = <Team permissions={me.permissions} />;
+  else if (current === '/equipe' && visible.some((i) => i.path === '/equipe')) page = <Team permissions={me.permissions} entitlements={me.entitlements} />;
   else if (current === '/estoque' && visible.some((i) => i.path === '/estoque')) page = <InventoryPage canWrite={can('inventory.write')} />;
   else if (current === '/crm' && visible.some((i) => i.path === '/crm')) page = <CrmPage canWrite={can('crm.write')} canConvert={can('patients.write')} />;
   else if (current === '/indicadores' && visible.some((i) => i.path === '/indicadores')) page = <ReportsPage />;
