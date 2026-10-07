@@ -24,7 +24,7 @@ if [ "${SEED_DEMO:-1}" = "1" ]; then npm run seed; fi
 
 echo
 echo "================================================================"
-echo " Sistema no ar: http://localhost:${PORT:-3000}   (dados FICTÍCIOS)"
+echo " Sistema no ar: http://localhost:${HOST_PORT:-${PORT:-3000}}   (dados FICTÍCIOS)"
 echo " Acessos de demonstração: veja docs/ACESSO.md ou o bloco acima."
 echo "================================================================"
 exec npm start
