@@ -190,6 +190,7 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
 
   await go(page, 'Financeiro');
   await page.getByRole('heading', { name: 'Caixa' }).waitFor();
+  await page.locator('.badge', { hasText: /^(Aberto|Fechado)$/ }).waitFor(); // espera o estado do caixa carregar antes de decidir
   if (await page.getByRole('button', { name: 'Abrir caixa' }).count()) { // idempotente: o caixa pode ter ficado aberto de uma execução anterior
     await page.getByRole('button', { name: 'Abrir caixa' }).click();
     await page.getByLabel('Troco inicial em dinheiro (R$)').fill('50,00');
