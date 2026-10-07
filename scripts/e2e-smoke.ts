@@ -142,6 +142,73 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
   await ctx.close();
 }
 
+// ---------------- CELULAR: caixa, desconto com aprovação e recibo (proprietário) ----------------
+{
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, locale: 'pt-BR' });
+  const page = await ctx.newPage();
+  watch(page, 'mobile-caixa');
+  await page.goto(BASE);
+  await page.getByLabel('Identificador da clínica').fill('demo');
+  await page.getByLabel('E-mail').fill('dono@demo.demo');
+  await page.getByLabel('Senha').fill(PW);
+  await page.getByRole('button', { name: 'Entrar' }).click();
+  await page.getByRole('navigation', { name: 'Principal' }).waitFor();
+
+  await page.getByRole('link', { name: 'Financeiro' }).click();
+  await page.getByRole('heading', { name: 'Caixa' }).waitFor();
+  if (await page.getByRole('button', { name: 'Abrir caixa' }).count()) { // idempotente: o caixa pode ter ficado aberto de uma execução anterior
+    await page.getByRole('button', { name: 'Abrir caixa' }).click();
+    await page.getByLabel('Troco inicial em dinheiro (R$)').fill('50,00');
+    await page.getByRole('dialog').getByRole('button', { name: 'Abrir caixa' }).click();
+    await page.getByText('Caixa aberto.').waitFor();
+  }
+  await page.getByText('Dinheiro esperado').waitFor();
+  must(true, 'proprietário abre o caixa e vê o dinheiro esperado');
+  await noHorizontalScroll(page, 'caixa');
+  await page.screenshot({ path: `${SHOTS}/08-caixa-mobile.png`, fullPage: true });
+
+  // cobrança → pedido de desconto → aprovação
+  await page.getByRole('link', { name: 'Pacientes' }).click();
+  await page.getByRole('link', { name: /Beatriz Lima/ }).click();
+  await page.getByRole('tab', { name: 'Financeiro' }).click();
+  await page.getByRole('button', { name: 'Registrar lançamento' }).click();
+  await page.getByRole('dialog').getByLabel('Tipo').selectOption('charge');
+  await page.getByLabel('Valor (R$)').fill('1000,00');
+  await page.getByRole('button', { name: 'Registrar', exact: true }).click();
+  await page.getByText('Lançamento registrado.').waitFor();
+  await page.getByRole('button', { name: 'Pedir desconto' }).click();
+  await page.getByLabel('Valor do desconto (R$)').fill('10,00');
+  await page.getByLabel('Motivo').fill('Cortesia e2e');
+  await page.getByRole('button', { name: 'Enviar pedido' }).click();
+  await page.getByText('Pedido enviado para aprovação.').waitFor();
+  must(true, 'pedido de desconto enviado para aprovação');
+  await page.getByRole('link', { name: 'Financeiro' }).click();
+  await page.getByRole('heading', { name: 'Descontos' }).waitFor();
+  await page.getByRole('button', { name: 'Aprovar' }).first().click();
+  await page.getByText('Desconto aprovado.').waitFor();
+  must(true, 'desconto aprovado pelo proprietário');
+  await page.screenshot({ path: `${SHOTS}/08b-descontos-mobile.png`, fullPage: true });
+
+  // fecha o caixa contando exatamente o esperado
+  const expected = (await page.locator('.stat', { hasText: 'Dinheiro esperado' }).locator('b').innerText()).replace(/[^\d,]/g, '');
+  await page.getByRole('button', { name: 'Fechar caixa' }).first().click();
+  await page.getByLabel('Dinheiro contado na gaveta (R$)').fill(expected);
+  await page.getByRole('dialog').getByRole('button', { name: 'Fechar caixa' }).click();
+  await page.getByText('Caixa fechado.').first().waitFor();
+  must(await page.getByText(/sem diferença/i).first().isVisible(), 'fechamento sem diferença');
+
+  // recibo
+  await page.getByRole('link', { name: 'Pacientes' }).click();
+  await page.getByRole('link', { name: /Beatriz Lima/ }).click();
+  await page.getByRole('tab', { name: 'Financeiro' }).click();
+  await page.getByRole('link', { name: /Ver recibo/ }).first().click();
+  await page.getByRole('heading', { name: /^Recibo/ }).waitFor();
+  must(await page.getByText(/não substitui nota fiscal/).isVisible(), 'recibo informa que não é documento fiscal');
+  await noHorizontalScroll(page, 'recibo');
+  await page.screenshot({ path: `${SHOTS}/08c-recibo-mobile.png` });
+  await ctx.close();
+}
+
 // ---------------- CELULAR: profissional e prontuário ----------------
 {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, locale: 'pt-BR' });

@@ -34,7 +34,8 @@ Legenda: ✅ IMPLEMENTADO e testado localmente · 🟡 PARCIAL · ⬜ PLANEJADO
 - ✅ Unidades/salas/equipamentos, horário de atendimento, encaixe, bloqueios, séries semanais, lista de espera, fila da recepção (chegada→chamada→atendimento→conclusão)
 - 🟡 Recepção (falta triagem, formulários pendentes, checkout com pagamento)
 - ✅ Responsáveis, detecção e revisão de duplicidade, mesclagem auditada, exportação do paciente, solicitações de privacidade (LGPD: ferramentas)
-- ⬜ Anexos e documentos, caixa (abertura/fechamento), visão semanal/mensal da agenda
+- ✅ Caixa (abertura/fechamento com conferência), descontos com aprovação, recibos numerados (não fiscais) — exigem o plano com financeiro avançado
+- ⬜ Anexos e documentos, visão semanal/mensal da agenda, sangria/suprimento do caixa, caixa por unidade
 
 ## Fase 3
 - ✅ Odontograma com histórico imutável e plano de tratamento com cobrança

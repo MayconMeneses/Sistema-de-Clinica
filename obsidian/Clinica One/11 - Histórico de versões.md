@@ -17,6 +17,7 @@ Volta: [[00 - Índice]]. Branch: `claude/wizardly-carson-xuhql2`.
 | 0.5.0 | `a747bde` | Integrações em sandbox (outbox, worker, webhooks, consentimento); correção de logs com dados de paciente |
 | 0.6.0 | `14b7ac1` | Salas, horários, bloqueios, séries, lista de espera, fila da recepção |
 | 0.7.0 | `4d68485` | Duplicidade, mesclagem, responsáveis, exportação, solicitações de privacidade |
+| 0.8.0 | (esta versão) | Caixa, descontos com aprovação, recibos numerados; atualização automática do app e do servidor |
 | fix | `bb8bde5` | Menu inferior legível em 360px/320px + teste permanente |
 | acesso | (este) | Docker, guia de acesso, cofre do Obsidian |
 

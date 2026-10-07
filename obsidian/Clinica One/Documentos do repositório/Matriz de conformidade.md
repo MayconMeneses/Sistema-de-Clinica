@@ -36,7 +36,7 @@ Estado em v0.7.0. "Testado" = teste automatizado em PostgreSQL real (ver `npm ru
 | 13 | Prontuário | 🟡 | evolução, rascunho, assinatura imutável, adendo, leitura auditada ✅; formulários, sinais vitais, prescrição, atestados, anexos, impressão ⬜ |
 | 14 | Odontologia | 🟡 | odontograma adulto/infantil com histórico imutável, plano com cobrança ✅; orçamento com versões/aceite, comparação temporal, imagens, próteses/laboratórios, repasses ⬜ |
 | 15 | Pacotes por especialidade | ⬜ | |
-| 16 | Financeiro particular | 🟡 | cobrança/pagamento/estorno por movimentos imutáveis, centavos, idempotência ✅; caixa, descontos, pagar, conciliação, comissões, pacotes, inadimplência, recibos ⬜ |
+| 16 | Financeiro particular | 🟡 | cobrança/pagamento/estorno por movimentos imutáveis, centavos, idempotência ✅; caixa (abertura/fechamento, diferença explicada), descontos com aprovação e segregação de funções, recibos numerados ✅; contas a pagar, conciliação, comissões, pacotes, inadimplência, sangria/suprimento, caixa por unidade, NFS-e ⬜ |
 | 17 | TISS futuro | 🟡 | capability bloqueada; sem modelo de dados |
 | 18 | Comunicação | 🟡 | canais (porta+sandbox+adaptador), confirmação/lembrete/cancelamento/remarcação, consentimento ✅; inbox, templates editáveis, automações, opt-out por resposta, SLA, bot ⬜ |
 | 19–21 | CRM, estoque, teleatendimento | ⬜ | |

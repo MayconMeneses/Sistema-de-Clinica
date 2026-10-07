@@ -36,4 +36,4 @@ export const STATUS_LABEL: Record<string, string> = {
   scheduled: 'Agendado', confirmed: 'Confirmado', checked_in: 'Na recepção', called: 'Chamado', in_service: 'Em atendimento', completed: 'Concluído', cancelled: 'Cancelado', no_show: 'Faltou',
 };
 export const METHOD_LABEL: Record<string, string> = { pix: 'Pix', card: 'Cartão', cash: 'Dinheiro' };
-export const KIND_LABEL: Record<string, string> = { charge: 'Cobrança', payment: 'Pagamento', refund: 'Estorno' };
+export const KIND_LABEL: Record<string, string> = { charge: 'Cobrança', payment: 'Pagamento', refund: 'Estorno', discount: 'Desconto' };

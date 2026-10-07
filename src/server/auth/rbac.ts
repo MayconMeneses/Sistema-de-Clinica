@@ -22,6 +22,8 @@ const PERMISSIONS = {
   'dental.write': ['professional'],
   'finance.read': ['owner', 'admin', 'receptionist', 'finance'],
   'finance.write': ['owner', 'admin', 'receptionist', 'finance'],
+  'cash.operate': ['owner', 'admin', 'receptionist', 'finance'],
+  'finance.approve': ['owner', 'admin', 'finance'],
   'users.manage': ['owner', 'admin'],
   'audit.read': ['owner', 'admin'],
 } as const satisfies Record<string, readonly Role[]>;
