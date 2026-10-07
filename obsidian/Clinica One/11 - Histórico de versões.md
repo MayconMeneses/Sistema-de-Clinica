@@ -20,7 +20,8 @@ Volta: [[00 - Índice]]. Branch: `claude/wizardly-carson-xuhql2`.
 | 0.8.0 | `21c1502` | Caixa, descontos com aprovação, recibos numerados; atualização automática do app e do servidor |
 | 0.9.0 | `a0b243c` | Orçamento odontológico com versões e aceite |
 | 0.10.0 | `8c53132` | Agenda semanal e mensal; papéis (gerente, estoque, marketing, auditor); estoque; CRM; indicadores (BI); menu "Mais" no celular |
-| 0.11.0 | (esta versão) | Pagamentos online (Mercado Pago); catálogo único de integrações; portas de NFS-e e assinatura; backup cifrado |
+| 0.11.0 | publicada | Pagamentos online (Mercado Pago); catálogo único de integrações; portas de NFS-e e assinatura; backup cifrado |
+| 0.12.0 | (esta versão) | Alertas de erro por Telegram (componente + clínica) e comandos de operação; telemetria de erros da tela |
 | fix | `bb8bde5` | Menu inferior legível em 360px/320px + teste permanente |
 | acesso | (este) | Docker, guia de acesso, cofre do Obsidian |
 

@@ -8,6 +8,7 @@ import { DbRateLimiter } from '../auth/rate-limit.js';
 import { config } from '../config.js';
 import { cookieOptions, MASTER_COOKIE, masterRoute, type MasterCtx } from '../context.js';
 import { platformPool } from '../db.js';
+import { notify } from '../../ops/alerts.js';
 import { integrationHealth, LIVE_PROVIDERS } from '../../integrations/registry.js';
 import { badRequest, conflict, forbidden, HttpError, newSecret, notFound, sha256, unauthorized } from '../http.js';
 
@@ -119,6 +120,7 @@ export function masterRoutes(app: FastifyInstance) {
       `INSERT INTO users (id, tenant_id, email, name, password_hash, role) VALUES ($1,$2,$3,$4,$5,'owner')`,
       [randomUUID(), tenantId, b.ownerEmail, b.ownerName, await hashPassword(b.ownerPassword)]);
     await platformAudit(c, 'tenant.create', tenantId, b.justification, { slug: b.slug, plan: b.planCode });
+    notify({ severity: 'info', component: 'clientes', title: 'Novo cliente cadastrado', detail: `Plano ${b.planCode}`, tenant: { id: tenantId, name: b.name } });
     return { id: tenantId };
   });
 
@@ -130,7 +132,7 @@ export function masterRoutes(app: FastifyInstance) {
       code: z.string().max(10).optional(),
       justification,
     }).parse(req.body);
-    const cur = await c.db.query<{ status: string; plan_code: string }>('SELECT status, plan_code FROM tenants WHERE id = $1 FOR UPDATE', [id]);
+    const cur = await c.db.query<{ status: string; plan_code: string; name: string }>('SELECT status, plan_code, name FROM tenants WHERE id = $1 FOR UPDATE', [id]);
     const tenant = cur.rows[0];
     if (!tenant) throw notFound('Clínica não encontrada.');
     if (tenant.status === 'closed') throw conflict('Clínica encerrada não pode ser alterada.');
@@ -138,12 +140,14 @@ export function masterRoutes(app: FastifyInstance) {
       await requireFreshMfa(c, b.code); // ação crítica: reautenticação
       await c.db.query('UPDATE tenants SET status = $1 WHERE id = $2', [b.status, id]);
       await platformAudit(c, `tenant.status.${b.status}`, id, b.justification, { from: tenant.status });
+      notify({ severity: 'info', component: 'clientes', title: `Cliente ${{ active: 'reativado', suspended: 'suspenso', closed: 'encerrado' }[b.status]}`, tenant: { id, name: tenant.name }, fingerprint: `cliente|${id}|${b.status}` });
     }
     if (b.planCode && b.planCode !== tenant.plan_code) {
       const plan = await c.db.query('SELECT 1 FROM plans WHERE code = $1', [b.planCode]);
       if (!plan.rowCount) throw badRequest('Plano inexistente.');
       await c.db.query('UPDATE tenants SET plan_code = $1 WHERE id = $2', [b.planCode, id]);
       await platformAudit(c, 'tenant.plan.change', id, b.justification, { from: tenant.plan_code, to: b.planCode });
+      notify({ severity: 'info', component: 'clientes', title: 'Cliente trocou de plano', detail: `${tenant.plan_code} → ${b.planCode}`, tenant: { id, name: tenant.name }, fingerprint: `plano|${id}|${b.planCode}` });
     }
     return { ok: true };
   });

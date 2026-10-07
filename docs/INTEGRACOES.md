@@ -18,6 +18,7 @@ O **catálogo único** está em `src/integrations/catalog.ts` (o Painel Master m
 | WhatsApp (Meta Cloud API) | ✅ | ✅ | ✅ escrito | ❌ | credenciais, número verificado, **templates aprovados** com os nomes `appointment_*`, webhook da Meta |
 | E-mail transacional | ✅ | ✅ | ✅ genérico (POST JSON + Bearer) | ❌ | escolher provedor, domínio/SPF/DKIM; ajustar o formato do corpo ao provedor |
 | SMS | ✅ | ✅ | ✅ genérico | ❌ | escolher provedor e ajustar o formato |
+| Alertas de erro (Telegram) | ✅ | ✅ | ✅ escrito | ❌ | criar o bot no @BotFather e informar `TELEGRAM_BOT_TOKEN` e `TELEGRAM_CHAT_IDS` (docs/ALERTAS.md) |
 | **Pagamentos online (Mercado Pago)** | ✅ | ✅ | ✅ escrito (Pix, link, consulta, cancelamento, estorno, webhook assinado) | ❌ | **credenciais de cada clínica** (Access Token e segredo do webhook em Gestão → Pagamentos), `PUBLIC_BASE_URL`, roteiro de validação em `docs/PAGAMENTOS.md` |
 | NFS-e | ✅ porta (`src/integrations/nfse.ts`) | ✅ | ⬜ | ❌ | **município/provedor da prefeitura**, certificado digital, regime tributário, código de serviço; ligar ao recibo |
 | Assinatura eletrônica | ✅ porta (`src/integrations/signature.ts`) | ✅ | ⬜ | ❌ | provedor, nível de assinatura e validade jurídica (validar com especialista); ligar ao aceite do orçamento |

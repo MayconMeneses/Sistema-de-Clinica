@@ -1,8 +1,10 @@
 import { startWorker } from '../worker/main.js';
+import { installProcessHandlers } from '../ops/alerts.js';
 import { buildApp } from './app.js';
 import { config } from './config.js';
 import { appPool, platformPool, workerPool } from './db.js';
 
+installProcessHandlers('api');
 const app = await buildApp({ logger: true });
 await app.listen({ port: config.port, host: config.host });
 

@@ -65,7 +65,13 @@ export const INTEGRATION_CATALOG: CatalogEntry[] = [
     env: [], pending: 'OAuth, escopos e política de privacidade do aplicativo', configured: () => false,
   },
   {
+    kind: 'alerts', label: 'Alertas de erro (Telegram)', provider: 'Telegram Bot API', scope: 'platform', port: true, sandbox: true, liveAdapter: 'written', validatedWithProvider: false,
+    env: ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_IDS', 'ALERTS_ENV_LABEL (opcional)', 'ALERTS_DEDUPE_MINUTES (opcional)'],
+    pending: 'criar o bot no @BotFather, obter o id do chat e informar as duas variáveis (passo a passo em docs/ALERTAS.md); depois enviar /testar ao bot',
+    configured: () => { const c = integrationEnv().alerts; return !!(c.token && c.chatIds.length); },
+  },
+  {
     kind: 'observability', label: 'Erros e métricas', provider: 'não definido', scope: 'platform', port: false, sandbox: false, liveAdapter: 'none', validatedWithProvider: false,
-    env: [], pending: 'escolher a ferramenta; os logs estruturados e o /api/ready já existem', configured: () => false,
+    env: [], pending: 'métricas e rastreamento detalhado: escolher a ferramenta; já existem logs estruturados, /api/ready e os alertas por Telegram', configured: () => false,
   },
 ];

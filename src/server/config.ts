@@ -39,6 +39,14 @@ export function integrationEnv() {
     /** URL pública (HTTPS) do sistema, usada para montar o endereço de notificação do gateway. Sem ela o gateway não avisa e a confirmação é feita pelo botão "Verificar". */
     publicBaseUrl: e.PUBLIC_BASE_URL?.replace(/\/+$/, ''),
     mercadopago: { apiBase: e.MERCADOPAGO_API_BASE ?? 'https://api.mercadopago.com' },
+    /** Alertas operacionais por Telegram. Sem token e chats, em desenvolvimento vale o sandbox (memória) e em produção fica desligado. */
+    alerts: {
+      token: e.TELEGRAM_BOT_TOKEN,
+      chatIds: (e.TELEGRAM_CHAT_IDS ?? '').split(',').map((x) => x.trim()).filter((x) => /^-?\d{3,20}$/.test(x)),
+      apiBase: e.TELEGRAM_API_BASE ?? 'https://api.telegram.org',
+      envLabel: e.ALERTS_ENV_LABEL || (isProd ? 'produção' : 'desenvolvimento'),
+      dedupeMinutes: Number(e.ALERTS_DEDUPE_MINUTES ?? 5),
+    },
     storageDir: e.STORAGE_LOCAL_DIR ?? './.data/storage',
   };
 }

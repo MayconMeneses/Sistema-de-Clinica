@@ -1,6 +1,6 @@
 {
   "name": "clinica-one",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "private": true,
   "description": "Plataforma SaaS multiempresa de gestão clínica (reconstrução — Fase 1 em andamento)",
   "type": "module",

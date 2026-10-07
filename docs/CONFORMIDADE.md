@@ -49,7 +49,7 @@ Estado em v0.7.0. "Testado" = teste automatizado em PostgreSQL real (ver `npm ru
 | 31 | LGPD | 🟡 | ferramentas: consentimento versionado, acesso/exportação, registro e prazo de solicitações do titular, trilha de auditoria, minimização nos logs; **faltam**: base legal por finalidade, retenção/descarte, anonimização, incidentes, RIPD, suboperadores, textos jurídicos. Exige revisão humana especializada; nada aqui declara conformidade |
 | 32 | Regras profissionais/interoperabilidade | ⛔ | validação humana necessária |
 | 33 | IA | ⬜ | nenhuma IA no produto (intencional) |
-| 34 | Observabilidade | 🟡 | logs estruturados, request id, health/ready ✅; métricas, traces, error tracking, alertas, runbooks ⬜ |
+| 34 | Observabilidade | 🟡 | logs estruturados, request id, health/ready, **alertas de erro por Telegram com componente e clínica, comandos de operação, erros da tela** (docs/ALERTAS.md) ✅; métricas, traces, runbooks ⬜ |
 | 35 | Backup/restore | 🟡 | `npm run drill` valida restore ✅; RPO/RTO ⛔; backup cifrado (`scripts/backup-encrypted.sh`, exercitado no CI) ✅; agendamento e envio para fora do host ⬜ (dependem do ambiente) |
 | 36 | UX/acessibilidade | 🟡 | pt-BR, responsivo, labels, foco, estados vazio/erro/loading, confirmação ✅; contraste e teclado **não auditados** formalmente |
 | 37 | API e contratos | 🟡 | validação, erros seguros, request id, idempotência no financeiro ✅; paginação por cursor, OpenAPI, contract tests ⬜ |

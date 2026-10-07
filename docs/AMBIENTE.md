@@ -24,6 +24,8 @@ Sensibilidade: **S** = segredo (nunca no Git/log/front) · **C** = configuraçã
 | `PUBLIC_BASE_URL` | endereço público HTTPS do sistema; monta a URL de notificação do Mercado Pago (`/api/webhooks/mercadopago/<clínica>`). Sem ela, a confirmação do pagamento é só pelo botão "Verificar" | P | para pagamentos online | operações | — |
 | `MERCADOPAGO_API_BASE` | URL base da API do Mercado Pago (só para testes com servidor simulado) | P | não | engenharia | — |
 | *(por clínica, não é variável)* Access Token e segredo do webhook do Mercado Pago | cifrados no banco (`payment_settings`) com `DATA_ENCRYPTION_KEY`; informados em Gestão → Pagamentos; **nunca** em variável nem no Git | S | por clínica | proprietário da clínica | conforme o Mercado Pago |
+| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_IDS` | alertas de erro e comandos de operação por Telegram (`docs/ALERTAS.md`). Ids separados por vírgula; só esses chats podem usar os comandos | S / C | para receber alertas | operações | se vazar, revogar no @BotFather (`/revoke`) |
+| `ALERTS_ENV_LABEL`, `ALERTS_DEDUPE_MINUTES`, `TELEGRAM_API_BASE` | nome do ambiente nos avisos (padrão produção/desenvolvimento), janela de agrupamento de repetidos (5 min), URL base (só testes) | C / P | não | operações | — |
 | `BACKUP_PASSPHRASE` | senha de cifra dos backups (`scripts/backup-encrypted.sh`); guardar num cofre FORA do servidor de banco | S | para backup | segurança | anual |
 | `BACKUP_DIR`, `BACKUP_RETENTION_DAYS`, `BACKUP_DB`, `BACKUP_UPLOAD_CMD`, `BACKUP_UPLOAD_DEST` | destino local, retenção (14 dias), banco e envio para fora do host | C | para backup | operações | — |
 | `STORAGE_LOCAL_DIR` | pasta do armazenamento local | C | se usar disco | engenharia | — |

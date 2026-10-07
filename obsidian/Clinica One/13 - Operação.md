@@ -21,3 +21,7 @@ Volta: [[00 - Índice]] · [[02 - Como acessar]] · [[Documentos do repositório
 | `npm run totp` | código MFA do Master (demonstração) |
 
 Observação do ambiente de construção: o PostgreSQL é reiniciado entre sessões; se aparecer "connection refused": `pg_ctlcluster 16 main start`.
+
+
+## Alertas por Telegram
+Avisos de erro (com componente e clínica) e comandos `/status /erros /clinicas /fila /silenciar N /ativar /testar /ajuda`. Configuração: `TELEGRAM_BOT_TOKEN` e `TELEGRAM_CHAT_IDS` (passo a passo em docs/ALERTAS.md). Nunca contêm dados de paciente.

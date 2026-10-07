@@ -2,6 +2,9 @@ import { createHash, randomBytes } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import { ZodError } from 'zod';
+import { notify, routePattern, safeErrorSummary } from '../ops/alerts.js';
+
+declare module 'fastify' { interface FastifyRequest { alertTenant?: { id: string; name: string } } }
 
 export class HttpError extends Error {
   constructor(public status: number, message: string, public code = 'error', public extra?: Record<string, unknown>) { super(message); }
@@ -16,6 +19,9 @@ export const sha256 = (s: string) => createHash('sha256').update(s).digest('hex'
 export const newSecret = () => randomBytes(32).toString('base64url');
 
 export function errorHandler(err: unknown, req: FastifyRequest, reply: FastifyReply) {
+  if (err instanceof HttpError && err.status >= 500 && err.code !== 'not_configured') {
+    notify({ severity: 'critical', component: 'api', title: `Resposta ${err.status} do servidor`, detail: err.message, route: routePattern(req), tenant: req.alertTenant });
+  }
   if (err instanceof HttpError) return reply.status(err.status).send({ ...(err.extra ?? {}), error: err.code, message: err.message, requestId: req.id });
   if (err instanceof ZodError) {
     const message = err.issues.map((i) => `${i.path.join('.') || 'corpo'}: ${i.message}`).join('; ');
@@ -27,6 +33,7 @@ export function errorHandler(err: unknown, req: FastifyRequest, reply: FastifyRe
   }
   // Nunca devolver stack, SQL ou detalhes internos.
   req.log.error({ err, requestId: req.id }, 'erro interno');
+  notify({ severity: 'critical', component: 'api', title: 'Erro interno (500)', detail: `${safeErrorSummary(err)} · código ${req.id.slice(0, 8)}`, route: routePattern(req), tenant: req.alertTenant });
   return reply.status(500).send({ error: 'internal', message: 'Erro interno. Informe o código ao suporte.', requestId: req.id });
 }
 
