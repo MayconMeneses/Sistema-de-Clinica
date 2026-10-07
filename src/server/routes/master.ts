@@ -5,7 +5,7 @@ import { resolveEntitlements, type TenantStatus } from '../../modules/entitlemen
 import { hashPassword, passwordPolicyError, verifyPassword } from '../auth/password.js';
 import { consumeTotp } from '../auth/mfa.js';
 import { DbRateLimiter } from '../auth/rate-limit.js';
-import { config } from '../config.js';
+import { config, masterMfaRequired } from '../config.js';
 import { cookieOptions, MASTER_COOKIE, masterRoute, type MasterCtx } from '../context.js';
 import { platformPool } from '../db.js';
 import { getNotifier, locateError, notify } from '../../ops/alerts.js';
@@ -23,6 +23,7 @@ async function platformAudit(c: MasterCtx, action: string, tenantId: string | nu
 
 /** Reautenticação (MFA) para ações críticas. Cada código vale uma vez (anti-replay). */
 async function requireFreshMfa(c: MasterCtx, code: string | undefined) {
+  if (!masterMfaRequired()) return; // modo demonstração
   const r = await c.db.query<{ totp_secret: string }>('SELECT totp_secret FROM platform_users WHERE id = $1', [c.operator.id]);
   if (!code || !r.rows[0] || !(await consumeTotp(c.db, 'platform_users', c.operator.id, r.rows[0].totp_secret, code))) {
     throw forbidden('Código MFA inválido ou já utilizado. Aguarde o próximo código do aplicativo.');
@@ -34,7 +35,7 @@ export function masterRoutes(app: FastifyInstance) {
     const body = z.object({
       email: z.string().trim().toLowerCase().email().max(200),
       password: z.string().min(1).max(200),
-      code: z.string().trim().max(10),
+      code: z.string().trim().max(10).default(''),
     }).parse(req.body);
     const key = `${req.ip}|master|${body.email}`;
     if (await limiter.tooMany(key)) throw new HttpError(429, 'Muitas tentativas. Aguarde alguns minutos.', 'rate_limited');
@@ -43,7 +44,7 @@ export function masterRoutes(app: FastifyInstance) {
       'SELECT id, password_hash, totp_secret, status FROM platform_users WHERE email = $1', [body.email]);
     const user = u.rows[0];
     const pwOk = await verifyPassword(body.password, user?.password_hash);
-    const mfaOk = !!user && pwOk && (await consumeTotp(platformPool, 'platform_users', user.id, user.totp_secret, body.code));
+    const mfaOk = !!user && pwOk && (!masterMfaRequired() || await consumeTotp(platformPool, 'platform_users', user.id, user.totp_secret, body.code));
     if (!user || !pwOk || !mfaOk || user.status !== 'active') {
       await limiter.record(key);
       await platformPool.query(
@@ -57,11 +58,14 @@ export function masterRoutes(app: FastifyInstance) {
       `INSERT INTO platform_sessions (user_id, token_hash, expires_at) VALUES ($1,$2, now() + make_interval(hours => $3))`,
       [user.id, sha256(secret), config.masterSessionHours]);
     await platformPool.query(
-      `INSERT INTO platform_audit_events (operator_id, action, justification, metadata) VALUES ($1,'master.login','login com MFA',$2)`,
-      [body.email, JSON.stringify({ ip: req.ip })]);
+      `INSERT INTO platform_audit_events (operator_id, action, justification, metadata) VALUES ($1,'master.login',$3,$2)`,
+      [body.email, JSON.stringify({ ip: req.ip }), masterMfaRequired() ? 'login com MFA' : 'login SEM MFA (modo demonstração)']);
     reply.setCookie(MASTER_COOKIE, secret, cookieOptions('/api/master', config.masterSessionHours));
     return { ok: true };
   });
+
+  // Informa à tela de login se o código MFA é exigido (público; não revela nada além disso).
+  app.get('/api/master/auth-info', async () => ({ mfaRequired: masterMfaRequired() }));
 
   masterRoute(app, 'POST', '/api/master/logout', async (c, _req, reply) => {
     await c.db.query('UPDATE platform_sessions SET revoked_at = now() WHERE id = $1', [c.sessionId]);
@@ -154,7 +158,7 @@ export function masterRoutes(app: FastifyInstance) {
 
   masterRoute(app, 'POST', '/api/master/tenants/:id/reset-owner-mfa', async (c, req) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
-    const b = z.object({ code: z.string().max(10), justification }).parse(req.body);
+    const b = z.object({ code: z.string().max(10).default(''), justification }).parse(req.body);
     await requireFreshMfa(c, b.code);
     // Só MFA e versão de sessão do proprietário mudam; o Master não lê nem altera dados clínicos.
     const r = await c.db.query(
@@ -239,7 +243,7 @@ export function masterRoutes(app: FastifyInstance) {
   });
 
   masterRoute(app, 'POST', '/api/master/integrations/requeue', async (c, req) => {
-    const b = z.object({ tenantId: z.string().uuid(), code: z.string().max(10), justification }).parse(req.body);
+    const b = z.object({ tenantId: z.string().uuid(), code: z.string().max(10).default(''), justification }).parse(req.body);
     await requireFreshMfa(c, b.code);
     // Só recoloca na fila o que está morto; o Master não lê nem altera o conteúdo das mensagens.
     const o = await c.db.query(`UPDATE outbox_events SET status = 'pending', attempts = 0, next_attempt_at = now() WHERE tenant_id = $1 AND status = 'dead'`, [b.tenantId]);

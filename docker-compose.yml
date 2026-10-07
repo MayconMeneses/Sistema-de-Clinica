@@ -24,6 +24,7 @@ services:
       PGHOST: db
       PGUSER: postgres
       PGPASSWORD: postgres
+      DEMO_SKIP_MASTER_MFA: "1"          # DEMONSTRAÇÃO: Master entra sem código MFA (a porta só abre neste computador). Nunca em produção: o sistema recusa iniciar.
       SEED_DEMO: "1"                     # "0" para não criar os dados de demonstração
       HOST_PORT: "${APP_PORT:-3010}"
       PUBLIC_BASE_URL: "${PUBLIC_BASE_URL:-}"   # endereço público HTTPS (para o webhook do Mercado Pago); vazio = sem webhook     # só para a mensagem de "Sistema no ar"

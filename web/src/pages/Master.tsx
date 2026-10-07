@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { get, patch, post } from '../api';
 import { dateTimeOf } from '../format';
 import { Badge, Button, Empty, ErrorBox, Select, Sheet, Spinner, TextInput, useLoad, useToast } from '../ui';
+import { useMasterMfa } from '../useMfa';
 import { Login } from './Login';
 
 interface Capability { code: string; description: string; globallyAvailable: boolean; dependsOn: string[] }
@@ -107,6 +108,7 @@ function CreateTenant({ open, plans, onClose, onDone }: { open: boolean; plans: 
 
 function TenantSheet({ tenant, data, onClose, onChanged }: { tenant: Tenant | null; data: Overview; onClose: () => void; onChanged: () => void }) {
   const toast = useToast();
+  const mfa = useMasterMfa();
   const [why, setWhy] = useState('');
   const [plan, setPlan] = useState('');
   const [code, setCode] = useState('');
@@ -138,8 +140,8 @@ function TenantSheet({ tenant, data, onClose, onChanged }: { tenant: Tenant | nu
         <>
           <h3>Situação: <Badge tone={STATUS_TONE[tenant.status]}>{STATUS_TEXT[tenant.status]}</Badge></h3>
           <div className="row">
-            <div className="grow"><TextInput label="Código MFA atual (ação crítica)" value={code} onChange={setCode} inputMode="numeric" maxLength={6} /></div>
-            <Button variant={nextStatus === 'suspended' ? 'danger' : 'primary'} busy={busy} disabled={!justified || code.length !== 6}
+            {mfa && <div className="grow"><TextInput label="Código MFA atual (ação crítica)" value={code} onChange={setCode} inputMode="numeric" maxLength={6} /></div>}
+            <Button variant={nextStatus === 'suspended' ? 'danger' : 'primary'} busy={busy} disabled={!justified || (mfa && code.length !== 6)}
               onClick={() => act(() => patch(`/api/master/tenants/${tenant.id}`, { status: nextStatus, code, justification: why }), nextStatus === 'suspended' ? 'Clínica suspensa.' : 'Clínica reativada.')}>
               {nextStatus === 'suspended' ? 'Suspender clínica' : 'Reativar clínica'}
             </Button>
@@ -153,8 +155,8 @@ function TenantSheet({ tenant, data, onClose, onChanged }: { tenant: Tenant | nu
           <p className="small">{tenant.owner.name} · {tenant.owner.email} {tenant.owner.mfaEnabled ? <Badge tone="info">2 etapas ativa</Badge> : <Badge>2 etapas desativada</Badge>}</p>
           {tenant.owner.mfaEnabled && (
             <>
-              <p className="small muted">Se o proprietário perdeu o aparelho, redefina a verificação. Ele será desconectado. Requer justificativa e um código MFA seu (informe acima).</p>
-              <Button variant="secondary" busy={busy} disabled={!justified || code.length !== 6}
+              <p className="small muted">Se o proprietário perdeu o aparelho, redefina a verificação. Ele será desconectado. Requer justificativa{mfa ? ' e um código MFA seu (informe acima)' : ''}.</p>
+              <Button variant="secondary" busy={busy} disabled={!justified || (mfa && code.length !== 6)}
                 onClick={() => act(() => post(`/api/master/tenants/${tenant.id}/reset-owner-mfa`, { code, justification: why }), 'Verificação do proprietário redefinida.')}>Redefinir 2 etapas do proprietário</Button>
             </>
           )}
@@ -278,6 +280,7 @@ function AlertsCard() {
 
 function Integrations() {
   const toast = useToast();
+  const mfa = useMasterMfa();
   const d = useLoad(() => get<IntegrationsData>('/api/master/integrations'), []);
   const [requeue, setRequeue] = useState<{ tenantId: string; name: string } | null>(null);
   const [why, setWhy] = useState('');
@@ -334,9 +337,9 @@ function Integrations() {
         <form onSubmit={submit} noValidate>
           <p>As mensagens com falha definitiva de <strong>{requeue?.name}</strong> serão tentadas de novo. O conteúdo das mensagens não é exibido à plataforma.</p>
           <TextInput label="Justificativa (auditoria)" value={why} onChange={setWhy} hint="Exemplo: provedor corrigido." />
-          <TextInput label="Código MFA atual" value={code} onChange={setCode} inputMode="numeric" maxLength={6} />
+          {mfa && <TextInput label="Código MFA atual" value={code} onChange={setCode} inputMode="numeric" maxLength={6} />}
           {error && <p className="field-msg error" role="alert">{error}</p>}
-          <Button type="submit" busy={busy} disabled={why.trim().length < 5 || code.length !== 6} className="btn-block">Recolocar na fila</Button>
+          <Button type="submit" busy={busy} disabled={why.trim().length < 5 || (mfa && code.length !== 6)} className="btn-block">Recolocar na fila</Button>
         </form>
       </Sheet>
     </>

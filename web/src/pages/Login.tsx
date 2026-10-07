@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { ApiError, post } from '../api';
 import { Button, TextInput } from '../ui';
+import { useMasterMfa } from '../useMfa';
 
 export function Login({ mode, onDone }: { mode: 'clinic' | 'master'; onDone: () => void }) {
   const [clinic, setClinic] = useState(() => localStorage.getItem('last-clinic') ?? '');
@@ -10,6 +11,7 @@ export function Login({ mode, onDone }: { mode: 'clinic' | 'master'; onDone: () 
   const [needCode, setNeedCode] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const masterMfa = useMasterMfa();
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -20,7 +22,7 @@ export function Login({ mode, onDone }: { mode: 'clinic' | 'master'; onDone: () 
         await post('/api/auth/login', { clinic, email, password, ...(needCode ? { code } : {}) });
         try { localStorage.setItem('last-clinic', clinic.trim().toLowerCase()); } catch { /* opcional */ }
       } else {
-        await post('/api/master/login', { email, password, code });
+        await post('/api/master/login', { email, password, ...(masterMfa ? { code } : {}) });
       }
       setPassword(''); setCode('');
       onDone();
@@ -43,7 +45,7 @@ export function Login({ mode, onDone }: { mode: 'clinic' | 'master'; onDone: () 
           {mode === 'clinic' && <TextInput label="Identificador da clínica" value={clinic} onChange={setClinic} required autoComplete="organization" hint="Exemplo: demo" />}
           <TextInput label="E-mail" type="email" value={email} onChange={setEmail} required autoComplete="username" inputMode="email" />
           <TextInput label="Senha" type="password" value={password} onChange={setPassword} required autoComplete="current-password" />
-          {(mode === 'master' || needCode) && <TextInput label={mode === 'master' ? 'Código MFA (6 dígitos)' : 'Código do autenticador (6 dígitos)'} value={code} onChange={setCode} required inputMode="numeric" autoComplete="one-time-code" maxLength={6} />}
+          {((mode === 'master' && masterMfa) || needCode) && <TextInput label={mode === 'master' ? 'Código MFA (6 dígitos)' : 'Código do autenticador (6 dígitos)'} value={code} onChange={setCode} required inputMode="numeric" autoComplete="one-time-code" maxLength={6} />}
           {error && <p className="field-msg error" role="alert">{error}</p>}
           <Button type="submit" busy={busy} className="btn-block">Entrar</Button>
         </form>

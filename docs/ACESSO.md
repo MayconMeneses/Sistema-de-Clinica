@@ -41,9 +41,9 @@ Requisitos: Node.js 22 e PostgreSQL 16 instalados. Veja `README.md` (seção "Ro
 | Marketing | idem | `demo` | `martamarketing@demo.demo` | `Demo@12345` |
 | Auditor interno (só leitura) | idem | `demo` | `alineauditoria@demo.demo` | `Demo@12345` |
 | Consultório individual (plano Solo) | idem | `solo-demo` | `dono@solo-demo.demo` | `Demo@12345` |
-| **Painel da plataforma (Master)** | http://localhost:3010/#/master | (não tem) | `master@demo.local` | `Demo@12345` + código MFA |
+| **Painel da plataforma (Master)** | http://localhost:3010/#/master | (não tem) | `master@demo.local` | `Demo@12345` (sem código no modo demonstração) |
 
-**Código MFA do Master** (só ele precisa): com Docker, rode em outro terminal `docker compose exec app npm run totp` e digite os 6 números. Cada código vale uma vez; se disser "já utilizado", espere 30 segundos e rode de novo. (Alternativa: cadastre em um app autenticador a chave que aparece nos registros de início: `docker compose logs app`.)
+**Master sem código (modo demonstração):** os `docker-compose` de demonstração ligam `DEMO_SKIP_MASTER_MFA=1`, então o Master entra só com e-mail e senha, e as ações críticas também dispensam o código. Isso existe só para uso local com dados fictícios (a porta só abre neste computador). Em produção o sistema **recusa iniciar** se essa variável estiver definida, e o código MFA é obrigatório. Para voltar a exigir o código no Docker local, apague a linha `DEMO_SKIP_MASTER_MFA` do compose; o código sai de `docker compose exec -e DATABASE_URL_PLATFORM=postgres://clinica_platform:dev_platform_pw@db:5432/clinica_one app npm run totp`.
 
 Essas senhas são **só de demonstração**. Nunca use este modo com dados reais de pacientes.
 
