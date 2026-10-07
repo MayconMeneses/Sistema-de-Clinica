@@ -58,3 +58,12 @@ APP_PORT=3020 docker compose up --build
 ```
 
 Depois abra `http://localhost:3020` (troque o número nos endereços deste guia).
+
+## Erro `invalid option name ... set: pipefail` ao subir
+
+Acontece no Windows quando o Git converte os scripts `.sh` para quebra de linha CRLF. Já está corrigido (`.gitattributes` e limpeza na imagem). Atualize e suba de novo:
+
+```powershell
+git pull origin claude/wizardly-carson-xuhql2
+docker compose up --build
+```
