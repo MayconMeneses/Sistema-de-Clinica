@@ -36,6 +36,9 @@ export function integrationEnv() {
     email: { apiUrl: e.EMAIL_API_URL, apiKey: e.EMAIL_API_KEY, from: e.EMAIL_FROM },
     sms: { apiUrl: e.SMS_API_URL, apiKey: e.SMS_API_KEY, from: e.SMS_FROM },
     webhookSecretGeneric: e.WEBHOOK_SECRET_GENERIC,
+    /** URL pública (HTTPS) do sistema, usada para montar o endereço de notificação do gateway. Sem ela o gateway não avisa e a confirmação é feita pelo botão "Verificar". */
+    publicBaseUrl: e.PUBLIC_BASE_URL?.replace(/\/+$/, ''),
+    mercadopago: { apiBase: e.MERCADOPAGO_API_BASE ?? 'https://api.mercadopago.com' },
     storageDir: e.STORAGE_LOCAL_DIR ?? './.data/storage',
   };
 }

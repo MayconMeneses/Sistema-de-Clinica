@@ -23,6 +23,8 @@ const PERMISSIONS = {
   'finance.read': ['owner', 'admin', 'unit_manager', 'receptionist', 'finance', 'auditor'],
   'finance.write': ['owner', 'admin', 'receptionist', 'finance'],
   'cash.operate': ['owner', 'admin', 'receptionist', 'finance'],
+  'payments.manage': ['owner', 'admin'],
+  'payments.charge': ['owner', 'admin', 'unit_manager', 'receptionist', 'finance'],
   'finance.approve': ['owner', 'admin', 'unit_manager', 'finance'],
   'users.manage': ['owner', 'admin'],
   'audit.read': ['owner', 'admin', 'auditor'],

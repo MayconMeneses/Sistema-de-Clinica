@@ -8,7 +8,7 @@
 | 4 | Identidade com sessões revogáveis e MFA | ✅ clínica e Master (TOTP, uso único, segredo cifrado) |
 | 5 | Painel Master mínimo com auditoria e MFA | ✅ (sem suporte temporário) |
 | 6 | CI com typecheck, testes e migrations | 🟡 workflow escrito; **não executado** no GitHub |
-| 7 | Backup com restore executado e validado | ✅ `npm run drill` (dados, RLS, isolamento) em PostgreSQL local; ⚠ sem backup agendado/criptografado/fora do host e RPO/RTO não definidos |
+| 7 | Backup com restore executado e validado | ✅ `npm run drill` (dados, RLS, isolamento) em PostgreSQL local; ⚠ backup cifrado existe (`scripts/backup-encrypted.sh`, exercitado no CI), mas sem agendamento nem envio para fora do host; RPO/RTO não definidos |
 | 8 | Cache/fila/arquivo/webhook/relatório tenant-aware | n/a — componentes inexistentes |
 
 **Gate AINDA NÃO atendido: faltam executar o CI no GitHub, suporte temporário auditado, HTTPS/gestão de segredos e rotação, backup real (agendado, criptografado, fora do host) com RPO/RTO definidos, e revisão de segurança por especialista. Não usar com dados reais.**

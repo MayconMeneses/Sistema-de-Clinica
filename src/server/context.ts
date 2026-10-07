@@ -35,7 +35,7 @@ type Handler<C> = (ctx: C, req: FastifyRequest, reply: FastifyReply) => Promise<
  */
 export function clinicRoute(
   app: FastifyInstance,
-  method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   url: string,
   opts: RouteOpts,
   handler: Handler<ClinicCtx>,

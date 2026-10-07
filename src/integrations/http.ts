@@ -2,11 +2,13 @@ import { AdapterError } from './types.js';
 
 export interface HttpJsonOptions {
   url: string;
-  method?: 'GET' | 'POST';
+  method?: 'GET' | 'POST' | 'PUT';
   headers?: Record<string, string>;
   body?: unknown;
   timeoutMs?: number;
   idempotencyKey?: string;
+  /** Nome do cabeçalho de idempotência (padrão: Idempotency-Key; o Mercado Pago usa X-Idempotency-Key). */
+  idempotencyHeader?: string;
 }
 
 /**
@@ -19,7 +21,7 @@ export async function httpJson(o: HttpJsonOptions): Promise<{ status: number; js
   try {
     const res = await fetch(o.url, {
       method: o.method ?? 'POST',
-      headers: { 'content-type': 'application/json', ...(o.idempotencyKey ? { 'idempotency-key': o.idempotencyKey } : {}), ...o.headers },
+      headers: { 'content-type': 'application/json', ...(o.idempotencyKey ? { [o.idempotencyHeader ?? 'idempotency-key']: o.idempotencyKey } : {}), ...o.headers },
       body: o.body === undefined ? undefined : JSON.stringify(o.body),
       signal: ctrl.signal,
     });

@@ -30,6 +30,11 @@ Sensibilidade: **S** = segredo (nunca no Git/log/front) · **C** = configuraçã
 | `EMAIL_API_URL`, `EMAIL_API_KEY`, `EMAIL_FROM` | e-mail transacional | C / S / P | para ligar e-mail | operações | conforme provedor |
 | `SMS_API_URL`, `SMS_API_KEY`, `SMS_FROM` | SMS | C / S / P | para ligar SMS | operações | conforme provedor |
 | `WEBHOOK_SECRET_GENERIC` | HMAC do webhook genérico | S | se usar | operações | semestral |
+| `PUBLIC_BASE_URL` | endereço público HTTPS do sistema; monta a URL de notificação do Mercado Pago (`/api/webhooks/mercadopago/<clínica>`). Sem ela, a confirmação do pagamento é só pelo botão "Verificar" | P | para pagamentos online | operações | — |
+| `MERCADOPAGO_API_BASE` | URL base da API do Mercado Pago (só para testes com servidor simulado) | P | não | engenharia | — |
+| *(por clínica, não é variável)* Access Token e segredo do webhook do Mercado Pago | cifrados no banco (`payment_settings`) com `DATA_ENCRYPTION_KEY`; informados em Gestão → Pagamentos; **nunca** em variável nem no Git | S | por clínica | proprietário da clínica | conforme o Mercado Pago |
+| `BACKUP_PASSPHRASE` | senha de cifra dos backups (`scripts/backup-encrypted.sh`); guardar num cofre FORA do servidor de banco | S | para backup | segurança | anual |
+| `BACKUP_DIR`, `BACKUP_RETENTION_DAYS`, `BACKUP_DB`, `BACKUP_UPLOAD_CMD`, `BACKUP_UPLOAD_DEST` | destino local, retenção (14 dias), banco e envio para fora do host | C | para backup | operações | — |
 | `STORAGE_LOCAL_DIR` | pasta do armazenamento local | C | se usar disco | engenharia | — |
 | `DEMO_PASSWORD` | senha dos dados de demonstração | S (dev) | **proibido** (o seed recusa produção) | — | — |
 

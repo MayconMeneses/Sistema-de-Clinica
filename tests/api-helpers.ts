@@ -13,7 +13,7 @@ export const state = {} as { app: FastifyInstance };
 export class Client {
   cookie = '';
   constructor(private prefix = '') {}
-  async req(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string, payload?: unknown, headers: Record<string, string> = {}): Promise<LightMyRequestResponse> {
+  async req(method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', url: string, payload?: unknown, headers: Record<string, string> = {}): Promise<LightMyRequestResponse> {
     const res = await state.app.inject({
       method, url, payload: payload as object | undefined,
       headers: { 'x-requested-with': 'clinica-one', ...(this.cookie ? { cookie: this.cookie } : {}), ...headers },
