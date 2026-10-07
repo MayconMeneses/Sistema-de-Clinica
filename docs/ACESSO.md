@@ -18,6 +18,13 @@ Para parar: `Ctrl+C`. Para recomeçar do zero (apaga os dados de demonstração)
 
 > **Estado desta opção:** a lógica do script de inicialização foi testada de ponta a ponta (cria banco, aplica as 8 migrations, cria dados de demonstração, sobe o sistema e o login responde). O **Docker em si não pôde ser executado** no ambiente onde o sistema foi construído (não há Docker lá). Se algo falhar ao rodar, me envie a mensagem de erro.
 
+### Problemas comuns com o Docker
+- **`error getting credentials - err: exit status 1`** ao baixar a imagem do PostgreSQL: o "ajudante de credenciais" do Docker (`credsStore` em `~/.docker/config.json`) está quebrado ou indisponível. A imagem é pública e não precisa de login. Confirme que o Docker está rodando (`docker info`); depois faça `cp ~/.docker/config.json ~/.docker/config.json.bak` e `sed -i '/"credsStore"/d' ~/.docker/config.json` (ou `mv ~/.docker/config.json ~/.docker/config.json.bak`) e rode `docker compose up --build` de novo.
+- **`Cannot connect to the Docker daemon`**: o Docker não está aberto. Abra o Docker Desktop (no WSL, ative a integração com a sua distribuição em Settings > Resources > WSL integration).
+- **`port is already allocated` (3000)**: outra coisa usa a porta 3000. No `docker-compose.yml`, troque `"127.0.0.1:3000:3000"` por `"127.0.0.1:3001:3000"` e abra `http://localhost:3001`.
+- **`docker: 'compose' is not a docker command`**: Docker antigo. Atualize o Docker Desktop ou use `docker-compose up --build` (com hífen).
+- **A tela de login diz "Clínica, e-mail ou senha inválidos"**: confirme o identificador `demo` e o e-mail completo (`dono@demo.demo`). Se rodou com `SEED_DEMO=0`, os dados de demonstração não existem.
+
 ## Opção B: sem Docker (Node.js + PostgreSQL)
 Requisitos: Node.js 22 e PostgreSQL 16 instalados. Veja `README.md` (seção "Rodar"): `npm install`, `npm run setup:dev`, `npm start`.
 
