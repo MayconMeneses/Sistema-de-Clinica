@@ -29,7 +29,8 @@ Legenda: ✅ IMPLEMENTADO e testado localmente · 🟡 PARCIAL · ⬜ PLANEJADO
 - ✅ Caixa (abertura/fechamento com conferência), descontos com aprovação, recibos numerados (não fiscais) — exigem o plano com financeiro avançado
 - ✅ Agenda em visão de dia, semana e mês (contagem por dia calculada no banco)
 - ✅ Sangria e suprimento do caixa (imutáveis, só com caixa aberto, entram no dinheiro esperado)
-- ⬜ Anexos e documentos, caixa por unidade
+- ✅ Contas a pagar: lançamento, parcelas mensais, atraso/vence em breve, pagamento (com juros/desconto), cancelamento com motivo, imutáveis depois de pagas
+- ⬜ Comissões e repasses, anexos e documentos, caixa por unidade
 
 ## Fase 3
 - ✅ Odontograma com histórico imutável e plano de tratamento com cobrança

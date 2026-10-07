@@ -19,6 +19,7 @@ import { financeRoutes } from './routes/finance.js';
 import { inventoryRoutes } from './routes/inventory.js';
 import { masterRoutes } from './routes/master.js';
 import { noteRoutes } from './routes/notes.js';
+import { payableRoutes } from './routes/payables.js';
 import { paymentRoutes } from './routes/payments.js';
 import { patientAdminRoutes } from './routes/patient-admin.js';
 import { patientRoutes } from './routes/patients.js';
@@ -100,6 +101,7 @@ export async function buildApp(opts: { logger?: boolean; logStream?: NodeJS.Writ
   crmRoutes(app);
   reportRoutes(app);
   paymentRoutes(app);
+  payableRoutes(app);
   teamRoutes(app);
   communicationRoutes(app);
   telemetryRoutes(app);

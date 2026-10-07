@@ -22,7 +22,7 @@ Volta: [[00 - Índice]]. Branch: `claude/wizardly-carson-xuhql2`.
 | 0.10.0 | `8c53132` | Agenda semanal e mensal; papéis (gerente, estoque, marketing, auditor); estoque; CRM; indicadores (BI); menu "Mais" no celular |
 | 0.11.0 | publicada | Pagamentos online (Mercado Pago); catálogo único de integrações; portas de NFS-e e assinatura; backup cifrado |
 | 0.12.0 | (esta versão) | Alertas de erro por Telegram (componente + clínica) e comandos de operação; telemetria de erros da tela; teste de alerta pelo Painel Master; avisos com arquivo:linha e código dos logs |
-| 0.12.1 | (esta versão) | Sangria e suprimento do caixa; lotes e validade no estoque; Master sem MFA no modo demonstração |
+| 0.12.1 | (esta versão) | Sangria e suprimento do caixa; lotes e validade no estoque; contas a pagar; Master sem MFA no modo demonstração |
 | fix | `bb8bde5` | Menu inferior legível em 360px/320px + teste permanente |
 | acesso | (este) | Docker, guia de acesso, cofre do Obsidian |
 

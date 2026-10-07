@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { get, post, type Me } from '../api';
+import { get, patch, post, type Me } from '../api';
 import { brl, dateTimeOf, METHOD_LABEL, parseMoney } from '../format';
 import { Badge, Button, Empty, ErrorBox, Field, Sheet, Spinner, TextInput, useLoad, useToast } from '../ui';
 
@@ -37,6 +37,7 @@ export function FinancePage({ me }: { me: Me }) {
       )}
       {advanced && <CashDesk canOperate={can('cash.operate')} onChange={s.reload} />}
       {advanced && <Discounts canApprove={can('finance.approve')} onChange={s.reload} />}
+      {advanced && can('payables.read') && <Payables canWrite={can('payables.write')} />}
       <div className="card">
         <h2>Lançar para um paciente</h2>
         <Field label="Buscar paciente" hint="Cobranças, pagamentos e estornos ficam na aba Financeiro da ficha do paciente.">
@@ -217,6 +218,140 @@ function Discounts({ canApprove, onChange }: { canApprove: boolean; onChange: ()
           <TextInput label="Motivo da recusa" value={note} onChange={setNote} />
           {error && <p className="field-msg error" role="alert">{error}</p>}
           <Button type="submit" variant="danger" busy={busy !== null} className="btn-block">Recusar pedido</Button>
+        </form>
+      </Sheet>
+    </div>
+  );
+}
+
+
+interface Payable {
+  id: string; installment: number; installments: number; description: string; supplier: string | null; category: string | null; amountCents: string;
+  dueOn: string; status: 'open' | 'paid' | 'canceled'; paidOn: string | null; paidMethod: string | null; paidCents: string | null; cancelReason: string | null; overdue: boolean; daysToDue: number;
+}
+interface PayablesData { payables: Payable[]; summary: { openCents: string; overdueCents: string; overdueCount: number; dueSoonCents: string; paidThisMonthCents: string } }
+const dmy = (iso: string) => iso.split('-').reverse().join('/');
+const PAY_METHOD: Record<string, string> = { cash: 'Dinheiro', pix: 'Pix', transfer: 'Transferência', card: 'Cartão', boleto: 'Boleto', other: 'Outro' };
+
+function Payables({ canWrite }: { canWrite: boolean }) {
+  const toast = useToast();
+  const [filter, setFilter] = useState<'open' | 'paid' | 'canceled'>('open');
+  const d = useLoad(() => get<PayablesData>(`/api/payables?status=${filter}`), [filter]);
+  const [form, setForm] = useState<'new' | Payable | null>(null);
+  const [paying, setPaying] = useState<Payable | null>(null);
+  const [canceling, setCanceling] = useState<Payable | null>(null);
+  const [f, setF] = useState({ description: '', supplier: '', category: '', amount: '', dueOn: '', installments: '1', method: 'pix', paidCents: '', reason: '' });
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const set = (k: keyof typeof f) => (v: string) => setF((x) => ({ ...x, [k]: v }));
+
+  function openForm(p: 'new' | Payable) {
+    setError(null); setForm(p);
+    setF((x) => p === 'new' ? { ...x, description: '', supplier: '', category: '', amount: '', dueOn: '', installments: '1' }
+      : { ...x, description: p.description, supplier: p.supplier ?? '', category: p.category ?? '', amount: (Number(p.amountCents) / 100).toFixed(2).replace('.', ','), dueOn: p.dueOn, installments: '1' });
+  }
+  async function run(fn: () => Promise<unknown>, ok: string, close: () => void) {
+    setBusy(true); setError(null);
+    try { await fn(); toast(ok); close(); d.reload(); } catch (err) { setError((err as Error).message); } finally { setBusy(false); }
+  }
+  function submitForm(e: FormEvent) {
+    e.preventDefault();
+    const cents = parseMoney(f.amount);
+    if (f.description.trim().length < 2) { setError('Informe a descrição.'); return; }
+    if (cents === null || cents < 1) { setError('Informe um valor válido, como 1.250,00.'); return; }
+    if (!f.dueOn) { setError('Informe o vencimento.'); return; }
+    const n = Number(f.installments);
+    if (form === 'new' && (!Number.isInteger(n) || n < 1 || n > 60)) { setError('Parcelas: de 1 a 60.'); return; }
+    const body = { description: f.description, supplier: f.supplier || undefined, category: f.category || undefined, amountCents: cents, dueOn: f.dueOn };
+    void run(() => (form === 'new' ? post('/api/payables', { ...body, installments: n }) : patch(`/api/payables/${(form as Payable).id}`, body)), 'Conta salva.', () => setForm(null));
+  }
+  function submitPay(e: FormEvent) {
+    e.preventDefault();
+    if (!paying) return;
+    const paid = f.paidCents.trim() ? parseMoney(f.paidCents) : undefined;
+    if (paid === null) { setError('Valor pago inválido.'); return; }
+    void run(() => post(`/api/payables/${paying.id}/pay`, { method: f.method, paidCents: paid }), 'Pagamento registrado.', () => setPaying(null));
+  }
+  function submitCancel(e: FormEvent) {
+    e.preventDefault();
+    if (!canceling) return;
+    void run(() => post(`/api/payables/${canceling.id}/cancel`, { reason: f.reason }), 'Conta cancelada.', () => setCanceling(null));
+  }
+
+  const sum = d.data?.summary;
+  return (
+    <div className="card">
+      <div className="row between"><h2>Contas a pagar</h2>{canWrite && <Button className="btn-sm" onClick={() => openForm('new')}>Nova conta</Button>}</div>
+      {sum && (
+        <div className="stats">
+          <div className="stat"><b>{brl(sum.openCents)}</b><span>Em aberto</span></div>
+          <div className="stat"><b>{brl(sum.overdueCents)}</b><span>Atrasado ({sum.overdueCount})</span></div>
+          <div className="stat"><b>{brl(sum.dueSoonCents)}</b><span>Vence em 7 dias</span></div>
+          <div className="stat"><b>{brl(sum.paidThisMonthCents)}</b><span>Pago no mês</span></div>
+        </div>
+      )}
+      <div className="switch" role="group" aria-label="Situação das contas">
+        {(['open', 'paid', 'canceled'] as const).map((k) => <button key={k} type="button" aria-pressed={filter === k} onClick={() => setFilter(k)}>{k === 'open' ? 'Abertas' : k === 'paid' ? 'Pagas' : 'Canceladas'}</button>)}
+      </div>
+      {d.loading && !d.data && <Spinner />}
+      {d.error && <ErrorBox message={d.error} onRetry={d.reload} />}
+      {d.data && d.data.payables.length === 0 && <Empty title={filter === 'open' ? 'Nenhuma conta em aberto' : 'Nada por aqui'} />}
+      <ul className="list">
+        {d.data?.payables.map((p) => (
+          <li key={p.id} className="list-item stack">
+            <div className="row between">
+              <div><strong>{p.description}</strong>{p.installments > 1 ? ` (${p.installment}/${p.installments})` : ''}<br />
+                <span className="small muted">{[p.supplier, p.category].filter(Boolean).join(' · ') || 'Sem fornecedor'} · vence {dmy(p.dueOn)}{p.status === 'paid' && p.paidOn ? ` · pago ${dmy(p.paidOn)} (${PAY_METHOD[p.paidMethod ?? ''] ?? ''})` : ''}{p.cancelReason ? ` · ${p.cancelReason}` : ''}</span></div>
+              <div className="stack" style={{ textAlign: 'right' }}>
+                <strong>{brl(p.status === 'paid' ? p.paidCents ?? p.amountCents : p.amountCents)}</strong>
+                {p.overdue && <Badge tone="bad">Atrasada</Badge>}
+                {p.status === 'open' && !p.overdue && p.daysToDue <= 7 && <Badge tone="warn">{p.daysToDue === 0 ? 'Vence hoje' : `Em ${p.daysToDue} dia${p.daysToDue === 1 ? '' : 's'}`}</Badge>}
+                {p.status === 'paid' && <Badge tone="ok">Paga</Badge>}
+                {p.status === 'canceled' && <Badge>Cancelada</Badge>}
+              </div>
+            </div>
+            {canWrite && p.status === 'open' && (
+              <div className="row">
+                <Button className="btn-sm" onClick={() => { setError(null); setF((x) => ({ ...x, method: 'pix', paidCents: '' })); setPaying(p); }}>Pagar</Button>
+                <Button variant="ghost" className="btn-sm" onClick={() => openForm(p)}>Editar</Button>
+                <Button variant="ghost" className="btn-sm" onClick={() => { setError(null); setF((x) => ({ ...x, reason: '' })); setCanceling(p); }}>Cancelar</Button>
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+      <p className="small muted">Pagamento em dinheiro retirado do caixa deve ser lançado também como Sangria.</p>
+
+      <Sheet open={form !== null} title={form === 'new' ? 'Nova conta a pagar' : 'Editar conta'} onClose={() => setForm(null)}>
+        <form onSubmit={submitForm} noValidate>
+          <TextInput label="Descrição" value={f.description} onChange={set('description')} />
+          <div className="grid2"><TextInput label="Fornecedor (opcional)" value={f.supplier} onChange={set('supplier')} /><TextInput label="Categoria (opcional)" value={f.category} onChange={set('category')} /></div>
+          <div className="grid2">
+            <TextInput label={form === 'new' && Number(f.installments) > 1 ? 'Valor de cada parcela (R$)' : 'Valor (R$)'} value={f.amount} onChange={set('amount')} inputMode="decimal" placeholder="0,00" />
+            <Field label="Vencimento">{(id) => <input id={id} type="date" value={f.dueOn} onChange={(e) => set('dueOn')(e.target.value)} />}</Field>
+          </div>
+          {form === 'new' && <TextInput label="Parcelas" value={f.installments} onChange={set('installments')} inputMode="numeric" hint="Uma conta por mês, a partir do vencimento." />}
+          {error && <p className="field-msg error" role="alert">{error}</p>}
+          <Button type="submit" busy={busy} className="btn-block">Salvar conta</Button>
+        </form>
+      </Sheet>
+
+      <Sheet open={paying !== null} title={paying ? `Pagar: ${paying.description}` : ''} onClose={() => setPaying(null)}>
+        <form onSubmit={submitPay} noValidate>
+          <p className="small muted">Valor da conta: {paying ? brl(paying.amountCents) : ''}</p>
+          <Field label="Forma de pagamento">{(id) => <select id={id} value={f.method} onChange={(e) => set('method')(e.target.value)}>{Object.entries(PAY_METHOD).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>}</Field>
+          <TextInput label="Valor pago (R$, se diferente)" value={f.paidCents} onChange={set('paidCents')} inputMode="decimal" hint="Deixe vazio para o valor da conta. Use se houve juros ou desconto." />
+          {error && <p className="field-msg error" role="alert">{error}</p>}
+          <Button type="submit" busy={busy} className="btn-block">Confirmar pagamento</Button>
+        </form>
+      </Sheet>
+
+      <Sheet open={canceling !== null} title="Cancelar conta" onClose={() => setCanceling(null)}>
+        <form onSubmit={submitCancel} noValidate>
+          <p>Cancelar <strong>{canceling?.description}</strong>? A conta fica registrada como cancelada e não pode ser reaberta.</p>
+          <TextInput label="Motivo" value={f.reason} onChange={set('reason')} />
+          {error && <p className="field-msg error" role="alert">{error}</p>}
+          <Button type="submit" variant="danger" busy={busy} className="btn-block">Cancelar conta</Button>
         </form>
       </Sheet>
     </div>

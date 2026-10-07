@@ -236,6 +236,23 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
   must(true, 'desconto aprovado pelo proprietário');
   await page.screenshot({ path: `${SHOTS}/08b-descontos-mobile.png`, fullPage: true });
 
+  // contas a pagar: cria, vê no resumo e paga
+  await page.getByRole('heading', { name: 'Contas a pagar' }).waitFor();
+  await page.getByRole('button', { name: 'Nova conta' }).click();
+  await page.getByLabel('Descrição').fill('Aluguel e2e');
+  await page.getByLabel(/^Valor/).fill('1.250,00');
+  await page.getByLabel('Vencimento').fill(new Date(Date.now() + 3 * 86_400_000).toISOString().slice(0, 10));
+  await page.getByRole('dialog').getByRole('button', { name: 'Salvar conta' }).click();
+  await page.getByText('Conta salva.').waitFor();
+  const conta = page.getByRole('listitem').filter({ hasText: 'Aluguel e2e' });
+  await conta.getByText(/^Em 3 dias$/).waitFor();
+  await conta.getByRole('button', { name: 'Pagar' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Confirmar pagamento' }).click();
+  await page.getByText('Pagamento registrado.').waitFor();
+  must(true, 'contas a pagar: criar, ver vencimento próximo e pagar');
+  await noHorizontalScroll(page, 'contas-a-pagar');
+  await page.screenshot({ path: `${SHOTS}/08d-contas-a-pagar-mobile.png`, fullPage: true });
+
   // fecha o caixa contando exatamente o esperado
   const expected = (await page.locator('.stat', { hasText: 'Dinheiro esperado' }).locator('b').innerText()).replace(/[^\d,]/g, '');
   await page.getByRole('button', { name: 'Fechar caixa' }).first().click();
