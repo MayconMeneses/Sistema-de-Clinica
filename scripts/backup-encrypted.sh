@@ -11,6 +11,7 @@
 # Kubernetes CronJob) e a nuvem/região são decisões do ambiente de produção; faça o teste de restauração periodicamente.
 # Estado: escrito e exercitado no CI (cifra, decifra, verifica, rejeita senha errada e arquivo adulterado). Não há agendamento ativo.
 set -euo pipefail
+umask 077   # arquivos temporários e backups só legíveis por quem roda o script
 
 cmd=${1:-backup}
 : "${BACKUP_PASSPHRASE:?defina BACKUP_PASSPHRASE (guarde-a fora do servidor, num cofre)}"
@@ -38,13 +39,19 @@ case "$cmd" in
   verify)
     f=${2:?informe o arquivo}
     check_hash "$f"
-    enc -d -in "$f" | pg_restore --list > /dev/null
+    # Decifra para um arquivo temporário (permissão restrita, apagado ao sair) em vez de usar pipe: o pg_restore --list lê só o índice
+    # e fecha a entrada, e o openssl ainda escrevendo vira "error writing output file" (corrida que depende da velocidade da máquina).
+    tmp=$(mktemp); trap 'rm -f "$tmp"' EXIT
+    enc -d -in "$f" -out "$tmp"
+    pg_restore --list "$tmp" > /dev/null
     echo "OK: $f decifra e tem estrutura de backup válida"
     ;;
   restore)
     f=${2:?informe o arquivo}; target=${3:?informe o banco de destino (já criado e vazio)}
     check_hash "$f"
-    enc -d -in "$f" | pg_restore --no-owner --role="${BACKUP_RESTORE_ROLE:-clinica_owner}" -d "$target"
+    tmp=$(mktemp); trap 'rm -f "$tmp"' EXIT
+    enc -d -in "$f" -out "$tmp"
+    pg_restore --no-owner --role="${BACKUP_RESTORE_ROLE:-clinica_owner}" -d "$target" "$tmp"
     echo "Restaurado em $target"
     ;;
   *) echo "Uso: $0 backup | verify <arquivo> | restore <arquivo> <banco>" >&2; exit 2 ;;
