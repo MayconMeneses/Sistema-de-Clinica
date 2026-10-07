@@ -12,7 +12,7 @@ cd Sistema-de-Clinica
 git checkout claude/wizardly-carson-xuhql2
 docker compose up --build
 ```
-A primeira vez demora alguns minutos (baixa e monta tudo). Quando aparecer `Sistema no ar: http://localhost:3000`, abra **http://localhost:3000** no navegador.
+A primeira vez demora alguns minutos (baixa e monta tudo). Quando aparecer `Sistema no ar: http://localhost:3010`, abra **http://localhost:3010** no navegador.
 
 Para parar: `Ctrl+C`. Para recomeçar do zero (apaga os dados de demonstração): `docker compose down -v`.
 
@@ -31,13 +31,13 @@ Requisitos: Node.js 22 e PostgreSQL 16 instalados. Veja `README.md` (seção "Ro
 ## Acessos de demonstração (todos fictícios)
 | Quem | Endereço | Identificador da clínica | E-mail | Senha |
 |---|---|---|---|---|
-| Dono da clínica (vê tudo) | http://localhost:3000 | `demo` | `dono@demo.demo` | `Demo@12345` |
+| Dono da clínica (vê tudo) | http://localhost:3010 | `demo` | `dono@demo.demo` | `Demo@12345` |
 | Administradora | idem | `demo` | `anaadmin@demo.demo` | `Demo@12345` |
 | Recepção | idem | `demo` | `ritarecepcao@demo.demo` | `Demo@12345` |
 | Profissional (prontuário, odontograma) | idem | `demo` | `drpauloprofissional@demo.demo` | `Demo@12345` |
 | Financeiro | idem | `demo` | `fabiofinanceiro@demo.demo` | `Demo@12345` |
 | Consultório individual (plano Solo) | idem | `solo-demo` | `dono@solo-demo.demo` | `Demo@12345` |
-| **Painel da plataforma (Master)** | http://localhost:3000/#/master | (não tem) | `master@demo.local` | `Demo@12345` + código MFA |
+| **Painel da plataforma (Master)** | http://localhost:3010/#/master | (não tem) | `master@demo.local` | `Demo@12345` + código MFA |
 
 **Código MFA do Master** (só ele precisa): com Docker, rode em outro terminal `docker compose exec app npm run totp` e digite os 6 números. Cada código vale uma vez; se disser "já utilizado", espere 30 segundos e rode de novo. (Alternativa: cadastre em um app autenticador a chave que aparece nos registros de início: `docker compose logs app`.)
 
@@ -48,3 +48,13 @@ Com o computador e o celular na mesma rede Wi-Fi, troque no `docker-compose.yml`
 
 ## Para colocar na internet (pendente: depende de você)
 Um endereço público exige decisões e contratações que ainda não foram feitas: provedor de nuvem e região, domínio, HTTPS, gerenciamento de segredos, backup agendado e criptografado, e a chave `DATA_ENCRYPTION_KEY` (veja `docs/AMBIENTE.md`). Também é necessária revisão de segurança e jurídica antes de qualquer dado real (veja `docs/ACEITE-FASE-1.md`). Posso preparar o deploy assim que o provedor for escolhido.
+
+## A porta já está em uso (o endereço abre outro projeto)
+
+O sistema usa a porta **3010** do seu computador, para não esbarrar em projetos que usam a 3000. Se a 3010 também estiver ocupada, escolha outra:
+
+```bash
+APP_PORT=3020 docker compose up --build
+```
+
+Depois abra `http://localhost:3020` (troque o número nos endereços deste guia).
