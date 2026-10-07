@@ -33,6 +33,8 @@ services:
       SEED_DEMO: "1"
       HOST_PORT: "${APP_PORT:-3010}"
       TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN:-}"   # alertas de erro por Telegram (docs/ALERTAS.md); vazio = desligado
+      TELEGRAM_BOT_TOKEN_ENC: "${TELEGRAM_BOT_TOKEN_ENC:-}"   # alternativa cifrada ao token em claro (scripts/encrypt-secret.ts)
+      DATA_ENCRYPTION_KEY: "${DATA_ENCRYPTION_KEY:-}"
       TELEGRAM_CHAT_IDS: "${TELEGRAM_CHAT_IDS:-}"
       ALERTS_ENV_LABEL: "${ALERTS_ENV_LABEL:-}"
       PUBLIC_BASE_URL: "${PUBLIC_BASE_URL:-}"   # endereço público HTTPS (para o webhook do Mercado Pago); vazio = sem webhook
