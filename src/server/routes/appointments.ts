@@ -217,9 +217,9 @@ export function appointmentRoutes(app: FastifyInstance) {
         if (b.status === 'completed' && BigInt(appt.price_cents) > 0n && ctx.entitlements.has('finance.basic')) {
           // Atendimento concluído gera a cobrança uma única vez (idempotente).
           await ctx.tx.query(
-            `INSERT INTO financial_movements (tenant_id, patient_id, appointment_id, kind, amount_cents, note, idempotency_key, created_by)
-             VALUES ($1,$2,$3,'charge',$4,'Atendimento concluído',$5,$6) ON CONFLICT (tenant_id, idempotency_key) DO NOTHING`,
-            [ctx.tenantId, appt.patient_id, id, appt.price_cents, `appt:${id}:charge`, ctx.user.id]);
+            `INSERT INTO financial_movements (tenant_id, patient_id, appointment_id, kind, amount_cents, note, idempotency_key, created_by, professional_id)
+             VALUES ($1,$2,$3,'charge',$4,'Atendimento concluído',$5,$6,$7) ON CONFLICT (tenant_id, idempotency_key) DO NOTHING`,
+            [ctx.tenantId, appt.patient_id, id, appt.price_cents, `appt:${id}:charge`, ctx.user.id, appt.professional_id]);
         }
         await audit(ctx, `appointment.${b.status}`, 'appointment', id);
         if (b.status === 'cancelled') {

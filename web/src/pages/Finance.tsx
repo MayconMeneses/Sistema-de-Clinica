@@ -38,6 +38,7 @@ export function FinancePage({ me }: { me: Me }) {
       {advanced && <CashDesk canOperate={can('cash.operate')} onChange={s.reload} />}
       {advanced && <Discounts canApprove={can('finance.approve')} onChange={s.reload} />}
       {advanced && can('payables.read') && <Payables canWrite={can('payables.write')} />}
+      {advanced && can('commissions.read') && <Commissions canWrite={can('commissions.write')} />}
       <div className="card">
         <h2>Lançar para um paciente</h2>
         <Field label="Buscar paciente" hint="Cobranças, pagamentos e estornos ficam na aba Financeiro da ficha do paciente.">
@@ -355,5 +356,145 @@ function Payables({ canWrite }: { canWrite: boolean }) {
         </form>
       </Sheet>
     </div>
+  );
+}
+
+
+interface CommPro { professionalId: string; name: string; chargesCount: number; baseCents: string; commissionCents: string; hasPayoutInPeriod: boolean }
+interface CommStatement { professionals: CommPro[]; unattributed: { count: number; totalCents: string } }
+interface CommRule { professionalId: string; name: string; percentBp: number; effectiveFrom: string | null }
+interface Payout { id: string; name: string; from: string; to: string; amountCents: string; baseCents: string; chargesCount: number; method: string; paidOn: string; voided: boolean; voidReason: string | null; note: string | null }
+interface CommCharge { id: string; date: string; patientName: string; note: string | null; amountCents: string; percentBp: number; commissionCents: string }
+const todayStr = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+const monthStart = () => `${todayStr().slice(0, 8)}01`;
+const PO_METHOD: Record<string, string> = { cash: 'Dinheiro', pix: 'Pix', transfer: 'Transferência', other: 'Outro' };
+const pct = (bp: number) => `${(bp / 100).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%`;
+
+function Commissions({ canWrite }: { canWrite: boolean }) {
+  const toast = useToast();
+  const [from, setFrom] = useState(monthStart());
+  const [to, setTo] = useState(todayStr());
+  const st = useLoad(() => get<CommStatement>(`/api/commissions/statement?from=${from}&to=${to}`), [from, to]);
+  const rules = useLoad(() => get<{ rules: CommRule[] }>('/api/commissions/rules'), []);
+  const payouts = useLoad(() => get<{ payouts: Payout[] }>('/api/commissions/payouts'), []);
+  const [sheet, setSheet] = useState<'rules' | null>(null);
+  const [detail, setDetail] = useState<CommPro | null>(null);
+  const [pay, setPay] = useState<CommPro | null>(null);
+  const [voiding, setVoiding] = useState<Payout | null>(null);
+  const [f, setF] = useState({ percent: {} as Record<string, string>, method: 'pix', note: '', reason: '' });
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const reloadAll = () => { st.reload(); rules.reload(); payouts.reload(); };
+  const pctOf = (id: string) => rules.data?.rules.find((r) => r.professionalId === id)?.percentBp ?? 0;
+
+  async function run(fn: () => Promise<unknown>, ok: string, close: () => void) {
+    setBusy(true); setError(null);
+    try { await fn(); toast(ok); close(); reloadAll(); } catch (err) { setError((err as Error).message); } finally { setBusy(false); }
+  }
+  function saveRule(id: string) {
+    const v = Number((f.percent[id] ?? '').replace(',', '.'));
+    if (!Number.isFinite(v) || v < 0 || v > 100 || (f.percent[id] ?? '').trim() === '') { setError('Informe um percentual entre 0 e 100.'); return; }
+    void run(() => post('/api/commissions/rules', { professionalId: id, percent: v }), 'Percentual salvo.', () => setF((x) => ({ ...x, percent: { ...x.percent, [id]: '' } })));
+  }
+
+  return (
+    <div className="card">
+      <div className="row between"><h2>Comissões</h2>{canWrite && <Button variant="secondary" className="btn-sm" onClick={() => { setError(null); setSheet('rules'); }}>Percentuais</Button>}</div>
+      <p className="small muted">Comissão sobre a produção: atendimentos e procedimentos concluídos de cada profissional, antes de descontos e inadimplência.</p>
+      <div className="grid2">
+        <Field label="De">{(id) => <input id={id} type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} />}</Field>
+        <Field label="Até">{(id) => <input id={id} type="date" value={to} min={from} max={todayStr()} onChange={(e) => setTo(e.target.value)} />}</Field>
+      </div>
+      {st.loading && !st.data && <Spinner />}
+      {st.error && <ErrorBox message={st.error} onRetry={st.reload} />}
+      {st.data && st.data.professionals.length === 0 && <Empty title="Nenhum profissional ativo" />}
+      <ul className="list">
+        {st.data?.professionals.map((p) => (
+          <li key={p.professionalId} className="list-item stack">
+            <div className="row between">
+              <div><strong>{p.name}</strong><br /><span className="small muted">{p.chargesCount} cobrança(s) · produção {brl(p.baseCents)} · {pct(pctOf(p.professionalId))} hoje</span></div>
+              <div className="stack" style={{ textAlign: 'right' }}><strong>{brl(p.commissionCents)}</strong>{p.hasPayoutInPeriod && <Badge tone="ok">Com repasse</Badge>}</div>
+            </div>
+            <div className="row">
+              <Button variant="ghost" className="btn-sm" onClick={() => setDetail(p)}>Detalhes</Button>
+              {canWrite && !p.hasPayoutInPeriod && BigInt(p.commissionCents) > 0n && to <= todayStr() && <Button className="btn-sm" onClick={() => { setError(null); setF((x) => ({ ...x, method: 'pix', note: '' })); setPay(p); }}>Registrar repasse</Button>}
+            </div>
+          </li>
+        ))}
+      </ul>
+      {st.data && st.data.unattributed.count > 0 && <p className="small muted">{st.data.unattributed.count} cobrança(s) do período ({brl(st.data.unattributed.totalCents)}) não têm profissional e ficam fora do cálculo.</p>}
+
+      <h3>Repasses registrados</h3>
+      {payouts.data && payouts.data.payouts.length === 0 && <p className="muted">Nenhum repasse registrado.</p>}
+      <ul className="list">
+        {payouts.data?.payouts.slice(0, 8).map((o) => (
+          <li key={o.id} className="list-item stack">
+            <div className="row between">
+              <div><strong>{o.name}</strong><br /><span className="small muted">{dmy(o.from)} a {dmy(o.to)} · pago {dmy(o.paidOn)} ({PO_METHOD[o.method]}){o.voided ? ` · anulado: ${o.voidReason}` : ''}</span></div>
+              <div className="stack" style={{ textAlign: 'right' }}><strong>{brl(o.amountCents)}</strong>{o.voided && <Badge>Anulado</Badge>}</div>
+            </div>
+            {canWrite && !o.voided && <div><Button variant="ghost" className="btn-sm" onClick={() => { setError(null); setF((x) => ({ ...x, reason: '' })); setVoiding(o); }}>Anular</Button></div>}
+          </li>
+        ))}
+      </ul>
+
+      <Sheet open={sheet === 'rules'} title="Percentual de comissão" onClose={() => setSheet(null)}>
+        <p className="small muted">O novo percentual vale a partir de hoje; cobranças anteriores mantêm o percentual da época.</p>
+        <ul className="list">
+          {rules.data?.rules.map((r) => (
+            <li key={r.professionalId} className="list-item stack">
+              <div className="row between"><strong>{r.name}</strong><span className="muted">atual: {pct(r.percentBp)}</span></div>
+              <div className="row">
+                <div className="grow"><TextInput label="Novo percentual (%)" value={f.percent[r.professionalId] ?? ''} onChange={(v) => setF((x) => ({ ...x, percent: { ...x.percent, [r.professionalId]: v } }))} inputMode="decimal" placeholder="ex.: 30" /></div>
+                <Button className="btn-sm" busy={busy} onClick={() => saveRule(r.professionalId)}>Salvar</Button>
+              </div>
+            </li>
+          ))}
+        </ul>
+        {error && <p className="field-msg error" role="alert">{error}</p>}
+      </Sheet>
+
+      <CommDetail pro={detail} from={from} to={to} onClose={() => setDetail(null)} />
+
+      <Sheet open={pay !== null} title={pay ? `Repasse: ${pay.name}` : ''} onClose={() => setPay(null)}>
+        {pay && (
+          <form onSubmit={(e) => { e.preventDefault(); void run(() => post('/api/commissions/payouts', { professionalId: pay.professionalId, from, to, method: f.method, note: f.note || undefined }), 'Repasse registrado.', () => setPay(null)); }} noValidate>
+            <p>Período {dmy(from)} a {dmy(to)}: <strong>{brl(pay.commissionCents)}</strong> sobre produção de {brl(pay.baseCents)}. O valor é recalculado ao confirmar.</p>
+            <Field label="Forma de pagamento">{(id) => <select id={id} value={f.method} onChange={(e) => setF({ ...f, method: e.target.value })}>{Object.entries(PO_METHOD).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>}</Field>
+            <TextInput label="Observação (opcional)" value={f.note} onChange={(v) => setF({ ...f, note: v })} />
+            {error && <p className="field-msg error" role="alert">{error}</p>}
+            <Button type="submit" busy={busy} className="btn-block">Confirmar repasse</Button>
+          </form>
+        )}
+      </Sheet>
+
+      <Sheet open={voiding !== null} title="Anular repasse" onClose={() => setVoiding(null)}>
+        <form onSubmit={(e) => { e.preventDefault(); if (voiding) void run(() => post(`/api/commissions/payouts/${voiding.id}/void`, { reason: f.reason }), 'Repasse anulado.', () => setVoiding(null)); }} noValidate>
+          <p>Anular o repasse de <strong>{voiding?.name}</strong> libera o período para um novo repasse. O registro original permanece.</p>
+          <TextInput label="Motivo" value={f.reason} onChange={(v) => setF({ ...f, reason: v })} />
+          {error && <p className="field-msg error" role="alert">{error}</p>}
+          <Button type="submit" variant="danger" busy={busy} className="btn-block">Anular repasse</Button>
+        </form>
+      </Sheet>
+    </div>
+  );
+}
+
+function CommDetail({ pro, from, to, onClose }: { pro: CommPro | null; from: string; to: string; onClose: () => void }) {
+  const d = useLoad(() => (pro ? get<{ charges: CommCharge[] }>(`/api/commissions/statement/${pro.professionalId}?from=${from}&to=${to}`) : Promise.resolve({ charges: [] as CommCharge[] })), [pro?.professionalId, from, to]);
+  return (
+    <Sheet open={pro !== null} title={pro ? `Cobranças: ${pro.name}` : ''} onClose={onClose}>
+      {d.loading && <Spinner />}
+      {d.error && <ErrorBox message={d.error} onRetry={d.reload} />}
+      {d.data?.charges.length === 0 && <Empty title="Nenhuma cobrança no período" />}
+      <ul className="list">
+        {d.data?.charges.map((c) => (
+          <li key={c.id} className="list-item row between">
+            <div><strong>{c.patientName}</strong><br /><span className="small muted">{dmy(c.date)} · {c.note ?? 'Cobrança'} · {brl(c.amountCents)} × {pct(c.percentBp)}</span></div>
+            <strong>{brl(c.commissionCents)}</strong>
+          </li>
+        ))}
+      </ul>
+    </Sheet>
   );
 }

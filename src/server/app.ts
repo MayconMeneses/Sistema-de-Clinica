@@ -11,6 +11,7 @@ import { errorHandler } from './http.js';
 import { appointmentRoutes } from './routes/appointments.js';
 import { authRoutes } from './routes/auth.js';
 import { cashRoutes } from './routes/cash.js';
+import { commissionRoutes } from './routes/commissions.js';
 import { communicationRoutes } from './routes/communications.js';
 import { crmRoutes } from './routes/crm.js';
 import { dentalQuoteRoutes } from './routes/dental-quotes.js';
@@ -102,6 +103,7 @@ export async function buildApp(opts: { logger?: boolean; logStream?: NodeJS.Writ
   reportRoutes(app);
   paymentRoutes(app);
   payableRoutes(app);
+  commissionRoutes(app);
   teamRoutes(app);
   communicationRoutes(app);
   telemetryRoutes(app);

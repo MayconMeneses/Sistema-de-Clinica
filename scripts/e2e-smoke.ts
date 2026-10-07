@@ -253,6 +253,19 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
   await noHorizontalScroll(page, 'contas-a-pagar');
   await page.screenshot({ path: `${SHOTS}/08d-contas-a-pagar-mobile.png`, fullPage: true });
 
+  // comissões: define o percentual de um profissional e vê o extrato
+  await page.getByRole('heading', { name: 'Comissões' }).waitFor();
+  await page.getByRole('button', { name: 'Percentuais' }).click();
+  await page.getByLabel('Novo percentual (%)').first().fill('30');
+  await page.getByRole('dialog').getByRole('button', { name: 'Salvar', exact: true }).first().click();
+  await page.getByText('Percentual salvo.').waitFor();
+  await page.getByRole('dialog').getByText(/atual: 30%/).first().waitFor();
+  must(true, 'comissões: percentual do profissional definido e exibido');
+  await page.getByRole('button', { name: 'Fechar', exact: true }).click();
+  await page.getByText(/hoje$/).first().waitFor();
+  await noHorizontalScroll(page, 'comissoes');
+  await page.screenshot({ path: `${SHOTS}/08e-comissoes-mobile.png`, fullPage: true });
+
   // fecha o caixa contando exatamente o esperado
   const expected = (await page.locator('.stat', { hasText: 'Dinheiro esperado' }).locator('b').innerText()).replace(/[^\d,]/g, '');
   await page.getByRole('button', { name: 'Fechar caixa' }).first().click();
