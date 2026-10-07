@@ -18,7 +18,8 @@ Legenda: ✅ IMPLEMENTADO e testado localmente · 🟡 PARCIAL · ⬜ PLANEJADO
 - ⬜ Acesso de suporte temporário (justificado, limitado, revogável)
 - ✅ Backup + restore em banco temporário com validação (`npm run drill`), reprova ao detectar perda
 - 🟡 CI escrito (`.github/workflows/ci.yml`), **nunca executado no GitHub**
-- ⬜ Observabilidade, backup agendado/criptografado fora do host, secrets/rotação, HTTPS/deploy
+- ✅ Alertas de erro por Telegram (componente + clínica), comandos `/status /erros /clinicas /fila /silenciar /ativar /testar`, erros da tela (docs/ALERTAS.md); falta validar com o Telegram real
+- ⬜ Canal de alerta por cliente (futuro); métricas/traces; backup agendado/criptografado fora do host, secrets/rotação, HTTPS/deploy
 
 ## Fase 2 — Operação clínica essencial
 - ✅ Pacientes, agenda com conflito transacional, prontuário com assinatura/adendo, financeiro particular

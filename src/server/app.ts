@@ -5,6 +5,7 @@ import cookie from '@fastify/cookie';
 import fastifyStatic from '@fastify/static';
 import Fastify from 'fastify';
 import { config } from './config.js';
+import { initAlerts } from '../ops/alerts.js';
 import { appPool, platformPool } from './db.js';
 import { errorHandler } from './http.js';
 import { appointmentRoutes } from './routes/appointments.js';
@@ -24,6 +25,7 @@ import { patientRoutes } from './routes/patients.js';
 import { reportRoutes } from './routes/reports.js';
 import { scheduleRoutes } from './routes/schedule.js';
 import { teamRoutes } from './routes/team.js';
+import { telemetryRoutes } from './routes/telemetry.js';
 import { webhookRoutes } from './routes/webhooks.js';
 
 const CSP = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
@@ -47,6 +49,7 @@ export async function buildApp(opts: { logger?: boolean; logStream?: NodeJS.Writ
     trustProxy: process.env.TRUST_PROXY === '1',
     genReqId: () => crypto.randomUUID(),
   });
+  initAlerts(platformPool);
   app.setErrorHandler(errorHandler);
   await app.register(cookie);
 
@@ -99,6 +102,7 @@ export async function buildApp(opts: { logger?: boolean; logStream?: NodeJS.Writ
   paymentRoutes(app);
   teamRoutes(app);
   communicationRoutes(app);
+  telemetryRoutes(app);
   await webhookRoutes(app);
 
   const webDir = join(import.meta.dirname, '..', '..', 'web', 'dist');

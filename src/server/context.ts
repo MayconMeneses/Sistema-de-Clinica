@@ -53,6 +53,7 @@ export function clinicRoute(
       try {
         return await withTenant(appPool, tenantHint, async (tx) => {
           const ctx = await authenticate(tx, tenantHint, secret, req);
+          req.alertTenant = { id: ctx.tenantId, name: ctx.tenantName };
           if (opts.perm && !hasPermission(ctx.user.role, opts.perm)) throw forbidden();
           if (opts.cap && !ctx.entitlements.has(opts.cap)) {
             throw new HttpError(403, 'Este recurso não está incluído no plano contratado.', 'capability_unavailable');
