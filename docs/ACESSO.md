@@ -83,3 +83,12 @@ docker compose -f docker-compose.auto.yml up -d
 O vigia (Watchtower) confere a cada 5 minutos, baixa a imagem nova e reinicia o sistema. O banco fica preservado. **Antes, torne o pacote público uma vez** (passos no cabeçalho de `docker-compose.auto.yml`). Sem isso o download é negado.
 
 Estado: configurado, **ainda não validado de ponta a ponta** (a publicação no GitHub e o Watchtower só rodam no seu GitHub e no seu Docker). Quando fizer a primeira atualização, me diga se funcionou. Para atualizar manualmente a qualquer hora: `docker compose -f docker-compose.auto.yml pull && docker compose -f docker-compose.auto.yml up -d`.
+
+### Erro `client version 1.25 is too old` no atualizador
+
+O Watchtower original (`containrrr`) não funciona com o Docker mais novo. O arquivo `docker-compose.auto.yml` agora usa o fork mantido `nickfedor/watchtower`. Se aparecer esse erro, atualize e suba de novo:
+
+```powershell
+git pull origin claude/wizardly-carson-xuhql2
+docker compose -f docker-compose.auto.yml up -d
+```
