@@ -36,7 +36,16 @@ Sem token e chat: em desenvolvimento os avisos ficam só na memória (sandbox); 
 | 🟠 Erro na tela do usuário | `window.onerror`/promessa rejeitada no navegador (até 3 por aba, 5/min por IP) | `web` |
 | 🔵 Novo cliente / suspenso / reativado / encerrado / trocou de plano | ações no Painel Master | `clientes` |
 
-Cada aviso mostra: gravidade, componente, ambiente, título, **clínica** (nome + início do id), rota e hora (Brasília).
+Cada aviso mostra: gravidade, componente, ambiente, título, **clínica** (nome + início do id), **rota**, **Onde** (arquivo:linha do nosso código onde o erro nasceu, ex.: `src/server/routes/finance.ts:123`), o **código para buscar nos logs** e a hora (Brasília). A pilha completa nunca é enviada.
+
+Para investigar: `docker compose -f docker-compose.auto.yml logs app | Select-String <código>` mostra a linha completa do erro, e o arquivo:linha indica o ponto exato no código.
+
+## Testar pelo próprio sistema
+
+Painel Master → Integrações → **Alertas de erro (Telegram)**:
+- **Enviar alerta de teste**: confirma que o canal funciona.
+- **Simular um erro**: lança e captura um erro de verdade e envia o aviso como um erro real chegaria (componente, clínica de exemplo, rota, local no código), marcado como simulado.
+O mesmo painel lista os últimos avisos do servidor e se cada um foi enviado, agrupado ou silenciado.
 
 ## Comandos (só nos chats de `TELEGRAM_CHAT_IDS`)
 

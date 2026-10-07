@@ -8,7 +8,7 @@ import { DbRateLimiter } from '../auth/rate-limit.js';
 import { config } from '../config.js';
 import { cookieOptions, MASTER_COOKIE, masterRoute, type MasterCtx } from '../context.js';
 import { platformPool } from '../db.js';
-import { notify } from '../../ops/alerts.js';
+import { getNotifier, locateError, notify } from '../../ops/alerts.js';
 import { integrationHealth, LIVE_PROVIDERS } from '../../integrations/registry.js';
 import { badRequest, conflict, forbidden, HttpError, newSecret, notFound, sha256, unauthorized } from '../http.js';
 
@@ -202,6 +202,28 @@ export function masterRoutes(app: FastifyInstance) {
     return { providers: integrationHealth(), queue: queue.rows, deadByTenant: dead.rows, receipts: receipts.rows, connections: connections.rows };
   });
 
+  // ------------------------------------------------------------ Alertas (Telegram): estado e teste feito pelo próprio sistema
+  masterRoute(app, 'GET', '/api/master/alerts', async () => {
+    const n = getNotifier();
+    return { transport: n?.transportName ?? 'desligado', live: n?.transportName === 'telegram', env: n?.envLabel ?? null, mutedUntil: n ? (await n.mutedUntil()) || null : null, recent: n?.recent.slice(-15).reverse() ?? [] };
+  });
+  masterRoute(app, 'POST', '/api/master/alerts/test', async (c, req) => {
+    const b = z.object({ kind: z.enum(['simple', 'error']) }).parse(req.body);
+    const n = getNotifier();
+    if (!n) throw new HttpError(503, 'Alertas não inicializados.', 'not_configured');
+    const unique = `teste|${randomUUID()}`;
+    let result: string;
+    if (b.kind === 'simple') {
+      result = await n.notify({ severity: 'info', component: 'sistema', title: 'Teste de alerta feito pelo Painel Master', detail: `Pedido por ${c.operator.name}. O canal funciona.`, where: 'Painel Master → Integrações → Alertas', fingerprint: unique });
+    } else {
+      // Erro de verdade, lançado e capturado aqui, para mostrar exatamente como um problema real é descrito (arquivo:linha, rota, código).
+      let caught: unknown;
+      try { simulatedFailure(); } catch (e) { caught = e; }
+      result = await n.notify({ severity: 'critical', component: 'api', title: 'ERRO SIMULADO (teste, nada quebrou)', detail: 'Assim aparece um erro real: componente, clínica, rota, local no código e código para buscar nos logs.', where: locateError(caught), ref: req.id, route: `${req.method} ${req.routeOptions.url}`, tenant: { id: '00000000-0000-0000-0000-000000000000', name: 'Clínica de exemplo' }, fingerprint: unique });
+    }
+    return { result, transport: n.transportName };
+  });
+
   masterRoute(app, 'POST', '/api/master/tenants/:id/integrations', async (c, req) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
     const b = z.object({ kind: z.enum(['whatsapp', 'email', 'sms']), mode: z.enum(['disabled', 'sandbox', 'live']), justification }).parse(req.body);
@@ -233,3 +255,5 @@ export function masterRoutes(app: FastifyInstance) {
     return { events: r.rows };
   });
 }
+
+function simulatedFailure(): never { throw new Error('falha simulada para teste de alerta'); }

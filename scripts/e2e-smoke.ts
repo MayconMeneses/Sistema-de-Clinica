@@ -669,6 +669,10 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
   await mp.getByRole('heading', { name: 'Integrações' }).waitFor();
   await mp.getByText('Aguardando credenciais').first().waitFor();
   must(true, 'Master mostra provedores aguardando credenciais (sem expor segredos)');
+  await mp.getByRole('button', { name: 'Simular um erro' }).click();
+  await mp.getByRole('heading', { name: 'Últimos avisos deste servidor' }).waitFor();
+  await mp.getByText('ERRO SIMULADO').first().waitFor();
+  must(true, 'Master: alerta de erro simulado feito pelo próprio sistema aparece no histórico');
   await noHorizontalScroll(mp, 'master-integracoes');
   await mp.screenshot({ path: `${SHOTS}/12-master-integracoes-mobile.png`, fullPage: true });
   await m.close();
