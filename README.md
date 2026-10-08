@@ -1,73 +1,148 @@
-# Clínica One — plataforma SaaS de gestão clínica
+# Clínica One
 
-**Versão 0.7.0 · funcional em ambiente de desenvolvimento · NÃO pronta para produção nem para dados reais de pacientes.**
-Interface em português do Brasil, **mobile-first** (menu inferior no celular, barra lateral no desktop, instalável na tela inicial).
-Convênios/TISS estão bloqueados globalmente nesta fase.
+**Plataforma SaaS multiempresa de gestão clínica**, em português do Brasil, feita para clínicas e consultórios (com módulo de odontologia): agenda, pacientes, prontuário, financeiro, pagamentos online, estoque, compras, CRM, indicadores e operação da plataforma.
 
-## Como acessar
-O sistema roda no seu computador, não há link público. **Passo a passo com Docker (um comando) e acessos de demonstração: [`docs/ACESSO.md`](docs/ACESSO.md).**
+> **Status:** projeto funcional em ambiente de desenvolvimento, com testes automatizados e CI. **Não está pronto para dados reais de pacientes**: integrações externas (WhatsApp, e-mail, SMS, NFS-e, assinatura eletrônica) rodam em modo simulado (sandbox) e nenhuma conformidade (LGPD, CFM, CFO) é declarada sem revisão especializada. Veja [Limites conhecidos](#limites-conhecidos).
 
-## Rodar sem Docker (requer Node 22 e PostgreSQL 16 locais)
+![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6) ![Node](https://img.shields.io/badge/Node-22-339933) ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-336791) ![React](https://img.shields.io/badge/React-19-61dafb) ![Testes](https://img.shields.io/badge/testes-244-brightgreen)
+
+## Destaques técnicos
+
+- **Isolamento entre clínicas decidido pelo banco.** Multi-tenancy em banco compartilhado com *Row Level Security* forçada, chaves estrangeiras compostas `(tenant_id, id)` e três papéis de banco sem `BYPASSRLS`. Um teste falha se surgir tabela com `tenant_id` sem RLS. O painel da plataforma (Master) não consegue ler dados clínicos, e isso é provado em teste.
+- **Regras de negócio protegidas na camada de dados.** Conflito de horário (profissional, paciente e sala) resolvido por restrição de exclusão do PostgreSQL, inclusive sob concorrência. Saldo de estoque que nunca fica negativo, períodos de repasse sem sobreposição e transições de status são garantidos por constraints e triggers, não só pelo código.
+- **Registros imutáveis.** Prontuário assinado só muda por adendo justificado. Financeiro, estoque e odontograma são livros de movimentos append-only; documentos anexados só podem ser arquivados com motivo.
+- **Segurança.** RBAC deny-by-default, sessões revogáveis no servidor, MFA (TOTP de uso único) com segredos cifrados em repouso (AES-256-GCM), limite de tentativas no banco, proteção CSRF, auditoria de leituras sensíveis, validação de uploads pelo conteúdo do arquivo e dados sensíveis removidos de alertas.
+- **Integrações com portas e adaptadores.** Cada provedor externo (pagamentos, mensageria, alertas) tem uma interface, um adaptador real e um *sandbox*; o catálogo é único e o sistema roda inteiro sem rede. Mensagens saem por *outbox* transacional, com retry, backoff e dead-letter.
+- **Idempotência.** Lançamentos financeiros, movimentos de estoque, webhooks de pagamento e estornos usam chaves de idempotência, então repetir uma chamada não duplica nada.
+- **Operação.** Alertas de erro por Telegram dizendo qual componente e qual clínica falhou, com o arquivo e a linha de origem, e comandos de consulta (`/status`, `/erros`, `/fila`). Backup e restore validados por script. Deploy por Docker com atualização automática (Watchtower) a partir de imagem publicada no GHCR pelo CI.
+
+## Funcionalidades
+
+| Área | O que tem |
+|---|---|
+| **Pacientes** | cadastro e busca, alerta clínico, aviso e mesclagem de duplicados, responsáveis, exportação de dados, solicitações de privacidade do titular, anexos e documentos (PDF/imagens) |
+| **Agenda** | dia, semana e mês; encaixe, bloqueios, séries semanais, lista de espera, fila da recepção (chegada, chamada, atendimento, conclusão) |
+| **Prontuário** | rascunho, assinatura, imutabilidade, adendos, leitura auditada |
+| **Odontologia** | odontograma permanente e decíduo por face com histórico, plano de tratamento, orçamento com aceite, baixa automática de materiais ao concluir o procedimento |
+| **Financeiro** | cobranças e pagamentos, estorno total e parcial, caixa com sangria e suprimento, descontos com aprovação, recibos, contas a pagar, comissões e repasses |
+| **Pagamentos online** | Pix, link de pagamento com parcelamento e estorno via Mercado Pago, com conciliação por webhook assinado |
+| **Estoque e compras** | lotes e validade (saída FEFO), inventário por contagem, fornecedores, pedidos de compra com recebimento parcial |
+| **CRM** | funil de leads, conversão em paciente e agendamento direto do lead |
+| **Indicadores** | painel por período e exportação CSV |
+| **Equipe** | papéis (dono, admin, gerente de unidade, recepção, profissional, financeiro, estoque, marketing, auditor), escopo por unidade na agenda, MFA |
+| **Plataforma (Master)** | criar e suspender clínicas, planos e funcionalidades por clínica, auditoria, saúde das integrações, histórico de alertas |
+
+O que ainda falta e o que depende de contratação de terceiros está em [`docs/BACKLOG.md`](docs/BACKLOG.md) e [`PENDENCIAS.md`](PENDENCIAS.md).
+
+## Arquitetura
+
+```mermaid
+flowchart LR
+  subgraph Cliente
+    W["Web app React 19 + Vite<br/>mobile-first, instalável (PWA)"]
+  end
+  subgraph Servidor["Node 22"]
+    API["API Fastify 5<br/>RBAC, entitlements, CSRF, auditoria"]
+    WK["Worker<br/>outbox, lembretes, bot Telegram"]
+  end
+  subgraph Dados["PostgreSQL 16"]
+    DB[("RLS forçada<br/>constraints e triggers<br/>livros imutáveis")]
+  end
+  subgraph Externos["Provedores (portas + sandbox)"]
+    MP["Mercado Pago"]
+    MSG["WhatsApp / e-mail / SMS"]
+    TG["Telegram"]
+  end
+  W -->|"JSON + cookie de sessão"| API
+  API -->|"uma transação por requisição<br/>tenant vindo da sessão"| DB
+  WK --> DB
+  WK --> MSG
+  WK --> TG
+  API --> MP
+  MP -->|"webhook assinado"| API
+```
+
+Decisões registradas em [`docs/adr/`](docs/adr) (stack, multi-tenancy, identidade, deploy) e ameaças em [`docs/THREAT-MODEL.md`](docs/THREAT-MODEL.md).
+
+### Decisões que valem destacar
+
+| Decisão | Motivo |
+|---|---|
+| RLS no PostgreSQL em vez de filtrar `tenant_id` no código | Um esquecimento de `WHERE` no código não vaza dados; o banco recusa. |
+| Uma transação por requisição com o tenant definido a partir da sessão | O cliente nunca informa a qual clínica pertence. |
+| Regras críticas em constraints e triggers | Valem mesmo para scripts, migrations e bugs futuros. |
+| Livros de movimentos imutáveis, saldo derivado | Auditoria completa e correção só por lançamento compensatório. |
+| Ports/adapters com sandbox para tudo que é externo | Desenvolvimento e testes sem rede nem credenciais; troca de provedor sem tocar nas regras. |
+| Valores em centavos (inteiros) e datas no fuso de São Paulo | Sem erro de arredondamento nem de virada de dia. |
+
+## Tecnologias
+
+| Camada | Escolhas |
+|---|---|
+| Linguagem | TypeScript em todo o projeto (servidor e web), SQL (PL/pgSQL em triggers), CSS, Shell |
+| Back-end | Node 22, Fastify 5, `pg`, zod 4 |
+| Banco | PostgreSQL 16, migrations versionadas com checksum |
+| Front-end | React 19, Vite 7, CSS próprio mobile-first |
+| Testes | Vitest (244 testes contra PostgreSQL real), Playwright (E2E em celular e desktop) |
+| Infra | Docker e Docker Compose, GitHub Actions (verificação, publicação da imagem no GHCR), Watchtower |
+
+## Como rodar
+
+### Com Docker (um comando)
+
+Passo a passo para Windows, macOS e Linux, com acessos de demonstração: [`docs/ACESSO.md`](docs/ACESSO.md).
+
+### Sem Docker (Node 22 e PostgreSQL 16 locais)
 
 ```bash
 npm install
-npm run setup:dev     # cria banco + papéis de DEV, aplica migrations, cria dados DEMO fictícios e gera o frontend
-npm start             # http://localhost:3000   (PORT=3100 npm start para outra porta)
+npm run setup:dev     # cria banco e papéis de dev, aplica migrations, cria dados DEMO fictícios e gera o frontend
+npm start             # http://localhost:3000
 ```
 
-O `npm run seed` imprime os acessos de demonstração (todos fictícios, **somente desenvolvimento**):
+Acessos de demonstração (todos fictícios, somente desenvolvimento): clínica `demo`, usuário `dono@demo.demo`, senha `Demo@12345`. Painel Master em `/#/master`.
 
-| Ambiente | Como entrar |
-|---|---|
-| Clínica demo (plano Completa) | identificador `demo` · `dono@demo.demo`, `anaadmin@demo.demo`, `ritarecepcao@demo.demo`, `drpauloprofissional@demo.demo`, `fabiofinanceiro@demo.demo` · senha `Demo@12345` |
-| Consultório Solo (plano Solo) | identificador `solo-demo` · `dono@solo-demo.demo` |
-| Painel Master (plataforma) | abrir `/#/master` · `master@demo.local` · senha `Demo@12345` · **código MFA**: `npm run totp` (ou cadastre o segredo impresso pelo seed em um app autenticador) |
-
-Para testar no celular, abra `http://<IP-da-máquina>:3000` na mesma rede (cookies `Secure` só são exigidos em produção/HTTPS).
-
-## Comandos
+### Comandos
 
 | Comando | O que faz |
 |---|---|
-| `npm run check` | typecheck (servidor + web) e 181 testes (PostgreSQL real) |
-| `npm run drill` | backup → restore em banco temporário → valida dados, RLS e isolamento (reprova se algo divergir) |
-| `npm run build` | typecheck + build do frontend em `web/dist` |
-| `npm run e2e` | smoke no Chromium em celular e desktop (`E2E_URL=http://127.0.0.1:3000`), com screenshots |
-| `npm run dev:server` / `npm run dev:web` | desenvolvimento com recarga (web em :5173 com proxy para a API) |
-| `npm run totp` | código MFA atual do operador demo |
+| `npm run check` | typecheck (servidor e web) e todos os testes |
+| `npm test` | testes de integração contra PostgreSQL real |
+| `npm run e2e` | fluxo completo no Chromium, em celular e desktop |
+| `npm run drill` | backup, restore em banco temporário e validação de dados, RLS e isolamento |
+| `npm run build` | typecheck e build do frontend |
+| `npm run worker` | processo de segundo plano (mensagens, lembretes, bot) |
 
-## O que funciona (IMPLEMENTADO e testado localmente)
+## Estrutura
 
-**Painel Master** — login com senha + MFA (TOTP, cada código vale uma vez); criar clínica com proprietário; trocar plano; suspender/reativar (exige novo código MFA + justificativa); conceder/bloquear funcionalidades por clínica (o banco recusa habilitar `tiss.billing`); auditoria da plataforma. Recupera o MFA do proprietário que perdeu o aparelho (exige MFA + justificativa; só mexe em MFA/sessão). O Master **não lê** dados clínicos, senhas nem segredos (sem privilégio no banco, provado em teste).
+```
+src/
+  server/      API (rotas por domínio, RBAC, sessões, auditoria)
+  worker/      outbox de mensagens, lembretes e bot do Telegram
+  modules/     regras de domínio (pacientes, financeiro, pagamentos, comunicação, planos)
+  integrations/ portas, adaptadores e sandbox dos provedores
+  ops/         alertas operacionais
+  db/          conexão, contexto de tenant, migrations
+web/src/       aplicação React (uma página por área)
+migrations/    26 migrations SQL versionadas
+tests/         testes de integração e de isolamento
+docs/          backlog, conformidade, ameaças, ADRs, guias de integração
+```
 
-**Sistema da clínica** — login por clínica; sessões server-side revogáveis; troca de senha encerra outras sessões; suspender usuário derruba sessões na hora.
-- Pacientes: cadastro, busca, edição, alerta clínico (visível só à equipe clínica); **aviso de cadastro parecido** (documento, nome+nascimento, telefone+primeiro nome; normaliza acento, máscara e +55 no banco); **revisão de duplicados e mesclagem auditada** (nada é apagado: prontuário assinado e financeiro permanecem e aparecem no cadastro principal); **responsáveis**; **exportação dos dados** (respeita as permissões de quem exporta e é auditada); **solicitações de privacidade** do titular com prazo de referência de 15 dias e fila na Gestão.
-- Agenda: dia/profissional, agendar, confirmar, reagendar, cancelar com motivo, faltou. **Conflito de profissional, paciente e sala decidido pelo PostgreSQL** (restrição de exclusão), inclusive sob concorrência. Horário de atendimento por profissional (fora dele só como **encaixe**, pela recepção), **bloqueios** (feriado, folga, manutenção; o banco recusa agendar sobre eles), **séries semanais** (tudo-ou-nada ou pulando datas com conflito) e **lista de espera**.
-- Recepção: fila do dia com chegada (com prioridade), chamada, atendimento e conclusão; atualiza sozinha; concluir gera a cobrança uma única vez.
-- Gestão: unidades, salas/cadeiras/equipamentos, horários e bloqueios.
-- Prontuário: rascunho, assinatura, **assinado é imutável**, correção só por adendo com justificativa, leitura auditada, texto preservado no aparelho até salvar.
-- Financeiro particular: cobrança, pagamento (Pix/cartão/dinheiro), estorno limitado ao pago, saldo derivado de movimentos imutáveis, valores em centavos, lançamento idempotente; concluir consulta gera a cobrança uma única vez.
-- Equipe: criar usuário, suspender/reativar, redefinir senha e 2 etapas, trilha de auditoria.
-- **Verificação em duas etapas (TOTP)** para usuários da clínica: ativar/desativar pela conta (no celular, o link abre o app autenticador), exigida no login, código de uso único; segredos **cifrados em repouso** (AES-256-GCM).
-- **Comunicação com o paciente** (plano Essencial ou superior): autorização por canal (WhatsApp, e-mail, SMS) com histórico; ao agendar, remarcar ou cancelar, a mensagem entra numa **outbox transacional** e o worker envia (hoje em **sandbox**, simulado) com retry, backoff e dead-letter; lembrete 24 h antes; histórico no paciente; webhooks de entrega assinados. Painel de Integrações no Master. Detalhes e o que falta conectar: `docs/INTEGRACOES.md`.
-- **Odontologia** (plano Completa/Enterprise): odontograma permanente (32) e decíduo (20) por face, **histórico imutável** (estado atual = último evento), leitura auditada; plano de tratamento com prioridade e valor, "concluir e cobrar" gera a cobrança uma única vez. Só profissional registra; proprietário lê.
-- RBAC deny-by-default (recepção não acessa prontuário) e entitlements por plano/override, decididos **no backend**.
+## Testes e qualidade
 
-**Fundação** — PostgreSQL com RLS forçado, tenant vindo da sessão, FKs compostas, três papéis sem BYPASSRLS, migrations com checksum, auditoria append-only, limitador de tentativas compartilhado no banco, backup/restore validado por script, workflow de CI (`.github/workflows/ci.yml`).
+- **244 testes de integração** executam contra um PostgreSQL real, incluindo isolamento entre clínicas, concorrência de agendamento, idempotência de pagamentos e imutabilidade de registros.
+- **E2E com Playwright** percorre os fluxos principais em celular e desktop e falha em erro de console, violação de CSP, resposta 5xx ou rolagem horizontal.
+- **CI** (GitHub Actions) roda a verificação completa a cada push e publica a imagem Docker.
 
-## Configuração por ambiente
-| Variável | Uso |
-|---|---|
-| `DATABASE_URL_APP`, `DATABASE_URL_PLATFORM`, `DATABASE_URL_OWNER` | conexões (papéis distintos; ver `.env.example`) — obrigatórias em produção |
-| `DATA_ENCRYPTION_KEY` | chave de 32 bytes em base64 para cifrar segredos TOTP (`openssl rand -base64 32`) — **obrigatória em produção**; em dev usa uma chave fixa que não protege nada |
-| `TRUST_PROXY=1` | atrás de proxy reverso, para o IP real nos limites e na auditoria |
-| `NODE_ENV=production` | cookies `Secure`, HSTS, sem valores padrão de dev |
+## Limites conhecidos
 
-## O que NÃO existe ainda
-Portal do paciente · orçamento odontológico com aceite, imagens/radiografias, próteses · envio **real** de WhatsApp/e-mail/SMS (depende de contratar provedor; já está montado em sandbox) · CRM · estoque · BI · NFS-e · integrações · recuperação de senha por e-mail (depende de provedor de e-mail) · acesso de suporte temporário · observabilidade · deploy/HTTPS. O CI está **escrito mas ainda não foi executado** no GitHub. Veja `docs/BACKLOG.md`.
+- Integrações reais com WhatsApp, e-mail, SMS, NFS-e e assinatura eletrônica dependem de contratação; estão implementadas em sandbox. O Mercado Pago está escrito conforme a documentação, mas ainda não foi validado com credenciais reais.
+- Convênios e faturamento TISS estão bloqueados globalmente nesta fase.
+- Escopo por unidade vale hoje só para a agenda; pacientes, estoque e CRM pertencem à clínica inteira.
+- Sem deploy público com HTTPS e domínio; acesso por Docker local.
+- Conformidade (LGPD, CFM, CFO) exige revisão especializada antes de qualquer uso com dados reais: leia [`docs/ACEITE-FASE-1.md`](docs/ACEITE-FASE-1.md) e [`docs/CONFORMIDADE.md`](docs/CONFORMIDADE.md).
 
-## Documentos
-`docs/CONFORMIDADE.md` (matriz contra o prompt mestre) · `docs/INTEGRACOES.md` · `docs/AMBIENTE.md` · `docs/BACKLOG.md` · `docs/THREAT-MODEL.md` · `docs/ACEITE-FASE-1.md` · `docs/adr/`
+## Documentação
 
-## Antes de qualquer uso real
-Leia `docs/ACEITE-FASE-1.md` e `docs/THREAT-MODEL.md`. Pendências de decisão: `PENDENCIAS.md`. Nenhuma conformidade (LGPD, CFM, CFO) é declarada; exige revisão especializada.
+[`docs/ACESSO.md`](docs/ACESSO.md) · [`docs/AMBIENTE.md`](docs/AMBIENTE.md) · [`docs/BACKLOG.md`](docs/BACKLOG.md) · [`docs/CONFORMIDADE.md`](docs/CONFORMIDADE.md) · [`docs/INTEGRACOES.md`](docs/INTEGRACOES.md) · [`docs/PAGAMENTOS.md`](docs/PAGAMENTOS.md) · [`docs/ALERTAS.md`](docs/ALERTAS.md) · [`docs/THREAT-MODEL.md`](docs/THREAT-MODEL.md) · [`docs/adr/`](docs/adr)
