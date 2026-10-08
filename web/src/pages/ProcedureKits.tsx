@@ -25,12 +25,12 @@ export function ProcedureKits({ open, onClose, canWrite, onChanged }: { open: bo
     if (!f.itemId) { setError('Escolha o material.'); return; }
     if (q === null) { setError('Informe uma quantidade positiva, com até 3 casas.'); return; }
     setBusy('add'); setError(null);
-    try { await put('/api/inventory/procedure-supplies', { procedure: f.procedure, itemId: f.itemId, quantity: q }); setF({ ...f, itemId: '', qty: '' }); kits.reload(); }
+    try { await put('/api/inventory/procedure-supplies', { procedure: f.procedure, itemId: f.itemId, quantity: q }); setF({ ...f, itemId: '', qty: '' }); toast('Material salvo no kit.'); kits.reload(); }
     catch (err) { setError((err as Error).message); } finally { setBusy(null); }
   }
   async function remove(s: Supply) {
     setBusy(s.id);
-    try { await del(`/api/inventory/procedure-supplies/${s.id}`); kits.reload(); } catch (err) { toast((err as Error).message, 'bad'); } finally { setBusy(null); }
+    try { await del(`/api/inventory/procedure-supplies/${s.id}`); toast('Material removido do kit.'); kits.reload(); } catch (err) { toast((err as Error).message, 'bad'); } finally { setBusy(null); }
   }
   async function resolve(s: Shortage, action: 'consume' | 'dismiss') {
     let note: string | undefined;

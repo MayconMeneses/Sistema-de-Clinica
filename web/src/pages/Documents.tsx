@@ -70,7 +70,7 @@ export function Documents({ patientId, canWrite }: { patientId: string; canWrite
       )}
       <div className="row between">
         <h2>Documentos</h2>
-        <label className="small"><input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} /> Mostrar arquivados</label>
+        <label className="check small"><input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} /> Mostrar arquivados</label>
       </div>
       {list.loading && !list.data && <Spinner />}
       {list.error && <ErrorBox message={list.error} onRetry={list.reload} />}

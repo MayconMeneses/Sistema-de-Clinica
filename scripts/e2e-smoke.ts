@@ -806,10 +806,10 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
 }
 
 // ---------------- NOVOS FLUXOS: kits de estoque, documentos do paciente e recuperação de senha ----------------
-{
-  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, locale: 'pt-BR', acceptDownloads: true });
+for (const vp of [{ name: 'desktop', width: 1280, height: 800, mobile: false }, { name: 'mobile', width: 390, height: 844, mobile: true }]) {
+  const ctx = await browser.newContext({ viewport: { width: vp.width, height: vp.height }, isMobile: vp.mobile, hasTouch: vp.mobile, locale: 'pt-BR', acceptDownloads: true });
   const page = await ctx.newPage();
-  watch(page, 'novos-fluxos');
+  watch(page, `novos-fluxos-${vp.name}`);
   await page.goto(BASE);
   await page.getByLabel('Identificador da clínica').fill('demo');
   await page.getByLabel('E-mail').fill('dono@demo.demo');
@@ -826,8 +826,9 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
   await kit.getByLabel('Quantidade por procedimento').fill('1,5');
   await kit.getByRole('button', { name: 'Salvar no kit' }).click();
   await kit.getByRole('heading', { name: 'restauração e2e' }).waitFor();
-  must(true, 'kits: material cadastrado para o procedimento');
-  await page.screenshot({ path: `${SHOTS}/13-kits-desktop.png` });
+  must(true, `kits (${vp.name}): material cadastrado para o procedimento`);
+  await noHorizontalScroll(page, `kits-${vp.name}`);
+  await page.screenshot({ path: `${SHOTS}/13-kits-${vp.name}.png` });
   await page.getByRole('button', { name: 'Fechar' }).click();
 
   // Documentos do paciente: anexar, listar, baixar
@@ -839,13 +840,16 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
   await page.getByRole('button', { name: 'Anexar', exact: true }).click();
   await page.getByText('Documento anexado.').waitFor();
   await page.getByText('Exame E2E').first().waitFor();
-  must(true, 'documentos: PDF anexado aparece na lista');
+  must(true, `documentos (${vp.name}): PDF anexado aparece na lista`);
+  await noHorizontalScroll(page, `documentos-${vp.name}`);
   const dl = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Baixar' }).first().click();
   must((await dl).suggestedFilename() === 'exame-e2e.pdf', 'documentos: download devolve o arquivo com o nome original');
-  await page.screenshot({ path: `${SHOTS}/14-documentos-desktop.png` });
+  await page.screenshot({ path: `${SHOTS}/14-documentos-${vp.name}.png` });
   await ctx.close();
+}
 
+{
   // Esqueci minha senha: o link aparece no log do worker (modo sandbox)
   const logs = (process.env.E2E_WORKER_LOG ?? '/tmp/worker.log,/tmp/srv.log').split(',').filter((f) => existsSync(f));
   if (logs.length) {
