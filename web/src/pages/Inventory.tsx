@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { get, patch, post } from '../api';
+import { get, patch, post, put } from '../api';
 import { brl, dateTimeOf, parseMoney } from '../format';
 import { Badge, Button, Empty, ErrorBox, Field, Sheet, Spinner, TextInput, useLoad, useToast } from '../ui';
 
@@ -28,6 +28,7 @@ export function InventoryPage({ canWrite }: { canWrite: boolean }) {
   const [editing, setEditing] = useState<Item | 'new' | null>(null);
   const [history, setHistory] = useState<Item | null>(null);
   const [lotsOf, setLotsOf] = useState<Item | null>(null);
+  const [counting, setCounting] = useState(false);
   const [f, setF] = useState({ qty: '', cost: '', reason: '', name: '', sku: '', unit: 'un', min: '', lot: '', expires: '' });
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -75,7 +76,7 @@ export function InventoryPage({ canWrite }: { canWrite: boolean }) {
 
   return (
     <>
-      <div className="page-head"><h1>Estoque</h1>{canWrite && <Button onClick={() => openEdit('new')}>Novo item</Button>}</div>
+      <div className="page-head"><h1>Estoque</h1><span className="row">{canWrite && <Button variant="secondary" onClick={() => setCounting(true)}>Inventário</Button>}{canWrite && <Button onClick={() => openEdit('new')}>Novo item</Button>}</span></div>
       {list.data && list.data.lowCount > 0 && <div className="banner" role="note">⚠ {list.data.lowCount} {list.data.lowCount === 1 ? 'item está' : 'itens estão'} no estoque mínimo ou abaixo.</div>}
       {list.data && (list.data.expiredCount > 0 || list.data.expiringCount > 0) && (
         <div className="banner" role="note">
@@ -141,6 +142,7 @@ export function InventoryPage({ canWrite }: { canWrite: boolean }) {
         </form>
       </Sheet>
 
+      <StockCount open={counting} onClose={() => setCounting(false)} onChanged={list.reload} />
       <Lots item={lotsOf} canWrite={canWrite} onClose={() => setLotsOf(null)} onChanged={list.reload} />
       <History item={history} onClose={() => setHistory(null)} />
     </>
@@ -203,6 +205,85 @@ function Lots({ item, canWrite, onClose, onChanged }: { item: Item | null; canWr
         ))}
       </ul>
       <p className="small muted">Saídas usam primeiro o lote que vence antes. O que está vencido não conta como saldo utilizável.</p>
+    </Sheet>
+  );
+}
+
+interface CountSummary { id: string; title: string; status: 'open' | 'closed' | 'canceled'; lineCount: number; countedCount: number; createdAt: string; finishedAt: string | null }
+interface CountLine { itemId: string; name: string; unit: string; counted: string | null; balanceAtCount: string | null; currentBalance: string; diff: string | null }
+
+function StockCount({ open, onClose, onChanged }: { open: boolean; onClose: () => void; onChanged: () => void }) {
+  const toast = useToast();
+  const list = useLoad(() => (open ? get<{ counts: CountSummary[] }>('/api/inventory/counts') : Promise.resolve({ counts: [] as CountSummary[] })), [open]);
+  const current = list.data?.counts.find((c) => c.status === 'open') ?? null;
+  const detail = useLoad(() => (current ? get<{ lines: CountLine[] }>(`/api/inventory/counts/${current.id}`) : Promise.resolve({ lines: [] as CountLine[] })), [current?.id, open]);
+  const [vals, setVals] = useState<Record<string, string>>({});
+  const [title, setTitle] = useState('');
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const reload = () => { list.reload(); detail.reload(); onChanged(); };
+
+  async function start() {
+    setBusy('start'); setError(null);
+    try { await post('/api/inventory/counts', { title: title.trim() || undefined }); setTitle(''); toast('Inventário iniciado.'); reload(); }
+    catch (err) { setError((err as Error).message); } finally { setBusy(null); }
+  }
+  async function saveLine(l: CountLine) {
+    const raw = (vals[l.itemId] ?? '').trim().replace(',', '.');
+    if (!/^\d+(\.\d{1,3})?$/.test(raw)) { setError('Informe a quantidade contada (número, até 3 casas).'); return; }
+    setBusy(l.itemId); setError(null);
+    try { await put(`/api/inventory/counts/${current!.id}/lines/${l.itemId}`, { counted: Number(raw) }); setVals((v) => { const n = { ...v }; delete n[l.itemId]; return n; }); detail.reload(); list.reload(); }
+    catch (err) { setError((err as Error).message); } finally { setBusy(null); }
+  }
+  async function finish(kind: 'close' | 'cancel') {
+    if (kind === 'cancel' && !window.confirm('Cancelar o inventário? Nenhum saldo será alterado.')) return;
+    setBusy(kind); setError(null);
+    try {
+      const r = await post<{ adjusted?: number; unchanged?: number; notCounted?: number }>(`/api/inventory/counts/${current!.id}/${kind}`, {});
+      toast(kind === 'close' ? `Inventário concluído: ${r.adjusted} ajuste(s), ${r.unchanged} sem diferença${r.notCounted ? `, ${r.notCounted} não contado(s)` : ''}.` : 'Inventário cancelado.');
+      reload();
+    } catch (err) { setError((err as Error).message); } finally { setBusy(null); }
+  }
+
+  const done = list.data?.counts.filter((c) => c.status !== 'open').slice(0, 5) ?? [];
+  return (
+    <Sheet open={open} title="Inventário de estoque" onClose={onClose}>
+      {list.loading && !list.data && <Spinner />}
+      {list.error && <ErrorBox message={list.error} onRetry={list.reload} />}
+      {list.data && !current && (
+        <>
+          <p className="small muted">Conte o estoque físico e deixe o sistema ajustar as diferenças com o motivo registrado. Os movimentos feitos durante a contagem são preservados.</p>
+          <TextInput label="Nome do inventário (opcional)" value={title} onChange={setTitle} />
+          <Button busy={busy === 'start'} className="btn-block" onClick={start}>Iniciar inventário</Button>
+          {done.length > 0 && (
+            <>
+              <h3>Anteriores</h3>
+              <ul className="list">{done.map((c) => <li key={c.id} className="list-item row between"><span><strong>{c.title}</strong><br /><span className="small muted">{c.finishedAt ? dateTimeOf(c.finishedAt) : ''} · {c.countedCount}/{c.lineCount} contados</span></span><Badge tone={c.status === 'closed' ? 'ok' : 'neutral'}>{c.status === 'closed' ? 'Concluído' : 'Cancelado'}</Badge></li>)}</ul>
+            </>
+          )}
+        </>
+      )}
+      {current && (
+        <>
+          <p><strong>{current.title}</strong><br /><span className="small muted">{current.countedCount} de {current.lineCount} itens contados</span></p>
+          <ul className="list">
+            {detail.data?.lines.map((l) => (
+              <li key={l.itemId} className="list-item stack">
+                <div className="row between"><strong>{l.name}</strong>{l.counted !== null && <Badge tone={Number(l.diff) === 0 ? 'ok' : 'warn'}>{Number(l.diff) === 0 ? 'Confere' : `${Number(l.diff) > 0 ? '+' : ''}${fmt(l.diff!)} ${l.unit}`}</Badge>}</div>
+                <span className="small muted">Saldo no sistema: {fmt(l.currentBalance)} {l.unit}{l.counted !== null ? ` · contado ${fmt(l.counted)}` : ''}</span>
+                <div className="row">
+                  <div className="grow"><TextInput label={`Contado (${l.unit})`} value={vals[l.itemId] ?? ''} onChange={(v) => setVals({ ...vals, [l.itemId]: v })} inputMode="decimal" /></div>
+                  <Button variant="secondary" className="btn-sm" busy={busy === l.itemId} onClick={() => saveLine(l)}>{l.counted !== null ? 'Recontar' : 'Registrar'}</Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+          {error && <p className="field-msg error" role="alert">{error}</p>}
+          <Button busy={busy === 'close'} disabled={current.countedCount === 0} className="btn-block" onClick={() => finish('close')}>Concluir e ajustar o estoque</Button>
+          <Button variant="ghost" busy={busy === 'cancel'} className="btn-block" onClick={() => finish('cancel')}>Cancelar inventário</Button>
+        </>
+      )}
+      {!current && error && <p className="field-msg error" role="alert">{error}</p>}
     </Sheet>
   );
 }

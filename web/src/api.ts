@@ -25,6 +25,7 @@ export async function api<T = unknown>(method: 'GET' | 'POST' | 'PUT' | 'PATCH' 
 export const get = <T,>(u: string) => api<T>('GET', u);
 export const post = <T,>(u: string, b?: unknown) => api<T>('POST', u, b ?? {});
 export const patch = <T,>(u: string, b: unknown) => api<T>('PATCH', u, b);
+export const put = <T,>(u: string, b: unknown) => api<T>('PUT', u, b);
 export const del = <T,>(u: string) => api<T>('DELETE', u);
 
 export interface Me {

@@ -49,7 +49,8 @@ Legenda: ✅ IMPLEMENTADO e testado localmente · 🟡 PARCIAL · ⬜ PLANEJADO
 - ✅ CRM: leads, funil (novo → contatado → agendado → paciente/perdido), histórico imutável, consentimento de marketing registrado, conversão em paciente com aviso de duplicidade
 - ✅ Indicadores (BI básico): atendimentos, faltas, pacientes novos, financeiro, CRM e estoque, por período; cada seção respeita plano e perfil
 - ✅ Estoque: lotes e validade (entrada com lote, saída pelo que vence antes, vencido não sai nem conta no mínimo, baixa por vencimento, alertas)
-- ⬜ Estoque: inventário por contagem, fornecedores e pedidos de compra, consumo ligado ao procedimento
+- ✅ Estoque: inventário por contagem (um aberto por vez, saldo fotografado ao contar, diferença vira ajuste explicado, perdas saem primeiro dos lotes que vencem antes)
+- ⬜ Estoque: fornecedores e pedidos de compra, consumo ligado ao procedimento
 - ⬜ CRM: campanhas e envio (depende de provedor de mensagens), agendamento direto a partir do lead
 - ✅ BI: exportação dos indicadores em CSV (Excel pt-BR, só agregados, respeita plano e perfil, auditada)
 - ⬜ BI: catálogo de métricas versionado, comparação entre períodos, ocupação por sala/profissional
