@@ -15,7 +15,7 @@
     "check": "npm run typecheck && npm test",
     "build:web": "vite build",
     "build": "tsc --noEmit && tsc --noEmit -p web && vite build",
-    "start": "tsx src/server/main.ts",
+    "start": "node --import tsx src/server/main.ts",
     "dev:server": "tsx watch src/server/main.ts",
     "dev:web": "vite",
     "seed": "tsx scripts/seed-demo.ts",
@@ -24,7 +24,7 @@
     "e2e": "tsx scripts/e2e-smoke.ts",
     "setup:dev": "npm run db:setup && npm run db:migrate && npm run seed && npm run build",
     "drill": "bash scripts/backup-restore-drill.sh",
-    "worker": "tsx src/worker/main.ts"
+    "worker": "node --import tsx src/worker/main.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.2",

@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { get, post, api } from '../api';
 import { brl, dateTimeOf, parseMoney } from '../format';
-import { Badge, Button, Empty, ErrorBox, Select, Sheet, Spinner, TextInput, useLoad, useToast } from '../ui';
+import { Badge, Button, Empty, ErrorBox, Select, Sheet, Spinner, TextInput, useLoad, usePolling, useToast } from '../ui';
 
 interface Intent {
   id: string; patientId: string; patientName: string; amountCents: string; description: string; method: 'pix' | 'link';
@@ -73,16 +73,13 @@ export function OnlineCharges({ patientId, balanceCents, canCharge, canRefund, o
   }
 
   // Enquanto a tela do Pix/link está aberta e a cobrança pendente, confere a cada 5 s (o webhook costuma chegar antes).
-  useEffect(() => {
-    if (!shown || shown.status !== 'pending') return;
-    const t = setInterval(async () => {
-      try {
-        const r = await post<Intent>(`/api/payments/intents/${shown.id}/sync`);
-        if (r.status !== 'pending') { setShown(r); list.reload(); onChanged(); if (r.status === 'approved') toast('Pagamento confirmado.'); }
-      } catch { /* tenta de novo no próximo ciclo */ }
-    }, 5000);
-    return () => clearInterval(t);
-  }, [shown?.id, shown?.status]);
+  usePolling(async () => {
+    if (!shown) return;
+    try {
+      const r = await post<Intent>(`/api/payments/intents/${shown.id}/sync`);
+      if (r.status !== 'pending') { setShown(r); list.reload(); onChanged(); if (r.status === 'approved') toast('Pagamento confirmado.'); }
+    } catch { /* tenta de novo no próximo ciclo */ }
+  }, 5000, !!shown && shown.status === 'pending');
 
   return (
     <section className="card" aria-labelledby="online-title">
