@@ -48,7 +48,7 @@ export function ClinicShell({ me, hash, onLogout, onRefresh }: { me: Me; hash: s
   else if (current === '/financeiro' && visible.some((i) => i.path === '/financeiro')) page = <FinancePage me={me} />;
   else if (current === '/equipe' && visible.some((i) => i.path === '/equipe')) page = <Team permissions={me.permissions} entitlements={me.entitlements} />;
   else if (current === '/estoque' && visible.some((i) => i.path === '/estoque')) page = <InventoryPage canWrite={can('inventory.write')} />;
-  else if (current === '/crm' && visible.some((i) => i.path === '/crm')) page = <CrmPage canWrite={can('crm.write')} canConvert={can('patients.write')} />;
+  else if (current === '/crm' && visible.some((i) => i.path === '/crm')) page = <CrmPage canWrite={can('crm.write')} canConvert={can('patients.write')} canSchedule={can('agenda.write') && can('patients.write') && has('schedule.core') && has('patient.registry')} />;
   else if (current === '/indicadores' && visible.some((i) => i.path === '/indicadores')) page = <ReportsPage />;
   else if (current === '/mais' && overflow) page = <MorePage items={extra} />;
   else page = <Dashboard me={me} />;

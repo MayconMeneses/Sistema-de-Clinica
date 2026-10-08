@@ -79,7 +79,7 @@ async function bookOne(ctx: ClinicCtx, b: NewAppt, encaixe: boolean): Promise<st
   return r.rows[0]!.id;
 }
 
-const baseBody = z.object({
+export const baseBody = z.object({
   patientId: z.string().uuid(), professionalId: z.string().uuid(),
   resourceId: z.string().uuid().nullish().transform((v) => v ?? null),
   startsAt: iso, endsAt: iso,
@@ -90,6 +90,24 @@ const baseBody = z.object({
 
 function needOverride(ctx: ClinicCtx, encaixe: boolean) {
   if (encaixe && !hasPermission(ctx.user.role, 'schedule.override')) throw forbidden('Seu perfil não pode registrar encaixe fora do horário.');
+}
+
+/** Cria um agendamento (regras de horário, encaixe, escopo de unidade, conflitos, auditoria e mensagens ao paciente). */
+export async function createAppointment(ctx: ClinicCtx, b: z.infer<typeof baseBody>): Promise<string> {
+  const startsAt = new Date(b.startsAt), endsAt = new Date(b.endsAt);
+  if (endsAt <= startsAt) throw badRequest('O término deve ser depois do início.');
+  needOverride(ctx, b.encaixe);
+  await assertBookable(ctx, b.professionalId, b.resourceId);
+  await checkRefs(ctx, b.professionalId, b.resourceId, b.patientId);
+  try {
+    const id = await bookOne(ctx, { ...b, startsAt, endsAt, seriesId: null }, b.encaixe);
+    await audit(ctx, 'appointment.create', 'appointment', id);
+    await enqueueAppointmentMessages(ctx, { id, patientId: b.patientId, startsAt: b.startsAt }, 'confirmation');
+    return id;
+  } catch (e) {
+    if (e instanceof HttpError) throw e;
+    return mapDbError(e);
+  }
 }
 
 export function appointmentRoutes(app: FastifyInstance) {
@@ -125,21 +143,8 @@ export function appointmentRoutes(app: FastifyInstance) {
   });
 
   clinicRoute(app, 'POST', '/api/appointments', { cap: 'schedule.core', perm: 'agenda.write' }, async (ctx) => {
-    const b = baseBody.parse(ctx.req.body);
-    const startsAt = new Date(b.startsAt), endsAt = new Date(b.endsAt);
-    if (endsAt <= startsAt) throw badRequest('O término deve ser depois do início.');
-    needOverride(ctx, b.encaixe);
-    await assertBookable(ctx, b.professionalId, b.resourceId);
-    await checkRefs(ctx, b.professionalId, b.resourceId, b.patientId);
-    try {
-      const id = await bookOne(ctx, { ...b, startsAt, endsAt, seriesId: null }, b.encaixe);
-      await audit(ctx, 'appointment.create', 'appointment', id);
-      await enqueueAppointmentMessages(ctx, { id, patientId: b.patientId, startsAt: b.startsAt }, 'confirmation');
-      return { id };
-    } catch (e) {
-      if (e instanceof HttpError) throw e;
-      return mapDbError(e);
-    }
+    const id = await createAppointment(ctx, baseBody.parse(ctx.req.body));
+    return { id };
   });
 
   // Série (ex.: sessões semanais). Tudo-ou-nada por padrão; com skipConflicts cria o que der e informa o resto.
