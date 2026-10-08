@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { get, patch } from '../api';
 import { STATUS_LABEL, timeOf } from '../format';
-import { Badge, Button, Empty, ErrorBox, Spinner, useLoad, useToast } from '../ui';
+import { Badge, Button, Empty, ErrorBox, Spinner, useLoad, usePolling, useToast } from '../ui';
 
 interface Appt { id: string; status: string; priority: string; startsAt: string; checkedInAt: string | null; patientId: string; patientName: string; professionalName: string; resourceName: string | null; service: string }
 
@@ -10,11 +10,7 @@ export function Reception({ canWrite }: { canWrite: boolean }) {
   const toast = useToast();
   const list = useLoad(() => get<{ appointments: Appt[] }>('/api/reception'), []);
   const [, tick] = useState(0);
-  useEffect(() => {
-    const t = setInterval(() => { list.reload(); tick((n) => n + 1); }, 15000);
-    return () => clearInterval(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  usePolling(() => { list.reload(); tick((n) => n + 1); }, 15000);
 
   async function move(a: Appt, body: object, ok: string) {
     try { await patch(`/api/appointments/${a.id}`, body); toast(ok); list.reload(); }

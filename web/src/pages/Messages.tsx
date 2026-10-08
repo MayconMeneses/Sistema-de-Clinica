@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { get, post } from '../api';
 import { dateTimeOf } from '../format';
-import { Badge, Button, Empty, ErrorBox, Spinner, useLoad, useToast } from '../ui';
+import { Badge, Button, Empty, ErrorBox, Spinner, useLoad, usePolling, useToast } from '../ui';
 
 interface Consent { purpose: string; granted: boolean; createdAt: string; recordedBy: string | null }
 const PURPOSES: { key: string; label: string }[] = [
@@ -57,12 +57,7 @@ export function MessageHistory({ patientId }: { patientId: string }) {
   const m = useLoad(() => get<{ messages: Msg[] }>(`/api/patients/${patientId}/messages`), [patientId]);
   // Enquanto houver mensagem em andamento (na fila, processando ou com nova tentativa), atualiza sozinho.
   const inFlight = !!m.data?.messages.some((x) => x.status === 'processing' || x.status === 'failed' || (x.status === 'pending' && new Date(x.scheduledFor).getTime() <= Date.now() + 60_000));
-  useEffect(() => {
-    if (!inFlight) return;
-    const t = setInterval(m.reload, 4000);
-    return () => clearInterval(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [inFlight]);
+  usePolling(m.reload, 4000, inFlight);
   if (m.loading && !m.data) return <Spinner />;
   if (m.error || !m.data) return <ErrorBox message={m.error ?? 'Erro'} onRetry={m.reload} />;
   return (

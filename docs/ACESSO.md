@@ -101,3 +101,14 @@ docker compose -f docker-compose.auto.yml up -d
 Na tela de entrada, clique em **Esqueci minha senha**, informe o identificador da clínica e o e-mail. O sistema responde sempre a mesma mensagem (não revela quem tem conta) e envia um link que vale 30 minutos e só funciona uma vez; usar o link encerra todas as sessões abertas. A verificação em duas etapas, se ativa, continua exigida no próximo login.
 
 **No modo demonstração (Docker) nenhum e-mail sai de verdade.** O link aparece no log do worker: `docker compose -f docker-compose.auto.yml logs app --tail 30` (procure `[sandbox e-mail]`; o worker roda dentro do container `app`). Com um provedor de e-mail configurado (`EMAIL_API_URL`, `EMAIL_API_KEY`, `EMAIL_FROM`) e `PUBLIC_BASE_URL` com o endereço público, o e-mail é enviado de verdade.
+
+## Rodar leve
+O que já está ajustado (medido numa máquina de teste, sem Docker):
+- **Site:** cada tela é baixada só quando é aberta. O primeiro carregamento caiu de 445 KB (125 KB comprimidos) para 236 KB (74 KB). Telas que atualizam sozinhas (recepção, mensagens, cobrança online) param quando a aba fica em segundo plano e voltam ao reabrir.
+- **Servidor:** um único processo Node em vez de `npm` + `tsx` + `node` (de cerca de 245 MB para cerca de 120 MB de memória), com teto de memória de 256 MB (`NODE_HEAP_MB` muda).
+- **Banco (PostgreSQL):** configurado para poucos acessos simultâneos (`shared_buffers=64MB`, 40 conexões, entre outros). **Não medi isso aqui**, porque o Docker não estava disponível; confira com `docker stats`.
+- As telas principais respondem em 5 a 30 ms com os dados de demonstração.
+
+Para ver quanto o sistema usa no seu computador: `docker stats --no-stream`.
+Para limitar de vez, no `docker-compose.auto.yml`, sob o serviço `app`, acrescente `mem_limit: 400m` e sob `db`, `mem_limit: 300m`.
+Se o computador for muito fraco, aumente o tempo do atualizador (`--interval 300` para `--interval 1800`) ou pare-o quando não precisar de atualização.

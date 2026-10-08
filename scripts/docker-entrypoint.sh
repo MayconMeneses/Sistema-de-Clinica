@@ -33,4 +33,6 @@ echo "================================================================"
 echo " Sistema no ar: http://localhost:${HOST_PORT:-${PORT:-3000}}   (dados FICTÍCIOS)"
 echo " Acessos de demonstração: veja docs/ACESSO.md ou o bloco acima."
 echo "================================================================"
-exec npm start
+# Sem npm/tsx no meio: um único processo Node (cerca de metade da memória) e teto de memória para máquinas pequenas.
+export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=${NODE_HEAP_MB:-256}}"
+exec node --import tsx src/server/main.ts

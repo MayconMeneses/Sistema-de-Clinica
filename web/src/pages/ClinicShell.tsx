@@ -1,18 +1,24 @@
-import { useState } from 'react';
+import { lazy, Suspense, useState, type ComponentType } from 'react';
 import { post, type Me } from '../api';
 import { ROLE_LABEL } from '../format';
 import { Button, Sheet, TextInput, useToast } from '../ui';
 import { MfaPanel } from './Mfa';
-import { Agenda } from './Agenda';
 import { Dashboard } from './Dashboard';
-import { Reception } from './Reception';
-import { FinancePage } from './Finance';
-import { Receipt } from './Receipt';
-import { CrmPage } from './Crm';
-import { InventoryPage } from './Inventory';
-import { ReportsPage } from './Reports';
-import { PatientDetail, Patients } from './Patients';
-import { Team } from './Team';
+
+// Cada tela é baixada só quando é aberta: o primeiro carregamento fica pequeno (rápido em celular e em rede lenta).
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const lazyOf = <K extends string, M extends Record<K, ComponentType<any>>>(load: () => Promise<M>, key: K) =>
+  lazy(() => load().then((m) => ({ default: m[key] }))) as unknown as M[K];
+const Agenda = lazyOf(() => import('./Agenda'), 'Agenda');
+const Reception = lazyOf(() => import('./Reception'), 'Reception');
+const FinancePage = lazyOf(() => import('./Finance'), 'FinancePage');
+const Receipt = lazyOf(() => import('./Receipt'), 'Receipt');
+const CrmPage = lazyOf(() => import('./Crm'), 'CrmPage');
+const InventoryPage = lazyOf(() => import('./Inventory'), 'InventoryPage');
+const ReportsPage = lazyOf(() => import('./Reports'), 'ReportsPage');
+const Patients = lazyOf(() => import('./Patients'), 'Patients');
+const PatientDetail = lazyOf(() => import('./Patients'), 'PatientDetail');
+const Team = lazyOf(() => import('./Team'), 'Team');
 
 interface NavItem { path: string; label: string; ico: string; show: boolean }
 
@@ -79,7 +85,7 @@ export function ClinicShell({ me, hash, onLogout, onRefresh }: { me: Me; hash: s
               : 'Nenhuma unidade está vinculada ao seu usuário, por isso a agenda aparece vazia. Peça à administração para vincular em Gestão → Usuários → Unidades.'}
           </div>
         )}
-        {page}
+        <Suspense fallback={<p className="loading" role="status">Carregando…</p>}>{page}</Suspense>
       </main>
       <AccountSheet open={menu} me={me} onClose={() => setMenu(false)} onLogout={onLogout} onRefresh={onRefresh} />
     </div>

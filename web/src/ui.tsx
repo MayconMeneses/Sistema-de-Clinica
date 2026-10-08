@@ -135,3 +135,19 @@ export function useHash(): [string, (h: string) => void] {
   }, []);
   return [hash, (h) => { window.location.hash = h; }];
 }
+
+/**
+ * Repete `fn` a cada `ms` só enquanto a aba está visível (aba em segundo plano não consome rede, servidor nem bateria) e
+ * confere de novo assim que a pessoa volta para a aba. `enabled=false` desliga.
+ */
+export function usePolling(fn: () => void, ms: number, enabled = true) {
+  const ref = useRef(fn);
+  ref.current = fn;
+  useEffect(() => {
+    if (!enabled) return;
+    const t = setInterval(() => { if (!document.hidden) ref.current(); }, ms);
+    const onVisible = () => { if (!document.hidden) ref.current(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { clearInterval(t); document.removeEventListener('visibilitychange', onVisible); };
+  }, [ms, enabled]);
+}

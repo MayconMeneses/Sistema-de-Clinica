@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { get, type Me } from './api';
 import { ToastProvider, useHash } from './ui';
-import { ClinicShell } from './pages/ClinicShell';
 import { Login } from './pages/Login';
 import { ForgotPassword, ResetPassword } from './pages/PasswordRecovery';
-import { MasterApp } from './pages/Master';
+
+const ClinicShell = lazy(() => import('./pages/ClinicShell').then((m) => ({ default: m.ClinicShell })));
+const MasterApp = lazy(() => import('./pages/Master').then((m) => ({ default: m.MasterApp })));
 
 function ClinicApp({ hash }: { hash: string }) {
   const [me, setMe] = useState<Me | null | undefined>(undefined);
@@ -25,5 +26,11 @@ function ClinicApp({ hash }: { hash: string }) {
 
 export default function App() {
   const [hash] = useHash();
-  return <ToastProvider>{hash.startsWith('/master') ? <MasterApp hash={hash} /> : <ClinicApp hash={hash} />}</ToastProvider>;
+  return (
+    <ToastProvider>
+      <Suspense fallback={<main className="auth"><p className="loading" role="status">Carregando…</p></main>}>
+        {hash.startsWith('/master') ? <MasterApp hash={hash} /> : <ClinicApp hash={hash} />}
+      </Suspense>
+    </ToastProvider>
+  );
 }

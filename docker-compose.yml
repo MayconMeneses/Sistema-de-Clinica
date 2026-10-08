@@ -5,6 +5,8 @@
 services:
   db:
     image: postgres:16
+    # Ajustes para rodar leve em computador comum (a demonstração tem poucos dados e poucos acessos simultâneos).
+    command: ["postgres", "-c", "shared_buffers=64MB", "-c", "max_connections=40", "-c", "work_mem=4MB", "-c", "maintenance_work_mem=32MB", "-c", "effective_cache_size=256MB", "-c", "wal_compression=on", "-c", "checkpoint_timeout=15min"]
     environment:
       POSTGRES_PASSWORD: postgres        # só para demonstração local
     volumes:
