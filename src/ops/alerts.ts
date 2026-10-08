@@ -188,7 +188,6 @@ export function initAlerts(pool?: pg.Pool): Notifier {
   return current;
 }
 export const getNotifier = () => current;
-export function resetAlertsForTests() { current = null; }
 
 export function notify(a: AlertInput): void { void current?.notify(a); }
 export function reportError(err: unknown, ctx: Omit<AlertInput, 'severity' | 'title' | 'detail'> & { severity?: Severity; title?: string }): void {

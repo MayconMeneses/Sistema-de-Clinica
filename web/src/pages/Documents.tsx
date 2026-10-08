@@ -18,12 +18,12 @@ function toBase64(file: File): Promise<string> {
   });
 }
 
-export function Documents({ patientId, canWrite }: { patientId: string; canWrite: boolean }) {
+export function Documents({ patientId, canWrite, canClinical }: { patientId: string; canWrite: boolean; canClinical: boolean }) {
   const toast = useToast();
   const [showArchived, setShowArchived] = useState(false);
   const list = useLoad(() => get<{ documents: Doc[] }>(`/api/patients/${patientId}/documents${showArchived ? '?includeArchived=1' : ''}`), [patientId, showArchived]);
   const fileRef = useRef<HTMLInputElement>(null);
-  const [f, setF] = useState({ title: '', category: 'exam' as Category });
+  const [f, setF] = useState({ title: '', category: (canClinical ? 'exam' : 'consent') as Category });
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -58,7 +58,7 @@ export function Documents({ patientId, canWrite }: { patientId: string; canWrite
           <h2>Anexar documento</h2>
           <TextInput label="Título" value={f.title} onChange={(v) => setF({ ...f, title: v })} />
           <Select label="Tipo" value={f.category} onChange={(v) => setF({ ...f, category: v as Category })}>
-            {Object.entries(CATEGORY).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            {Object.entries(CATEGORY).filter(([k]) => canClinical || (k !== 'exam' && k !== 'report')).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </Select>
           <div className="field">
             <label htmlFor="doc-file">Arquivo (PDF, PNG, JPG ou WEBP, até 5 MB)</label>

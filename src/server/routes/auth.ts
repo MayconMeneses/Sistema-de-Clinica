@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { withTenant } from '../../db/tenant.js';
 import { consumeTotp } from '../auth/mfa.js';
 import { permissionsFor } from '../auth/rbac.js';
-import { hashPassword, passwordPolicyError, verifyPassword } from '../auth/password.js';
+import { hashPassword, needsRehash, passwordPolicyError, verifyPassword } from '../auth/password.js';
 import { DbRateLimiter } from '../auth/rate-limit.js';
 import { generateSecret, otpauthUri } from '../auth/totp.js';
 import { audit, clinicRoute, CLINIC_COOKIE, cookieOptions } from '../context.js';
@@ -16,6 +16,9 @@ import { unitScope } from '../scope.js';
 import { badRequest, conflict, HttpError, newSecret, sha256, unauthorized } from '../http.js';
 
 const limiter = new DbRateLimiter(appPool);
+// Além do limite por IP+clínica+e-mail: limite por IP (varredura de várias contas) e por conta no código MFA (varredura a partir de vários IPs).
+const ipLimiter = { tooMany: (k: string) => new DbRateLimiter(appPool, Number(process.env.LOGIN_IP_MAX ?? 30), 15).tooMany(k), record: (k: string) => limiter.record(k) };
+const mfaLimiter = new DbRateLimiter(appPool, 10, 15);
 const GENERIC = 'Clínica, e-mail ou senha inválidos.';
 
 const loginBody = z.object({
@@ -25,20 +28,21 @@ const loginBody = z.object({
   code: z.string().trim().max(10).optional(),
 });
 
-type LoginOutcome = { kind: 'fail' } | { kind: 'mfa_required' } | { kind: 'ok'; cookie: string };
+type LoginOutcome = { kind: 'fail' } | { kind: 'locked' } | { kind: 'mfa_required' } | { kind: 'ok'; cookie: string };
 
 export function authRoutes(app: FastifyInstance) {
   app.post('/api/auth/login', async (req, reply) => {
     const { clinic, email, password, code } = loginBody.parse(req.body);
     const key = `${req.ip}|${clinic}|${email}`;
-    if (await limiter.tooMany(key)) throw new HttpError(429, 'Muitas tentativas. Aguarde alguns minutos.', 'rate_limited');
+    const ipKey = `ip|${req.ip}`;
+    if (await limiter.tooMany(key) || await ipLimiter.tooMany(ipKey)) throw new HttpError(429, 'Muitas tentativas. Aguarde alguns minutos.', 'rate_limited');
 
     const dir = await appPool.query<{ tenant_id: string; status: string }>(
       'SELECT tenant_id, status FROM tenant_directory WHERE slug = $1', [clinic]);
     const entry = dir.rows[0];
     if (!entry || entry.status !== 'active') {
       await verifyPassword(password, null);
-      await limiter.record(key);
+      await limiter.record(key); await ipLimiter.record(ipKey);
       throw unauthorized(GENERIC);
     }
 
@@ -54,10 +58,14 @@ export function authRoutes(app: FastifyInstance) {
         return { kind: 'fail' };
       };
       if (!user || !ok || user.status !== 'active') return fail('auth.login_failed');
+      const mfaKey = `mfa|${entry.tenant_id}|${user.id}`;
       if (user.totp_enabled) {
         if (!code) return { kind: 'mfa_required' };
-        if (!user.totp_secret || !(await consumeTotp(tx, 'users', user.id, user.totp_secret, code))) return fail('auth.mfa_failed');
+        if (await mfaLimiter.tooMany(mfaKey)) return { kind: 'locked' };
+        if (!user.totp_secret || !(await consumeTotp(tx, 'users', user.id, user.totp_secret, code))) { await mfaLimiter.record(mfaKey); return fail('auth.mfa_failed'); }
+        await mfaLimiter.reset(mfaKey);
       }
+      if (needsRehash(user.password_hash)) await tx.query('UPDATE users SET password_hash = $1 WHERE id = $2', [await hashPassword(password), user.id]);
       const secret = newSecret();
       await tx.query(
         `INSERT INTO sessions (id, tenant_id, user_id, token_hash, session_version, expires_at)
@@ -70,7 +78,8 @@ export function authRoutes(app: FastifyInstance) {
     });
 
     if (outcome.kind === 'mfa_required') throw new HttpError(401, 'Informe o código do aplicativo autenticador.', 'mfa_required');
-    if (outcome.kind === 'fail') { await limiter.record(key); throw unauthorized(code ? 'Código ou credenciais inválidos.' : GENERIC); }
+    if (outcome.kind === 'locked') throw new HttpError(429, 'Muitas tentativas de código. Aguarde alguns minutos.', 'rate_limited');
+    if (outcome.kind === 'fail') { await limiter.record(key); await ipLimiter.record(ipKey); throw unauthorized(code ? 'Código ou credenciais inválidos.' : GENERIC); }
     await limiter.reset(key);
     reply.setCookie(CLINIC_COOKIE, outcome.cookie, cookieOptions('/', config.clinicSessionHours));
     return { ok: true };

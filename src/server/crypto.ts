@@ -46,7 +46,9 @@ export function decryptSecret(stored: string): string {
     for (const k of allKeys()) { try { return open(k, iv!, tag!, ct!); } catch { /* tenta a próxima chave */ } }
     throw new Error('Não foi possível decifrar o valor com nenhuma chave configurada.');
   }
-  return stored; // legado em claro: será recifrado na próxima gravação
+  // Valor sem prefixo = formato legado em claro (só desenvolvimento). Em produção, falha fechada: um segredo que não é cifrado nunca é aceito.
+  if (config.isProd) throw new Error('Segredo guardado sem cifragem; recadastre-o.');
+  return stored;
 }
 
 /** Id da chave que cifrou o valor (null = formato antigo sem id ou valor em claro). */

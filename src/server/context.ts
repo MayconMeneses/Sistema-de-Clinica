@@ -27,6 +27,9 @@ export interface ClinicCtx {
 }
 
 interface RouteOpts { cap?: string; perm?: Permission; bodyLimit?: number }
+
+/** Registro das rotas autenticadas, usado por testes que provam que TODA rota exige sessão e permissão. */
+export const routeRegistry: { kind: 'clinic' | 'master'; method: string; url: string; perm?: Permission; cap?: string }[] = [];
 type Handler<C> = (ctx: C, req: FastifyRequest, reply: FastifyReply) => Promise<unknown>;
 
 /**
@@ -40,6 +43,7 @@ export function clinicRoute(
   opts: RouteOpts,
   handler: Handler<ClinicCtx>,
 ) {
+  routeRegistry.push({ kind: 'clinic', method, url, perm: opts.perm, cap: opts.cap });
   app.route({
     method, url,
     ...(opts.bodyLimit ? { bodyLimit: opts.bodyLimit } : {}),
@@ -118,6 +122,7 @@ export function masterRoute(
   url: string,
   handler: Handler<MasterCtx>,
 ) {
+  routeRegistry.push({ kind: 'master', method, url });
   app.route({
     method, url,
     handler: async (req, reply) => {

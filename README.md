@@ -4,7 +4,7 @@
 
 > **Status:** projeto funcional em ambiente de desenvolvimento, com testes automatizados e CI. **Não está pronto para dados reais de pacientes**: integrações externas (WhatsApp, e-mail, SMS, NFS-e, assinatura eletrônica) rodam em modo simulado (sandbox) e nenhuma conformidade (LGPD, CFM, CFO) é declarada sem revisão especializada. Veja [Limites conhecidos](#limites-conhecidos).
 
-![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6) ![Node](https://img.shields.io/badge/Node-22-339933) ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-336791) ![React](https://img.shields.io/badge/React-19-61dafb) ![Testes](https://img.shields.io/badge/testes-249-brightgreen)
+![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6) ![Node](https://img.shields.io/badge/Node-22-339933) ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-336791) ![React](https://img.shields.io/badge/React-19-61dafb) ![Testes](https://img.shields.io/badge/testes-264-brightgreen)
 
 ## Destaques técnicos
 
@@ -83,7 +83,7 @@ Decisões registradas em [`docs/adr/`](docs/adr) (stack, multi-tenancy, identida
 | Back-end | Node 22, Fastify 5, `pg`, zod 4 |
 | Banco | PostgreSQL 16, migrations versionadas com checksum |
 | Front-end | React 19, Vite 7, CSS próprio mobile-first |
-| Testes | Vitest (249 testes contra PostgreSQL real), Playwright (E2E em celular e desktop) |
+| Testes | Vitest (264 testes contra PostgreSQL real), Playwright (E2E em celular e desktop) |
 | Infra | Docker e Docker Compose, GitHub Actions (verificação, publicação da imagem no GHCR), Watchtower |
 
 ## Como rodar
@@ -131,7 +131,7 @@ docs/          backlog, conformidade, ameaças, ADRs, guias de integração
 
 ## Testes e qualidade
 
-- **249 testes de integração** executam contra um PostgreSQL real, incluindo isolamento entre clínicas, concorrência de agendamento, idempotência de pagamentos e imutabilidade de registros.
+- **264 testes de integração** executam contra um PostgreSQL real, incluindo isolamento entre clínicas, concorrência de agendamento, idempotência de pagamentos e imutabilidade de registros.
 - **E2E com Playwright** percorre os fluxos principais em celular e desktop e falha em erro de console, violação de CSP, resposta 5xx ou rolagem horizontal.
 - **CI** (GitHub Actions) roda a verificação completa a cada push e publica a imagem Docker.
 

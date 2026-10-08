@@ -4,7 +4,7 @@ import { Button, TextInput } from '../ui';
 import { useMasterMfa } from '../useMfa';
 
 export function Login({ mode, onDone }: { mode: 'clinic' | 'master'; onDone: () => void }) {
-  const [clinic, setClinic] = useState(() => localStorage.getItem('last-clinic') ?? '');
+  const [clinic, setClinic] = useState(() => { try { return localStorage.getItem('last-clinic') ?? ''; } catch { return ''; } });
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');

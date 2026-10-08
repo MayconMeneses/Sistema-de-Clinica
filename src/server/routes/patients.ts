@@ -66,7 +66,10 @@ export function patientRoutes(app: FastifyInstance) {
     for (const [key, col] of Object.entries(COLUMNS)) { // allowlist de colunas
       if (key in parsed) { values.push(parsed[key]); sets.push(`${col} = $${values.length}`); }
     }
-    if (!sets.length) return { ok: true };
+    if (!sets.length) {
+      if (!(await ctx.tx.query('SELECT 1 FROM patients WHERE id = $1', [id])).rowCount) throw notFound('Paciente não encontrado.');
+      return { ok: true };
+    }
     values.push(id);
     const r = await ctx.tx.query(`UPDATE patients SET ${sets.join(', ')}, updated_at = now() WHERE id = $${values.length}`, values);
     if (!r.rowCount) throw notFound('Paciente não encontrado.');
