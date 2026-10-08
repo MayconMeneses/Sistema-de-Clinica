@@ -18,7 +18,7 @@ const SOURCE: Record<string, string> = { referral: 'Indicação', instagram: 'In
 const EVENT: Record<string, string> = { created: 'Cadastrado', stage: 'Mudou de etapa', note: 'Anotação', assigned: 'Responsável alterado', consent: 'Consentimento', converted: 'Virou paciente' };
 const ymdBr = (d: string) => d.split('-').reverse().join('/');
 
-export function CrmPage({ canWrite, canConvert }: { canWrite: boolean; canConvert: boolean }) {
+export function CrmPage({ canWrite, canConvert, canSchedule = false }: { canWrite: boolean; canConvert: boolean; canSchedule?: boolean }) {
   const toast = useToast();
   const [stage, setStage] = useState<Stage | ''>('');
   const [due, setDue] = useState(false);
@@ -35,6 +35,26 @@ export function CrmPage({ canWrite, canConvert }: { canWrite: boolean; canConver
   const [f, setF] = useState({ name: '', phone: '', email: '', source: 'other', interest: '', next: '', consent: false, reason: '', note: '', noteNext: '' });
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [sched, setSched] = useState<{ lead: Lead; candidates: Candidate[] } | null>(null);
+  const [sf, setSf] = useState({ proId: '', date: '', time: '09:00', minutes: '30', service: 'Avaliação' });
+  const pros = useLoad(() => (canSchedule ? get<{ professionals: { id: string; name: string }[] }>('/api/professionals') : Promise.resolve({ professionals: [] })), []);
+
+  async function submitSchedule(extra: object = {}) {
+    if (!sched) return;
+    if (!sf.proId || !sf.date || !/^\d{2}:\d{2}$/.test(sf.time)) { setError('Escolha o profissional, a data e a hora.'); return; }
+    const minutes = Number(sf.minutes);
+    if (!Number.isInteger(minutes) || minutes < 5 || minutes > 480) { setError('Duração entre 5 e 480 minutos.'); return; }
+    const startsAt = new Date(`${sf.date}T${sf.time}:00-03:00`);
+    setBusy(true); setError(null);
+    try {
+      const r = await post<{ patientId: string }>(`/api/crm/leads/${sched.lead.id}/schedule`, {
+        professionalId: sf.proId, startsAt: startsAt.toISOString(), endsAt: new Date(startsAt.getTime() + minutes * 60_000).toISOString(), service: sf.service || 'Consulta', ...extra });
+      toast('Consulta agendada e lead convertido em paciente.'); setSched(null); list.reload(); window.location.hash = `/pacientes/${r.patientId}`;
+    } catch (err) {
+      if (err instanceof ApiError && err.code === 'possible_duplicate') setSched({ lead: sched.lead, candidates: (err.data.candidates as Candidate[]) ?? [] });
+      else setError((err as Error).message);
+    } finally { setBusy(false); }
+  }
 
   async function run(fn: () => Promise<unknown>, ok: string, after?: () => void) {
     setBusy(true); setError(null);
@@ -81,7 +101,8 @@ export function CrmPage({ canWrite, canConvert }: { canWrite: boolean; canConver
                 {canWrite && ['new', 'contacted', 'scheduled'].includes(l.stage) && <>
                   {l.stage === 'new' && <Button className="btn-sm" onClick={() => run(() => patch(`/api/crm/leads/${l.id}`, { stage: 'contacted' }), 'Marcado como contatado.')}>Contatado</Button>}
                   {l.stage === 'contacted' && <Button className="btn-sm" onClick={() => run(() => patch(`/api/crm/leads/${l.id}`, { stage: 'scheduled' }), 'Marcado como agendado.')}>Agendou</Button>}
-                  {canConvert && <Button className="btn-sm" onClick={() => startConvert(l)}>Virou paciente</Button>}
+                  {canSchedule && <Button className="btn-sm" onClick={() => { setError(null); setSf({ ...sf, date: today, proId: sf.proId || pros.data?.professionals[0]?.id || '' }); setSched({ lead: l, candidates: [] }); }}>Agendar consulta</Button>}
+                  {canConvert && <Button variant="secondary" className="btn-sm" onClick={() => startConvert(l)}>Virou paciente</Button>}
                   <Button variant="secondary" className="btn-sm" onClick={() => { setF({ ...f, note: '', noteNext: '' }); setError(null); setNote(l); }}>Anotar</Button>
                   <Button variant="secondary" className="btn-sm" onClick={() => { setF({ ...f, reason: '' }); setError(null); setLose(l); }}>Perdido</Button></>}
                 {canWrite && l.stage === 'lost' && <Button variant="secondary" className="btn-sm" onClick={() => run(() => patch(`/api/crm/leads/${l.id}`, { stage: 'contacted' }), 'Lead reaberto.')}>Reabrir</Button>}
@@ -135,6 +156,40 @@ export function CrmPage({ canWrite, canConvert }: { canWrite: boolean; canConver
               ))}
             </ul>
             <Button variant="secondary" busy={busy} onClick={() => startConvert(convert.lead, { confirmNotDuplicate: true })}>É outra pessoa: criar novo cadastro</Button>
+          </div>
+        )}
+      </Sheet>
+
+      <Sheet open={sched !== null} title={sched ? `Agendar: ${sched.lead.name}` : ''} onClose={() => setSched(null)}>
+        {sched && sched.candidates.length === 0 && (
+          <form onSubmit={(e) => { e.preventDefault(); void submitSchedule(); }} noValidate>
+            <p className="small muted">O lead vira paciente e a consulta é marcada de uma vez. Se o horário estiver ocupado, nada é cadastrado.</p>
+            <Select label="Profissional" value={sf.proId} onChange={(v) => setSf({ ...sf, proId: v })}>
+              <option value="">Escolha…</option>{pros.data?.professionals.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </Select>
+            <div className="grid2">
+              <Field label="Data">{(id) => <input id={id} type="date" value={sf.date} onChange={(e) => setSf({ ...sf, date: e.target.value })} />}</Field>
+              <Field label="Hora">{(id) => <input id={id} type="time" value={sf.time} onChange={(e) => setSf({ ...sf, time: e.target.value })} />}</Field>
+            </div>
+            <div className="grid2">
+              <TextInput label="Duração (min)" value={sf.minutes} onChange={(v) => setSf({ ...sf, minutes: v })} inputMode="numeric" />
+              <TextInput label="Serviço" value={sf.service} onChange={(v) => setSf({ ...sf, service: v })} />
+            </div>
+            {error && <p className="field-msg error" role="alert">{error}</p>}
+            <Button type="submit" busy={busy} className="btn-block">Agendar consulta</Button>
+          </form>
+        )}
+        {sched && sched.candidates.length > 0 && (
+          <div className="stack">
+            <p>Já existe cadastro parecido com <strong>{sched.lead.name}</strong>. Ligue o lead a ele ou confirme que é outra pessoa.</p>
+            <ul className="list">
+              {sched.candidates.map((c) => (
+                <li key={c.id} className="list-item row between"><div><strong>{c.name}</strong><br /><span className="small muted">{c.reason}{c.phone ? ` · ${c.phone}` : ''}</span></div>
+                  <Button className="btn-sm" busy={busy} onClick={() => submitSchedule({ patientId: c.id })}>Ligar a este</Button></li>
+              ))}
+            </ul>
+            <Button variant="secondary" busy={busy} onClick={() => submitSchedule({ confirmNotDuplicate: true })}>É outra pessoa: criar novo cadastro</Button>
+            {error && <p className="field-msg error" role="alert">{error}</p>}
           </div>
         )}
       </Sheet>

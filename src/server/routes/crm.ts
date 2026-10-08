@@ -4,6 +4,7 @@ import { audit, clinicRoute, type ClinicCtx } from '../context.js';
 import { hasPermission } from '../auth/rbac.js';
 import { assertActive, findDuplicates } from '../../modules/patients/family.js';
 import { badRequest, conflict, forbidden, HttpError, mapDbError, notFound } from '../http.js';
+import { baseBody, createAppointment } from './appointments.js';
 
 const CAP = { cap: 'crm.pipeline' } as const;
 const idParam = z.object({ id: z.string().uuid() });
@@ -121,31 +122,50 @@ export function crmRoutes(app: FastifyInstance) {
   // Vira paciente (novo cadastro) ou liga a um paciente existente. Exige permissão de cadastrar pacientes.
   clinicRoute(app, 'POST', '/api/crm/leads/:id/convert', { ...CAP, perm: 'crm.write' }, async (ctx) => {
     const { id } = idParam.parse(ctx.req.params);
-    if (!hasPermission(ctx.user.role, 'patients.write') || !ctx.entitlements.has('patient.registry')) throw forbidden('Seu perfil não pode cadastrar pacientes. Peça à recepção para converter este lead.');
     const b = z.object({ patientId: z.string().uuid().optional(), confirmNotDuplicate: z.boolean().optional() }).parse(ctx.req.body ?? {});
-    const cur = await ctx.tx.query<{ name: string; phone: string | null; email: string | null; stage: string; patient_id: string | null }>(
-      'SELECT name, phone, email, stage, patient_id FROM crm_leads WHERE id = $1 FOR UPDATE', [id]);
-    const l = cur.rows[0];
-    if (!l) throw notFound('Lead não encontrado.');
-    if (l.patient_id) throw conflict('Este lead já foi convertido.');
-    let patientId = b.patientId;
-    if (patientId) {
-      await assertActive(ctx.tx, patientId);
-    } else {
-      if (!b.confirmNotDuplicate) {
-        const candidates = await findDuplicates(ctx.tx, { name: l.name, birthDate: null, phone: l.phone, document: null });
-        if (candidates.length) throw new HttpError(409, 'Já existe um cadastro parecido. Ligue o lead a ele ou confirme que é outra pessoa.', 'possible_duplicate', { candidates });
-      }
-      const p = await ctx.tx.query<{ id: string }>(
-        'INSERT INTO patients (tenant_id, name, phone, email, created_by) VALUES ($1,$2,$3,$4,$5) RETURNING id', [ctx.tenantId, l.name, l.phone, l.email, ctx.user.id]);
-      patientId = p.rows[0]!.id;
-      await audit(ctx, 'patient.create', 'patient', patientId, { fromLead: id });
-    }
-    try {
-      await ctx.tx.query("UPDATE crm_leads SET patient_id = $2, stage = 'won', lost_reason = NULL WHERE id = $1", [id, patientId]);
-    } catch (e) { return mapDbError(e); }
-    await event(ctx, id, 'converted', { from: l.stage, to: 'won' });
-    await audit(ctx, 'crm.lead.convert', 'crm_lead', id, { patientId });
-    return { patientId };
+    return { patientId: await convertLead(ctx, id, b) };
   });
+
+  // Agenda direto a partir do lead: converte em paciente (ou usa o já convertido) e marca a consulta, tudo ou nada.
+  clinicRoute(app, 'POST', '/api/crm/leads/:id/schedule', { ...CAP, perm: 'crm.write' }, async (ctx) => {
+    const { id } = idParam.parse(ctx.req.params);
+    if (!hasPermission(ctx.user.role, 'agenda.write') || !ctx.entitlements.has('schedule.core')) throw forbidden('Seu perfil não pode agendar consultas. Peça à recepção.');
+    const b = baseBody.omit({ patientId: true }).extend({ patientId: z.string().uuid().optional(), confirmNotDuplicate: z.boolean().optional() }).parse(ctx.req.body);
+    const cur = await ctx.tx.query<{ patient_id: string | null }>('SELECT patient_id FROM crm_leads WHERE id = $1 FOR UPDATE', [id]);
+    if (!cur.rows[0]) throw notFound('Lead não encontrado.');
+    const patientId = cur.rows[0].patient_id ?? await convertLead(ctx, id, { patientId: b.patientId, confirmNotDuplicate: b.confirmNotDuplicate });
+    const appointmentId = await createAppointment(ctx, { ...b, patientId });
+    await event(ctx, id, 'note', { note: `Consulta agendada para ${new Date(b.startsAt).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' })}` });
+    await audit(ctx, 'crm.lead.schedule', 'crm_lead', id, { appointmentId });
+    return { patientId, appointmentId };
+  });
+}
+
+/** Converte o lead em paciente (novo cadastro ou paciente existente) e o marca como ganho. */
+async function convertLead(ctx: ClinicCtx, id: string, b: { patientId?: string; confirmNotDuplicate?: boolean }): Promise<string> {
+  if (!hasPermission(ctx.user.role, 'patients.write') || !ctx.entitlements.has('patient.registry')) throw forbidden('Seu perfil não pode cadastrar pacientes. Peça à recepção para converter este lead.');
+  const cur = await ctx.tx.query<{ name: string; phone: string | null; email: string | null; stage: string; patient_id: string | null }>(
+    'SELECT name, phone, email, stage, patient_id FROM crm_leads WHERE id = $1 FOR UPDATE', [id]);
+  const l = cur.rows[0];
+  if (!l) throw notFound('Lead não encontrado.');
+  if (l.patient_id) throw conflict('Este lead já foi convertido.');
+  let patientId = b.patientId;
+  if (patientId) {
+    await assertActive(ctx.tx, patientId);
+  } else {
+    if (!b.confirmNotDuplicate) {
+      const candidates = await findDuplicates(ctx.tx, { name: l.name, birthDate: null, phone: l.phone, document: null });
+      if (candidates.length) throw new HttpError(409, 'Já existe um cadastro parecido. Ligue o lead a ele ou confirme que é outra pessoa.', 'possible_duplicate', { candidates });
+    }
+    const p = await ctx.tx.query<{ id: string }>(
+      'INSERT INTO patients (tenant_id, name, phone, email, created_by) VALUES ($1,$2,$3,$4,$5) RETURNING id', [ctx.tenantId, l.name, l.phone, l.email, ctx.user.id]);
+    patientId = p.rows[0]!.id;
+    await audit(ctx, 'patient.create', 'patient', patientId, { fromLead: id });
+  }
+  try {
+    await ctx.tx.query("UPDATE crm_leads SET patient_id = $2, stage = 'won', lost_reason = NULL WHERE id = $1", [id, patientId]);
+  } catch (e) { return mapDbError(e); }
+  await event(ctx, id, 'converted', { from: l.stage, to: 'won' });
+  await audit(ctx, 'crm.lead.convert', 'crm_lead', id, { patientId });
+  return patientId;
 }

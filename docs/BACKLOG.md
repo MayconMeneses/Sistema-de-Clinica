@@ -51,7 +51,8 @@ Legenda: ✅ IMPLEMENTADO e testado localmente · 🟡 PARCIAL · ⬜ PLANEJADO
 - ✅ Estoque: lotes e validade (entrada com lote, saída pelo que vence antes, vencido não sai nem conta no mínimo, baixa por vencimento, alertas)
 - ✅ Estoque: inventário por contagem (um aberto por vez, saldo fotografado ao contar, diferença vira ajuste explicado, perdas saem primeiro dos lotes que vencem antes)
 - ⬜ Estoque: fornecedores e pedidos de compra, consumo ligado ao procedimento
-- ⬜ CRM: campanhas e envio (depende de provedor de mensagens), agendamento direto a partir do lead
+- ✅ CRM: agendar consulta direto do lead (converte em paciente e marca a consulta, tudo ou nada)
+- ⬜ CRM: campanhas e envio (depende de provedor de mensagens)
 - ✅ BI: exportação dos indicadores em CSV (Excel pt-BR, só agregados, respeita plano e perfil, auditada)
 - ⬜ BI: catálogo de métricas versionado, comparação entre períodos, ocupação por sala/profissional
 - ✅ **Pagamentos online (Mercado Pago):** Pix e link, confirmação por webhook assinado ou botão Verificar, conciliação com recibo, cancelamento e estorno; credenciais por clínica, cifradas. **Não validado com o Mercado Pago real** (roteiro em `docs/PAGAMENTOS.md`)

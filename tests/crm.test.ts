@@ -106,3 +106,63 @@ describe('CRM', () => {
     await expect(run("UPDATE crm_leads SET stage = 'won'")).rejects.toThrow(/crm_leads_check|check/i); // ganho sem paciente
   });
 });
+
+describe('agendar direto do lead', () => {
+  async function ready(label: string) {
+    const { t, mkt, rec } = await setup(label);
+    await t.mk('professional', 'dra');
+    const proId = ((await t.owner.get('/api/professionals')).json().professionals as { id: string }[])[0]!.id;
+    let n = 0;
+    const slot = () => ({ startsAt: new Date(Date.UTC(2032, 6, 1, 12 + n, 0)).toISOString(), endsAt: new Date(Date.UTC(2032, 6, 1, 13 + n++, 0)).toISOString() });
+    const book = (leadId: string, extra: object = {}, who = t.owner) => who.post(`/api/crm/leads/${leadId}/schedule`, { professionalId: proId, service: 'Avaliação', encaixe: true, ...slot(), ...extra });
+    const lead = async (name: string, phone: string) => (await t.owner.post('/api/crm/leads', { ...LEAD, name, phone })).json().id as string;
+    return { t, mkt, rec, proId, book, lead, slot };
+  }
+
+  it('converte em paciente, marca a consulta e fecha o lead como ganho', async () => {
+    const { t, book, lead } = await ready('crmsched');
+    const id = await lead('Lead Agenda Direta', '(11) 97777-1111');
+    const r = await book(id);
+    expect(r.statusCode).toBe(200);
+    const { patientId, appointmentId } = r.json();
+    const l = (await t.owner.get(`/api/crm/leads/${id}`)).json();
+    expect(l.lead).toMatchObject({ stage: 'won', patientId });
+    expect((l.events as { kind: string; note: string | null }[]).map((e) => e.kind)).toEqual(expect.arrayContaining(['converted', 'note']));
+    expect(JSON.stringify(l.events)).toContain('Consulta agendada para');
+    const appts = (await t.owner.get('/api/appointments?from=2032-06-30T00:00:00Z&to=2032-07-03T00:00:00Z')).json().appointments as { id: string; patientId: string; service: string }[];
+    expect(appts.find((a) => a.id === appointmentId)).toMatchObject({ patientId, service: 'Avaliação' });
+    // lead já convertido: nova consulta para o mesmo paciente, sem cadastrar de novo
+    const again = await book(id);
+    expect(again.statusCode).toBe(200);
+    expect(again.json().patientId).toBe(patientId);
+  });
+
+  it('é tudo ou nada: conflito de horário não deixa paciente nem lead convertido; duplicidade pede confirmação', async () => {
+    const { t, book, lead, slot } = await ready('crmschedatomic');
+    const fixed = slot();
+    const a = await lead('Primeiro Lead', '(11) 97777-2222');
+    expect((await book(a, fixed)).statusCode).toBe(200);
+    const b = await lead('Segundo Lead', '(11) 97777-3333');
+    const clash = await book(b, fixed);                       // mesmo profissional e horário
+    expect(clash.statusCode).toBe(409);
+    const lb = (await t.owner.get(`/api/crm/leads/${b}`)).json().lead;
+    expect(lb).toMatchObject({ stage: 'new', patientId: null });
+    expect((await t.owner.get('/api/patients?q=Segundo%20Lead')).json().patients).toHaveLength(0);
+
+    // nome e telefone iguais a um paciente existente: pede confirmação
+    const dup = await lead('Primeiro Lead', '(11) 97777-2222');
+    const d1 = await book(dup);
+    expect(d1.statusCode).toBe(409);
+    expect(d1.json().error).toBe('possible_duplicate');
+    expect((await book(dup, { confirmNotDuplicate: true })).statusCode).toBe(200);
+  });
+
+  it('perfil: marketing não agenda; recepção sim; horário inválido é recusado', async () => {
+    const { t, mkt, rec, book, lead } = await ready('crmschedrbac');
+    const id = await lead('Lead Perfil', '(11) 97777-4444');
+    expect((await book(id, {}, mkt.c)).statusCode).toBe(403);
+    expect((await book(id, { startsAt: '2032-07-01T15:00:00Z', endsAt: '2032-07-01T14:00:00Z' })).statusCode).toBe(400);
+    expect((await book(id, {}, rec.c)).statusCode).toBe(200);
+    expect((await t.owner.post('/api/crm/leads/00000000-0000-4000-8000-000000000000/schedule', { professionalId: '00000000-0000-4000-8000-000000000000', startsAt: '2032-07-01T15:00:00Z', endsAt: '2032-07-01T16:00:00Z' })).statusCode).toBe(404);
+  });
+});

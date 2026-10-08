@@ -391,6 +391,20 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
   await page.getByRole('heading', { name: leadName }).waitFor();
   must(true, 'CRM: lead convertido abre a ficha do novo paciente');
 
+  // CRM: agendar consulta direto do lead (converte e marca de uma vez)
+  const lead2 = `Lead Agenda E2E ${Date.now()}`;
+  await go(page, 'CRM');
+  await page.getByRole('button', { name: 'Novo lead' }).first().click();
+  await page.getByLabel('Nome', { exact: true }).fill(lead2);
+  await page.getByLabel('Telefone').fill('(11) 96666-1234');
+  await page.getByRole('dialog').getByRole('button', { name: 'Cadastrar lead' }).click();
+  await page.getByText('Lead cadastrado.').waitFor();
+  await page.getByRole('listitem').filter({ hasText: lead2 }).getByRole('button', { name: 'Agendar consulta' }).click();
+  await page.getByRole('dialog').getByLabel('Data').fill(new Date(Date.now() + 20 * 86_400_000).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }));
+  await page.getByRole('dialog').getByRole('button', { name: 'Agendar consulta' }).click();
+  await page.getByText('Consulta agendada e lead convertido em paciente.').waitFor();
+  must(true, 'CRM: agendar direto do lead converte em paciente e marca a consulta');
+
   // Indicadores
   await go(page, 'Indicadores');
   await page.getByRole('heading', { name: 'Indicadores' }).waitFor();
