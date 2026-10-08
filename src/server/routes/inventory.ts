@@ -105,18 +105,7 @@ export function inventoryRoutes(app: FastifyInstance) {
     try {
       const ids: string[] = [];
       if (b.kind === 'in' && b.lotCode) {
-        // Entrada com lote: usa o lote existente (a validade precisa coincidir) ou cria um novo. Validade já vencida é recusada.
-        if (b.expiresOn && b.expiresOn < new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' })) throw badRequest('A validade informada já passou.');
-        const found = await ctx.tx.query<{ id: string; expires_on: string | null }>(
-          `SELECT id, to_char(expires_on, 'YYYY-MM-DD') AS expires_on FROM inventory_lots WHERE item_id = $1 AND code = $2`, [b.itemId, b.lotCode]);
-        let lotId = found.rows[0]?.id;
-        if (lotId) {
-          if (b.expiresOn && found.rows[0]!.expires_on !== b.expiresOn) throw conflict('Este lote já existe com outra validade.');
-        } else {
-          const l = await ctx.tx.query<{ id: string }>('INSERT INTO inventory_lots (tenant_id, item_id, code, expires_on, created_by) VALUES ($1,$2,$3,$4,$5) RETURNING id',
-            [ctx.tenantId, b.itemId, b.lotCode, b.expiresOn ?? null, ctx.user.id]);
-          lotId = l.rows[0]!.id;
-        }
+        const lotId = await ensureLot(ctx.tx, ctx.tenantId, ctx.user.id, b.itemId, b.lotCode, b.expiresOn);
         ids.push((await insert(delta, lotId, b.idempotencyKey ?? null)).rows[0]!.id);
       } else if (b.kind === 'out' && !b.lotId) {
         // Primeiro a Vencer, Primeiro a Sair (FEFO): consome lotes não vencidos pela validade; o resto sai do saldo sem lote. Vencido não sai.
@@ -313,4 +302,18 @@ async function applyCountAdjustment(tx: Tx, tenantId: string, userId: string, it
     await ins(-take, l.id, n++); need -= take;
   }
   if (need > 0) await ins(-need, null, n++); // o gatilho do banco recusa se o item ficaria negativo
+}
+
+/** Lote de uma entrada: usa o existente (a validade precisa coincidir) ou cria um novo. Validade já vencida é recusada. */
+export async function ensureLot(tx: Tx, tenantId: string, userId: string, itemId: string, code: string, expiresOn?: string): Promise<string> {
+  if (expiresOn && expiresOn < new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' })) throw badRequest('A validade informada já passou.');
+  const found = await tx.query<{ id: string; expires_on: string | null }>(
+    `SELECT id, to_char(expires_on, 'YYYY-MM-DD') AS expires_on FROM inventory_lots WHERE item_id = $1 AND code = $2`, [itemId, code]);
+  if (found.rows[0]) {
+    if (expiresOn && found.rows[0].expires_on !== expiresOn) throw conflict('Este lote já existe com outra validade.');
+    return found.rows[0].id;
+  }
+  const l = await tx.query<{ id: string }>('INSERT INTO inventory_lots (tenant_id, item_id, code, expires_on, created_by) VALUES ($1,$2,$3,$4,$5) RETURNING id',
+    [tenantId, itemId, code, expiresOn ?? null, userId]);
+  return l.rows[0]!.id;
 }

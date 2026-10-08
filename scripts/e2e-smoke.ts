@@ -365,6 +365,36 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
   await page.getByRole('button', { name: 'Fechar', exact: true }).click();
   await row.getByText('10 un').first().waitFor();
 
+  // Compras: fornecedor → pedido → envio → recebimento atualiza o estoque
+  await page.getByRole('button', { name: 'Fornecedores', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Novo fornecedor' }).click();
+  await page.getByLabel('Nome', { exact: true }).fill('Dental Sul e2e');
+  await page.getByRole('dialog').getByRole('button', { name: 'Salvar fornecedor' }).click();
+  await page.getByText('Fornecedor salvo.').waitFor();
+  await page.getByRole('button', { name: 'Fechar', exact: true }).first().click();
+  await page.getByRole('button', { name: 'Pedidos', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Novo pedido' }).click();
+  await page.getByLabel('Fornecedor').selectOption({ label: 'Dental Sul e2e' });
+  await page.getByLabel('Item 1').selectOption({ label: `${itemName} (un)` });
+  await page.getByLabel('Quantidade').fill('5');
+  await page.getByLabel('Custo unitário (R$)').fill('10,00');
+  await page.getByRole('button', { name: 'Salvar rascunho' }).click();
+  await page.getByText('Pedido salvo como rascunho.').waitFor();
+  await page.getByRole('dialog').getByRole('button', { name: 'Abrir' }).first().click();
+  await page.getByRole('button', { name: 'Marcar como enviado' }).click();
+  await page.getByText('Pedido enviado.').waitFor();
+  await page.getByLabel(/^Receber agora/).fill('5');
+  await page.getByRole('button', { name: 'Registrar recebimento' }).click();
+  await page.getByText('Recebimento registrado: o estoque foi atualizado.').waitFor();
+  must(true, 'compras: pedido enviado e recebido entra no estoque');
+  await noHorizontalScroll(page, 'compras');
+  await page.screenshot({ path: `${SHOTS}/09c-pedido-compra-mobile.png` });
+  for (let i = 0; i < 2; i++) await page.keyboard.press('Escape');
+  await page.reload();
+  await go(page, 'Estoque');
+  await page.getByRole('listitem').filter({ hasText: itemName }).getByText('15 un').first().waitFor();
+  must(true, 'compras: saldo do item subiu de 10 para 15 após o recebimento');
+
   // CRM: lead → contatado → anotação → conversão em paciente
   const leadName = `Lead E2E ${Date.now()}`;
   await go(page, 'CRM');

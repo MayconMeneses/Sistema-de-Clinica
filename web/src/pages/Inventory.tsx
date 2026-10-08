@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { get, patch, post, put } from '../api';
 import { brl, dateTimeOf, parseMoney } from '../format';
+import { Purchasing } from './Purchasing';
 import { Badge, Button, Empty, ErrorBox, Field, Sheet, Spinner, TextInput, useLoad, useToast } from '../ui';
 
 interface Item { id: string; name: string; sku: string | null; unit: string; minQuantity: string; active: boolean; balance: string; low: boolean; expiredQty?: string; usableBalance?: string; nextExpiry?: string | null; expired?: boolean; expiringSoon?: boolean }
@@ -29,6 +30,7 @@ export function InventoryPage({ canWrite }: { canWrite: boolean }) {
   const [history, setHistory] = useState<Item | null>(null);
   const [lotsOf, setLotsOf] = useState<Item | null>(null);
   const [counting, setCounting] = useState(false);
+  const [purchasing, setPurchasing] = useState<'suppliers' | 'orders' | null>(null);
   const [f, setF] = useState({ qty: '', cost: '', reason: '', name: '', sku: '', unit: 'un', min: '', lot: '', expires: '' });
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -76,7 +78,7 @@ export function InventoryPage({ canWrite }: { canWrite: boolean }) {
 
   return (
     <>
-      <div className="page-head"><h1>Estoque</h1><span className="row">{canWrite && <Button variant="secondary" onClick={() => setCounting(true)}>Inventário</Button>}{canWrite && <Button onClick={() => openEdit('new')}>Novo item</Button>}</span></div>
+      <div className="page-head"><h1>Estoque</h1><span className="row"><Button variant="secondary" onClick={() => setPurchasing('orders')}>Pedidos</Button><Button variant="secondary" onClick={() => setPurchasing('suppliers')}>Fornecedores</Button>{canWrite && <Button variant="secondary" onClick={() => setCounting(true)}>Inventário</Button>}{canWrite && <Button onClick={() => openEdit('new')}>Novo item</Button>}</span></div>
       {list.data && list.data.lowCount > 0 && <div className="banner" role="note">⚠ {list.data.lowCount} {list.data.lowCount === 1 ? 'item está' : 'itens estão'} no estoque mínimo ou abaixo.</div>}
       {list.data && (list.data.expiredCount > 0 || list.data.expiringCount > 0) && (
         <div className="banner" role="note">
@@ -142,6 +144,7 @@ export function InventoryPage({ canWrite }: { canWrite: boolean }) {
         </form>
       </Sheet>
 
+      <Purchasing open={purchasing} onClose={() => setPurchasing(null)} canWrite={canWrite} onChanged={list.reload} />
       <StockCount open={counting} onClose={() => setCounting(false)} onChanged={list.reload} />
       <Lots item={lotsOf} canWrite={canWrite} onClose={() => setLotsOf(null)} onChanged={list.reload} />
       <History item={history} onClose={() => setHistory(null)} />
