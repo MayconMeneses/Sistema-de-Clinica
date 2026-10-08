@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { clinicRoute, type ClinicCtx } from '../context.js';
+import { audit, clinicRoute, type ClinicCtx } from '../context.js';
 import { hasPermission } from '../auth/rbac.js';
 import { badRequest } from '../http.js';
 
@@ -74,20 +74,93 @@ const SECTIONS: Section[] = [
   } },
 ];
 
+async function buildOverview(ctx: ClinicCtx, q: { from: string; to: string }) {
+  const days = (Date.parse(q.to) - Date.parse(q.from)) / 86400000;
+  if (!(days >= 0)) throw badRequest('A data final deve ser igual ou posterior à inicial.');
+  if (days > 366) throw badRequest('Período máximo: 366 dias.');
+  const sections: Record<string, unknown> = {};
+  const omitted: { section: string; reason: string }[] = [];
+  for (const s of SECTIONS) {
+    if (!ctx.entitlements.has(s.cap)) omitted.push({ section: s.name, reason: 'recurso não contratado' });
+    else if (!hasPermission(ctx.user.role, s.perm)) omitted.push({ section: s.name, reason: 'seu perfil não tem acesso a esta seção' });
+    else sections[s.name] = await s.run(ctx, [q.from, q.to]);
+  }
+  return { period: q, sections, omitted };
+}
+
+// ---------------------------------------------------------------- exportação (CSV)
+type Unit = 'qtd' | 'R$' | '%';
+interface Row { section: string; indicator: string; value: string | number | null; unit: Unit }
+const SECTION_NAME: Record<string, string> = { appointments: 'Atendimentos', patients: 'Pacientes', finance: 'Financeiro', crm: 'CRM', inventory: 'Estoque' };
+const STATUS_NAME: Record<string, string> = { completed: 'Concluídas', scheduled: 'Agendadas', confirmed: 'Confirmadas', checked_in: 'Na recepção', called: 'Chamadas', in_service: 'Em atendimento', cancelled: 'Canceladas', no_show: 'Faltas' };
+const STAGE_NAME: Record<string, string> = { new: 'Novo', contacted: 'Contatado', qualified: 'Qualificado', scheduled: 'Agendado', won: 'Convertido', lost: 'Perdido' };
+const METHOD_NAME: Record<string, string> = { pix: 'Pix', card: 'Cartão', cash: 'Dinheiro' };
+const reais = (cents: string) => (Number(BigInt(cents)) / 100).toFixed(2);
+
+/** Achata as seções do relatório em linhas "seção; indicador; valor; unidade". Só agregados, como na tela. */
+export function overviewRows(sections: Record<string, any>): Row[] {
+  const rows: Row[] = [];
+  const add = (section: string, indicator: string, value: string | number | null, unit: Unit) => rows.push({ section: SECTION_NAME[section] ?? section, indicator, value, unit });
+  const a = sections.appointments;
+  if (a) {
+    add('appointments', 'Total de atendimentos', a.total, 'qtd');
+    for (const [k, v] of Object.entries(a.byStatus as Record<string, number>)) add('appointments', `Atendimentos ${STATUS_NAME[k] ?? k}`, v, 'qtd');
+    add('appointments', 'Taxa de falta', a.noShowRate, '%');
+    for (const p of a.byProfessional as { name: string; total: number; completed: number; noShow: number; cancelled: number }[]) {
+      add('appointments', `${p.name}: total`, p.total, 'qtd'); add('appointments', `${p.name}: concluídas`, p.completed, 'qtd');
+      add('appointments', `${p.name}: faltas`, p.noShow, 'qtd'); add('appointments', `${p.name}: canceladas`, p.cancelled, 'qtd');
+    }
+  }
+  const pa = sections.patients;
+  if (pa) { add('patients', 'Pacientes novos', pa.newPatients, 'qtd'); add('patients', 'Pacientes ativos (total)', pa.totalActive, 'qtd'); }
+  const f = sections.finance;
+  if (f) {
+    add('finance', 'Cobrado', reais(f.chargedCents), 'R$'); add('finance', 'Recebido (líquido de estornos)', reais(f.receivedCents), 'R$');
+    add('finance', 'Estornado', reais(f.refundedCents), 'R$'); add('finance', 'Descontos aprovados', reais(f.discountsCents), 'R$');
+    add('finance', 'Em aberto (todos os pacientes)', reais(f.outstandingCents), 'R$');
+    for (const m of f.byMethod as { method: string; receivedCents: string }[]) add('finance', `Recebido em ${METHOD_NAME[m.method] ?? m.method}`, reais(m.receivedCents), 'R$');
+    if (f.cash) { add('finance', 'Caixas fechados', f.cash.closedSessions, 'qtd'); add('finance', 'Diferença nos caixas', reais(f.cash.differenceCents), 'R$'); add('finance', 'Descontos aguardando aprovação', f.cash.pendingDiscounts, 'qtd'); }
+  }
+  const c = sections.crm;
+  if (c) {
+    add('crm', 'Leads criados', c.created, 'qtd');
+    for (const [k, v] of Object.entries(c.byStage as Record<string, number>)) add('crm', `Leads em ${STAGE_NAME[k] ?? k}`, v, 'qtd');
+    for (const s of c.bySource as { source: string; n: number; won: number }[]) { add('crm', `Origem ${s.source}: leads`, s.n, 'qtd'); add('crm', `Origem ${s.source}: convertidos`, s.won, 'qtd'); }
+    add('crm', 'Taxa de conversão', c.conversionRate, '%');
+  }
+  const i = sections.inventory;
+  if (i) { add('inventory', 'Itens ativos', i.activeItems, 'qtd'); add('inventory', 'Itens no mínimo ou abaixo', i.lowStock, 'qtd'); add('inventory', 'Entradas no período', i.entries, 'qtd'); add('inventory', 'Saídas no período', i.exits, 'qtd'); }
+  return rows;
+}
+
+/** Célula CSV: aspas quando preciso e proteção contra fórmulas (=, +, -, @) ao abrir em planilha. */
+export function csvCell(v: string | number | null): string {
+  if (v === null || v === undefined) return '';
+  let s = typeof v === 'number' ? String(v) : v;
+  if (typeof v === 'string' && /^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+  return /[";\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+/** CSV para Excel em português: separador ";", decimal com vírgula, BOM UTF-8. */
+export function toCsv(period: { from: string; to: string }, rows: Row[]): string {
+  const num = (r: Row) => (typeof r.value === 'string' && r.unit === 'R$' ? r.value.replace('.', ',') : r.value);
+  const lines = [['Período', `${period.from} a ${period.to}`, '', ''], ['Seção', 'Indicador', 'Valor', 'Unidade'], ...rows.map((r) => [r.section, r.indicator, num(r), r.unit])];
+  return '\uFEFF' + lines.map((l) => l.map((c) => csvCell(c as string | number | null)).join(';')).join('\r\n') + '\r\n';
+}
+
 export function reportRoutes(app: FastifyInstance) {
   // Só agregados (contagens e somas), nunca dados de uma pessoa. Cada seção respeita o recurso do plano e a permissão do perfil.
   clinicRoute(app, 'GET', '/api/reports/overview', { cap: 'analytics.bi', perm: 'reports.read' }, async (ctx) => {
     const q = z.object({ from: ymd, to: ymd }).parse(ctx.req.query);
-    const days = (Date.parse(q.to) - Date.parse(q.from)) / 86400000;
-    if (!(days >= 0)) throw badRequest('A data final deve ser igual ou posterior à inicial.');
-    if (days > 366) throw badRequest('Período máximo: 366 dias.');
-    const sections: Record<string, unknown> = {};
-    const omitted: { section: string; reason: string }[] = [];
-    for (const s of SECTIONS) {
-      if (!ctx.entitlements.has(s.cap)) omitted.push({ section: s.name, reason: 'recurso não contratado' });
-      else if (!hasPermission(ctx.user.role, s.perm)) omitted.push({ section: s.name, reason: 'seu perfil não tem acesso a esta seção' });
-      else sections[s.name] = await s.run(ctx, [q.from, q.to]);
-    }
-    return { period: q, sections, omitted };
+    return buildOverview(ctx, q);
+  });
+
+  // Exportação dos mesmos indicadores em CSV. Mesmas regras de plano e perfil; a exportação fica no registro de auditoria.
+  clinicRoute(app, 'GET', '/api/reports/export', { cap: 'analytics.bi', perm: 'reports.read' }, async (ctx, _req, reply) => {
+    const q = z.object({ from: ymd, to: ymd }).parse(ctx.req.query);
+    const o = await buildOverview(ctx, q);
+    const rows = overviewRows(o.sections as Record<string, any>);
+    await audit(ctx, 'report.export', 'report', undefined, { from: q.from, to: q.to, rows: rows.length, omitted: o.omitted.map((x) => x.section) });
+    reply.header('content-type', 'text/csv; charset=utf-8').header('content-disposition', `attachment; filename="indicadores-${q.from}_${q.to}.csv"`);
+    return toCsv(q, rows);
   });
 }

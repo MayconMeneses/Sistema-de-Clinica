@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { csvCell, overviewRows, toCsv } from '../src/server/routes/reports.js';
 
 const { buildApp } = await import('../src/server/app.js');
 const { appPool, platformPool, workerPool } = await import('../src/server/db.js');
@@ -94,5 +95,52 @@ describe('indicadores', () => {
     const o = (await other.owner.get(`/api/reports/overview?${q}`)).json();
     expect(o.sections.finance.chargedCents).toBe('0'); // outra clínica não enxerga os dados desta
     expect(o.sections.patients.totalActive).toBe(0);
+  });
+});
+
+describe('exportação dos indicadores (CSV)', () => {
+  it('células seguras: aspas, separador e proteção contra fórmula', () => {
+    expect(csvCell('Dra. Ana; Silva')).toBe('"Dra. Ana; Silva"');
+    expect(csvCell('diz "oi"')).toBe('"diz ""oi"""');
+    expect(csvCell('=HYPERLINK("x")')).toBe(`"'=HYPERLINK(""x"")"`);
+    expect(csvCell('+55 11')).toBe("'+55 11");
+    expect(csvCell('@soma')).toBe("'@soma");
+    expect(csvCell(null)).toBe('');
+    expect(csvCell(12.5)).toBe('12.5');
+    const csv = toCsv({ from: '2031-01-01', to: '2031-01-31' }, overviewRows({ patients: { newPatients: 3, totalActive: 10 }, finance: { chargedCents: '123456', receivedCents: '0', refundedCents: '0', discountsCents: '0', outstandingCents: '5', byMethod: [] } }));
+    expect(csv.startsWith('﻿Período;2031-01-01 a 2031-01-31')).toBe(true);
+    expect(csv).toContain('Financeiro;Cobrado;1234,56;R$');
+    expect(csv).toContain('Pacientes;Pacientes novos;3;qtd');
+  });
+
+  it('exporta o que a tela mostra, respeitando plano e perfil, e audita', async () => {
+    const t = await tenant('repexp');
+    const mkt = await t.mk('marketing', 'mkt');
+    const rec = await t.mk('receptionist', 'rita');
+    await t.owner.post('/api/crm/leads', { name: 'Lead Export', phone: '11999990000', source: 'google' });
+    const q = `from=${today()}&to=${today()}`;
+
+    const r = await t.owner.get(`/api/reports/export?${q}`);
+    expect(r.statusCode).toBe(200);
+    expect(r.headers['content-type']).toContain('text/csv');
+    expect(r.headers['content-disposition']).toContain(`indicadores-${today()}_${today()}.csv`);
+    expect(r.body.charCodeAt(0)).toBe(0xfeff);
+    expect(r.body).toContain('Seção;Indicador;Valor;Unidade');
+    expect(r.body).toContain('CRM;Leads criados;1;qtd');
+    expect(r.body).toContain('Financeiro;Cobrado;');
+
+    // marketing só enxerga CRM: as outras seções não saem no arquivo
+    const m = await mkt.c.get(`/api/reports/export?${q}`);
+    expect(m.statusCode).toBe(200);
+    expect(m.body).toContain('CRM;Leads criados');
+    expect(m.body).not.toContain('Financeiro;');
+    expect(m.body).not.toContain('Atendimentos;');
+
+    expect((await rec.c.get(`/api/reports/export?${q}`)).statusCode).toBe(403);
+    expect((await t.owner.get(`/api/reports/export?from=${today()}&to=${shift(today(), -1)}`)).statusCode).toBe(400);
+    const solo = await tenant('repexpplan', 'essencial');
+    expect((await solo.owner.get(`/api/reports/export?${q}`)).json().error).toBe('capability_unavailable');
+
+    expect(JSON.stringify((await t.owner.get('/api/audit')).json())).toContain('report.export');
   });
 });

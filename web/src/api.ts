@@ -38,3 +38,19 @@ export interface Me {
 /** O servidor de demonstração pode dispensar o código MFA do Master (DEMO_SKIP_MASTER_MFA). */
 let mfaRequiredCache: Promise<boolean> | null = null;
 export const masterMfaRequired = () => (mfaRequiredCache ??= get<{ mfaRequired: boolean }>('/api/master/auth-info').then((r) => r.mfaRequired).catch(() => true));
+
+/** Baixa um arquivo (GET autenticado) e entrega ao navegador. Erros da API viram mensagem legível. */
+export async function downloadFile(url: string, fallbackName: string): Promise<void> {
+  let res: Response;
+  try { res = await fetch(url, { credentials: 'same-origin', headers: { 'x-requested-with': 'clinica-one' } }); }
+  catch { throw new ApiError(0, 'network', 'Sem conexão com o servidor. Verifique sua internet e tente novamente.'); }
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new ApiError(res.status, data.error ?? 'error', data.message ?? 'Não foi possível gerar o arquivo.');
+  }
+  const name = /filename="([^"]+)"/.exec(res.headers.get('content-disposition') ?? '')?.[1] ?? fallbackName;
+  const href = URL.createObjectURL(await res.blob());
+  const a = document.createElement('a');
+  a.href = href; a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(href), 10_000);
+}

@@ -106,7 +106,7 @@ export function inventoryRoutes(app: FastifyInstance) {
       const ids: string[] = [];
       if (b.kind === 'in' && b.lotCode) {
         // Entrada com lote: usa o lote existente (a validade precisa coincidir) ou cria um novo. Validade já vencida é recusada.
-        if (b.expiresOn && b.expiresOn < new Date(Date.now() - 3 * 3_600_000).toISOString().slice(0, 10)) throw badRequest('A validade informada já passou.');
+        if (b.expiresOn && b.expiresOn < new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' })) throw badRequest('A validade informada já passou.');
         const found = await ctx.tx.query<{ id: string; expires_on: string | null }>(
           `SELECT id, to_char(expires_on, 'YYYY-MM-DD') AS expires_on FROM inventory_lots WHERE item_id = $1 AND code = $2`, [b.itemId, b.lotCode]);
         let lotId = found.rows[0]?.id;
