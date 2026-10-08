@@ -60,7 +60,7 @@ async function insertMovement(tx: Tx, a: { tenantId: string; patientId: string; 
 
 export interface IntentRow {
   id: string; patient_id: string; amount_cents: string; status: string; method: string; created_by: string; provider_payment_id: string | null;
-  payment_movement_id: string | null; refund_movement_id: string | null; description: string;
+  payment_movement_id: string | null; refund_movement_id: string | null; description: string; refunded_cents: string;
 }
 
 /**
@@ -70,7 +70,7 @@ export interface IntentRow {
  * - o saldo do paciente só muda por movimentos imutáveis, como em qualquer outro pagamento.
  */
 export async function applyProviderPayment(tx: Tx, tenantId: string, intentId: string, p: ProviderPayment, actorId: string | null): Promise<{ status: string; changed: boolean }> {
-  const cur = await tx.query<IntentRow>('SELECT id, patient_id, amount_cents::text, status, method, created_by, provider_payment_id, payment_movement_id, refund_movement_id, description FROM payment_intents WHERE id = $1 FOR UPDATE', [intentId]);
+  const cur = await tx.query<IntentRow>('SELECT id, patient_id, amount_cents::text, status, method, created_by, provider_payment_id, payment_movement_id, refund_movement_id, description, refunded_cents::text FROM payment_intents WHERE id = $1 FOR UPDATE', [intentId]);
   const it = cur.rows[0];
   if (!it) return { status: 'unknown', changed: false };
   if (p.externalReference !== it.id) {
@@ -94,18 +94,30 @@ export async function applyProviderPayment(tx: Tx, tenantId: string, intentId: s
     it.payment_movement_id = mid; status = 'approved'; changed = true;
     await auditSystem(tx, tenantId, actorId, 'payment.approved', it.id, { providerPaymentId: p.id, method: p.paidMethod, amountCents: it.amount_cents });
   }
-  if (p.status === 'refunded' && status === 'approved') {
-    const fam = await family(tx, it.patient_id);
-    const net = await tx.query<{ net: string }>(
-      `SELECT (COALESCE(SUM(amount_cents) FILTER (WHERE kind='payment'),0) - COALESCE(SUM(amount_cents) FILTER (WHERE kind='refund'),0))::text AS net FROM financial_movements WHERE patient_id = ANY($1::uuid[])`, [fam]);
-    if (BigInt(net.rows[0]!.net) < BigInt(it.amount_cents)) {
-      await auditSystem(tx, tenantId, actorId, 'payment.refund_unreconciled', it.id, { reason: 'saldo pago insuficiente para refletir o estorno; revisar manualmente' });
-    } else {
-      const method = (await tx.query<{ paid_method: 'pix' | 'card' }>('SELECT paid_method FROM payment_intents WHERE id = $1', [it.id])).rows[0]!.paid_method;
-      const rid = await insertMovement(tx, { tenantId, patientId: it.patient_id, kind: 'refund', method, cents: it.amount_cents, note: `Estorno de pagamento online · cobrança ${it.id.slice(0, 8)}`, key: `gw:${it.id}:refund`, createdBy: it.created_by });
-      await baseUpdate({ status: 'refunded', refund_movement_id: rid });
-      status = 'refunded'; changed = true;
-      await auditSystem(tx, tenantId, actorId, 'payment.refunded', it.id, { providerPaymentId: p.id });
+  // Estorno total ou parcial: o provedor informa quanto já devolveu; lançamos só a diferença, uma vez (chave por total acumulado).
+  if (status === 'approved' && (p.status === 'refunded' || p.refundedCents > 0)) {
+    const amount = BigInt(it.amount_cents);
+    const already = BigInt(it.refunded_cents);
+    let target = p.status === 'refunded' ? amount : BigInt(p.refundedCents);
+    if (target > amount) target = amount;
+    if (target > already) {
+      const delta = target - already;
+      const fam = await family(tx, it.patient_id);
+      const net = await tx.query<{ net: string }>(
+        `SELECT (COALESCE(SUM(amount_cents) FILTER (WHERE kind='payment'),0) - COALESCE(SUM(amount_cents) FILTER (WHERE kind='refund'),0))::text AS net FROM financial_movements WHERE patient_id = ANY($1::uuid[])`, [fam]);
+      if (BigInt(net.rows[0]!.net) < delta) {
+        await auditSystem(tx, tenantId, actorId, 'payment.refund_unreconciled', it.id, { reason: 'saldo pago insuficiente para refletir o estorno; revisar manualmente', deltaCents: delta.toString() });
+      } else {
+        const method = (await tx.query<{ paid_method: 'pix' | 'card' }>('SELECT paid_method FROM payment_intents WHERE id = $1', [it.id])).rows[0]!.paid_method;
+        const full = target === amount;
+        const rid = await insertMovement(tx, { tenantId, patientId: it.patient_id, kind: 'refund', method, cents: delta.toString(), note: `${full && already === 0n ? 'Estorno' : 'Estorno parcial'} de pagamento online · cobrança ${it.id.slice(0, 8)}`, key: full && already === 0n ? `gw:${it.id}:refund` : `gw:${it.id}:refund:${target}`, createdBy: it.created_by });
+        await tx.query(
+          `INSERT INTO payment_refunds (tenant_id, intent_id, amount_cents, cumulative_cents, movement_id, created_by) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (tenant_id, intent_id, cumulative_cents) DO NOTHING`,
+          [tenantId, it.id, delta.toString(), target.toString(), rid, actorId ?? it.created_by]);
+        await baseUpdate({ status: full ? 'refunded' : 'approved', refunded_cents: target.toString(), refund_movement_id: rid });
+        status = full ? 'refunded' : 'approved'; changed = true;
+        await auditSystem(tx, tenantId, actorId, full ? 'payment.refunded' : 'payment.refunded_partial', it.id, { providerPaymentId: p.id, refundedCents: target.toString(), deltaCents: delta.toString() });
+      }
     }
   }
   if (['rejected', 'cancelled', 'expired'].includes(p.status) && status === 'pending') {

@@ -37,7 +37,8 @@ export interface PaymentGateway {
   /** Procura o pagamento mais relevante de uma referência (usado no link, que só tem id de pagamento depois de pago). */
   findByReference(externalReference: string): Promise<ProviderPayment | null>;
   cancel(providerPaymentId: string): Promise<void>;
-  refund(providerPaymentId: string, idempotencyKey: string): Promise<void>;
+  /** Devolve `amountCents` ao pagador; sem valor, devolve o que ainda não foi devolvido. */
+  refund(providerPaymentId: string, idempotencyKey: string, amountCents?: number): Promise<void>;
 }
 
 /** Traduz erro do adaptador em mensagem que a recepção entende. Nunca inclui corpo de requisição/resposta. */

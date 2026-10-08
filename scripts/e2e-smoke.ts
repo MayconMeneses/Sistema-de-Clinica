@@ -299,6 +299,13 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
   await page.getByText('Pagamento confirmado.').first().waitFor();
   await page.getByText('Pago', { exact: true }).first().waitFor();
   must(true, 'pagamento online: pagamento confirmado e conciliado no financeiro');
+  await page.getByRole('button', { name: 'Estornar', exact: true }).first().click();
+  await page.getByLabel('Motivo do estorno').fill('Procedimento reduzido e2e');
+  await page.getByLabel(/^Valor a devolver/).fill('10,00');
+  await page.getByRole('dialog').getByRole('button', { name: 'Estornar parte' }).click();
+  await page.getByText('Estorno parcial registrado.').waitFor();
+  await page.getByText(/^Estornado R\$/).first().waitFor();
+  must(true, 'pagamento online: estorno parcial devolve parte e mantém a cobrança como paga');
   await noHorizontalScroll(page, 'pagamento-online');
   await page.screenshot({ path: `${SHOTS}/12-pagamento-online-mobile.png`, fullPage: true });
   await go(page, 'Gestão');
