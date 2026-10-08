@@ -33,6 +33,8 @@ export interface Me {
   permissions: string[];
   entitlements: string[];
   mfaEnabled: boolean;
+  /** null = sem restrição; lista (talvez vazia) = o perfil só enxerga a agenda destas unidades. */
+  unitScope?: string[] | null;
 }
 
 /** O servidor de demonstração pode dispensar o código MFA do Master (DEMO_SKIP_MASTER_MFA). */

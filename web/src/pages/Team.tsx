@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { get, patch, post } from '../api';
 import { dateTimeOf, ROLE_LABEL } from '../format';
 import { Badge, Button, ErrorBox, Select, Sheet, Spinner, TextInput, useLoad, useToast } from '../ui';
@@ -6,7 +6,8 @@ import { PrivacyQueue } from './PatientAdmin';
 import { PaymentsSettings } from './OnlinePayments';
 import { Blocks, Hours, UnitsRooms } from './Settings';
 
-interface User { id: string; name: string; email: string; role: string; status: string; mfaEnabled: boolean }
+interface User { id: string; name: string; email: string; role: string; status: string; mfaEnabled: boolean; unitIds: string[] }
+interface UnitRow { id: string; name: string }
 interface AuditEvent { id: string; occurredAt: string; action: string; entityType: string; actorName: string | null }
 
 type Tab = 'team' | 'units' | 'hours' | 'blocks' | 'payments' | 'privacy' | 'audit';
@@ -46,6 +47,8 @@ function Users() {
   const list = useLoad(() => get<{ users: User[] }>('/api/users'), []);
   const [adding, setAdding] = useState(false);
   const [resetFor, setResetFor] = useState<User | null>(null);
+  const [unitsFor, setUnitsFor] = useState<User | null>(null);
+  const units = useLoad(() => get<{ units: UnitRow[] }>('/api/units'), []);
 
   async function resetMfa(u: User) {
     if (!window.confirm(`Redefinir a verificação em duas etapas de ${u.name}? A pessoa será desconectada e poderá configurar de novo.`)) return;
@@ -69,10 +72,11 @@ function Users() {
         {list.data?.users.map((u) => (
           <li key={u.id} className="list-item stack">
             <div className="row between"><strong>{u.name}</strong><span className="row">{u.mfaEnabled && <Badge tone="info">2 etapas</Badge>}{u.status === 'active' ? <Badge tone="ok">Ativo</Badge> : <Badge tone="bad">Suspenso</Badge>}</span></div>
-            <span className="muted small">{u.email} · {ROLE_LABEL[u.role] ?? u.role}</span>
+            <span className="muted small">{u.email} · {ROLE_LABEL[u.role] ?? u.role}{(u.role === 'unit_manager' || u.role === 'professional') ? ` · ${u.unitIds.length ? u.unitIds.map((id) => units.data?.units.find((x) => x.id === id)?.name ?? '…').join(', ') : 'sem unidade'}` : ''}</span>
             {u.role !== 'owner' && (
               <div className="row">
                 <Button variant="secondary" className="btn-sm" onClick={() => toggle(u)}>{u.status === 'active' ? 'Suspender' : 'Reativar'}</Button>
+                {(u.role === 'unit_manager' || u.role === 'professional') && <Button variant="secondary" className="btn-sm" onClick={() => setUnitsFor(u)}>Unidades</Button>}
                 <Button variant="secondary" className="btn-sm" onClick={() => setResetFor(u)}>Redefinir senha</Button>
                 {u.mfaEnabled && <Button variant="secondary" className="btn-sm" onClick={() => resetMfa(u)}>Redefinir 2 etapas</Button>}
               </div>
@@ -82,6 +86,7 @@ function Users() {
       </ul>
       <AddUser open={adding} onClose={() => setAdding(false)} onDone={() => { setAdding(false); list.reload(); }} />
       <ResetPassword user={resetFor} onClose={() => setResetFor(null)} />
+      <UserUnits user={unitsFor} units={units.data?.units ?? []} onClose={() => setUnitsFor(null)} onDone={() => { setUnitsFor(null); list.reload(); }} />
     </>
   );
 }
@@ -110,6 +115,42 @@ function AddUser({ open, onClose, onDone }: { open: boolean; onClose: () => void
         <TextInput label="Senha provisória" type="password" value={f.password} onChange={(v) => setF({ ...f, password: v })} autoComplete="new-password" hint="Mínimo de 10 caracteres. Peça para a pessoa trocar no primeiro acesso." />
         {error && <p className="field-msg error" role="alert">{error}</p>}
         <Button type="submit" busy={busy} className="btn-block">Criar usuário</Button>
+      </form>
+    </Sheet>
+  );
+}
+
+function UserUnits({ user, units, onClose, onDone }: { user: User | null; units: UnitRow[]; onClose: () => void; onDone: () => void }) {
+  const toast = useToast();
+  const [sel, setSel] = useState<string[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { setSel(user?.unitIds ?? []); setError(null); }, [user?.id]);
+  async function save(e: FormEvent) {
+    e.preventDefault();
+    if (!user) return;
+    setBusy(true); setError(null);
+    try { await patch(`/api/users/${user.id}`, { unitIds: sel }); toast('Unidades salvas.'); onDone(); }
+    catch (err) { setError((err as Error).message); } finally { setBusy(false); }
+  }
+  return (
+    <Sheet open={!!user} title={`Unidades de ${user?.name ?? ''}`} onClose={onClose}>
+      <form onSubmit={save} noValidate>
+        <p className="small muted">
+          {user?.role === 'unit_manager'
+            ? 'O gerente enxerga e altera a agenda só das unidades marcadas. Sem nenhuma unidade, ele não vê a agenda.'
+            : 'Consultas sem sala pertencem às unidades do profissional.'}
+        </p>
+        {units.length === 0 && <p className="muted">Cadastre unidades em Gestão → Unidades e salas.</p>}
+        <ul className="list">
+          {units.map((u) => (
+            <li key={u.id} className="list-item">
+              <label className="row"><input type="checkbox" checked={sel.includes(u.id)} onChange={(e) => setSel(e.target.checked ? [...sel, u.id] : sel.filter((x) => x !== u.id))} /> {u.name}</label>
+            </li>
+          ))}
+        </ul>
+        {error && <p className="field-msg error" role="alert">{error}</p>}
+        <Button type="submit" busy={busy} className="btn-block">Salvar unidades</Button>
       </form>
     </Sheet>
   );

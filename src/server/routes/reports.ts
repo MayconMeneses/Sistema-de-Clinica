@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { audit, clinicRoute, type ClinicCtx } from '../context.js';
 import { hasPermission } from '../auth/rbac.js';
 import { badRequest } from '../http.js';
+import { apptInScope, unitScope } from '../scope.js';
 
 const ymd = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data inválida.');
 const TZ = "'America/Sao_Paulo'";
@@ -14,8 +15,9 @@ type Section = { name: string; cap: string; perm: string; run: (ctx: ClinicCtx, 
 
 const SECTIONS: Section[] = [
   { name: 'appointments', cap: 'schedule.core', perm: 'agenda.read', run: async (ctx, p) => {
+    const scope = await unitScope(ctx);   // gerente de unidade: só as consultas das suas unidades
     const st = await ctx.tx.query<{ status: string; n: number }>(
-      `SELECT status, COUNT(*)::int AS n FROM appointments WHERE starts_at >= ${FROM} AND starts_at < ${TO} GROUP BY status`, p);
+      `SELECT a.status, COUNT(*)::int AS n FROM appointments a WHERE a.starts_at >= ${FROM} AND a.starts_at < ${TO} AND ${apptInScope(3)} GROUP BY a.status`, [...p, scope]);
     const by = Object.fromEntries(st.rows.map((r) => [r.status, r.n]));
     const total = st.rows.reduce((a, r) => a + r.n, 0);
     const attended = (by.completed ?? 0), missed = (by.no_show ?? 0);
@@ -23,7 +25,7 @@ const SECTIONS: Section[] = [
       `SELECT u.name, COUNT(*)::int AS total, COUNT(*) FILTER (WHERE a.status = 'completed')::int AS completed,
               COUNT(*) FILTER (WHERE a.status = 'no_show')::int AS "noShow", COUNT(*) FILTER (WHERE a.status = 'cancelled')::int AS cancelled
          FROM appointments a JOIN users u ON u.tenant_id = a.tenant_id AND u.id = a.professional_id
-        WHERE a.starts_at >= ${FROM} AND a.starts_at < ${TO} GROUP BY u.name ORDER BY total DESC, u.name LIMIT 20`, p);
+        WHERE a.starts_at >= ${FROM} AND a.starts_at < ${TO} AND ${apptInScope(3)} GROUP BY u.name ORDER BY total DESC, u.name LIMIT 20`, [...p, scope]);
     // Taxa de falta = faltas ÷ (concluídas + faltas): consultas que de fato deveriam ter acontecido.
     return { total, byStatus: by, noShowRate: attended + missed > 0 ? Math.round((missed / (attended + missed)) * 1000) / 10 : null, byProfessional: pros.rows };
   } },
@@ -80,8 +82,10 @@ async function buildOverview(ctx: ClinicCtx, q: { from: string; to: string }) {
   if (days > 366) throw badRequest('Período máximo: 366 dias.');
   const sections: Record<string, unknown> = {};
   const omitted: { section: string; reason: string }[] = [];
+  const scoped = (await unitScope(ctx)) !== null;
   for (const s of SECTIONS) {
-    if (!ctx.entitlements.has(s.cap)) omitted.push({ section: s.name, reason: 'recurso não contratado' });
+    if (scoped && s.name !== 'appointments') omitted.push({ section: s.name, reason: 'indisponível no escopo por unidade (dados da clínica inteira)' });
+    else if (!ctx.entitlements.has(s.cap)) omitted.push({ section: s.name, reason: 'recurso não contratado' });
     else if (!hasPermission(ctx.user.role, s.perm)) omitted.push({ section: s.name, reason: 'seu perfil não tem acesso a esta seção' });
     else sections[s.name] = await s.run(ctx, [q.from, q.to]);
   }

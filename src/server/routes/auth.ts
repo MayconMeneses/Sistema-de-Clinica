@@ -11,6 +11,7 @@ import { audit, clinicRoute, CLINIC_COOKIE, cookieOptions } from '../context.js'
 import { config } from '../config.js';
 import { encryptSecret } from '../crypto.js';
 import { appPool } from '../db.js';
+import { unitScope } from '../scope.js';
 import { badRequest, conflict, HttpError, newSecret, sha256, unauthorized } from '../http.js';
 
 const limiter = new DbRateLimiter(appPool);
@@ -89,6 +90,7 @@ export function authRoutes(app: FastifyInstance) {
       permissions: permissionsFor(ctx.user.role),
       entitlements: [...ctx.entitlements].sort(),
       mfaEnabled: m.rows[0]?.totp_enabled ?? false,
+      unitScope: await unitScope(ctx), // null = sem restrição; lista (talvez vazia) = só estas unidades
     };
   });
 

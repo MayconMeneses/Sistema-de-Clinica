@@ -71,7 +71,16 @@ export function ClinicShell({ me, hash, onLogout, onRefresh }: { me: Me; hash: s
           </a>
         )}
       </nav>
-      <main className="content" id="main">{page}</main>
+      <main className="content" id="main">
+        {me.unitScope && (
+          <div className="banner" role="note">
+            {me.unitScope.length
+              ? `Seu perfil mostra apenas a agenda de ${me.unitScope.length === 1 ? 'a sua unidade' : `${me.unitScope.length} unidades`}. Pacientes, financeiro e demais áreas seguem o acesso do seu perfil.`
+              : 'Nenhuma unidade está vinculada ao seu usuário, por isso a agenda aparece vazia. Peça à administração para vincular em Gestão → Usuários → Unidades.'}
+          </div>
+        )}
+        {page}
+      </main>
       <AccountSheet open={menu} me={me} onClose={() => setMenu(false)} onLogout={onLogout} onRefresh={onRefresh} />
     </div>
   );

@@ -42,7 +42,9 @@ Legenda: ✅ IMPLEMENTADO e testado localmente · 🟡 PARCIAL · ⬜ PLANEJADO
 - ⬜ Inbox, templates editáveis, automações, opt-out por resposta, portal inicial
 
 ## Fases 4–6
-- ✅ Papéis: gerente de unidade, estoque, marketing e auditor interno (alcance: clínica toda; **escopo por unidade ainda não existe**)
+- ✅ Papéis: gerente de unidade, estoque, marketing e auditor interno
+- ✅ Escopo por unidade do gerente na **agenda**: vínculo usuário↔unidade (gerente e profissional); o gerente vê e altera só consultas, salas, horários, bloqueios, lista de espera, recepção, painel e indicadores de atendimento das suas unidades; sem unidade vinculada, não vê nada
+- ⬜ Escopo por unidade para pacientes, financeiro, estoque e CRM (hoje o gerente vê essas áreas da clínica inteira; indicadores dessas áreas ficam indisponíveis para ele)
 - ✅ Estoque: itens, livro de movimentos imutável (entrada/saída/ajuste explicado), saldo derivado que nunca fica negativo, alerta de mínimo
 - ✅ CRM: leads, funil (novo → contatado → agendado → paciente/perdido), histórico imutável, consentimento de marketing registrado, conversão em paciente com aviso de duplicidade
 - ✅ Indicadores (BI básico): atendimentos, faltas, pacientes novos, financeiro, CRM e estoque, por período; cada seção respeita plano e perfil

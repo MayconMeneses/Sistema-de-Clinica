@@ -5,13 +5,30 @@ import { hashPassword, passwordPolicyError } from '../auth/password.js';
 import { audit, clinicRoute } from '../context.js';
 import { hasPermission } from '../auth/rbac.js';
 import { badRequest, conflict, forbidden, notFound } from '../http.js';
+import { apptInScope, unitScope } from '../scope.js';
 
 const idParam = z.object({ id: z.string().uuid() });
 const ROLES = ['admin', 'unit_manager', 'receptionist', 'professional', 'finance', 'stock', 'marketing', 'auditor'] as const; // owner só é criado pelo Master
 
+const unitIdsSchema = z.array(z.string().uuid()).max(50);
+/** Substitui as unidades do usuário. Só gerente de unidade e profissional têm unidades; outros perfis não aceitam vínculo. */
+async function setUnits(tx: import('../http.js').Tx, tenantId: string, userId: string, role: string, unitIds: string[]) {
+  const ids = [...new Set(unitIds)];
+  if (ids.length && role !== 'unit_manager' && role !== 'professional') throw badRequest('Só gerente de unidade e profissional são vinculados a unidades.');
+  if (ids.length) {
+    const ok = await tx.query('SELECT count(*)::int AS n FROM units WHERE id = ANY($1::uuid[])', [ids]);
+    if (ok.rows[0].n !== ids.length) throw badRequest('Unidade inexistente.');
+  }
+  await tx.query('DELETE FROM user_units WHERE user_id = $1', [userId]);
+  for (const u of ids) await tx.query('INSERT INTO user_units (tenant_id, user_id, unit_id) VALUES ($1,$2,$3)', [tenantId, userId, u]);
+}
+
 export function teamRoutes(app: FastifyInstance) {
   clinicRoute(app, 'GET', '/api/users', { perm: 'users.manage' }, async (ctx) => {
-    const r = await ctx.tx.query('SELECT id, name, email, role, status, totp_enabled AS "mfaEnabled", created_at AS "createdAt" FROM users ORDER BY name');
+    const r = await ctx.tx.query(
+      `SELECT u.id, u.name, u.email, u.role, u.status, u.totp_enabled AS "mfaEnabled", u.created_at AS "createdAt",
+              COALESCE((SELECT array_agg(uu.unit_id ORDER BY uu.unit_id) FROM user_units uu WHERE uu.user_id = u.id), '{}') AS "unitIds"
+         FROM users u ORDER BY u.name`);
     return { users: r.rows };
   });
 
@@ -21,6 +38,7 @@ export function teamRoutes(app: FastifyInstance) {
       email: z.string().trim().toLowerCase().email().max(200),
       role: z.enum(ROLES),
       password: z.string().max(128),
+      unitIds: unitIdsSchema.optional(),
     }).parse(ctx.req.body);
     const policy = passwordPolicyError(b.password);
     if (policy) throw badRequest(policy);
@@ -30,7 +48,8 @@ export function teamRoutes(app: FastifyInstance) {
     await ctx.tx.query(
       'INSERT INTO users (id, tenant_id, email, name, password_hash, role) VALUES ($1,$2,$3,$4,$5,$6)',
       [id, ctx.tenantId, b.email, b.name, await hashPassword(b.password), b.role]);
-    await audit(ctx, 'user.create', 'user', id, { role: b.role });
+    if (b.unitIds?.length) await setUnits(ctx.tx, ctx.tenantId, id, b.role, b.unitIds);
+    await audit(ctx, 'user.create', 'user', id, { role: b.role, units: b.unitIds?.length ?? 0 });
     return { id };
   });
 
@@ -41,6 +60,7 @@ export function teamRoutes(app: FastifyInstance) {
       role: z.enum(ROLES).optional(),
       password: z.string().max(128).optional(),
       resetMfa: z.literal(true).optional(),
+      unitIds: unitIdsSchema.optional(),
     }).parse(ctx.req.body);
     if (id === ctx.user.id) throw forbidden('Você não pode alterar a própria conta aqui.');
     const cur = await ctx.tx.query<{ role: string }>('SELECT role FROM users WHERE id = $1 FOR UPDATE', [id]);
@@ -57,6 +77,10 @@ export function teamRoutes(app: FastifyInstance) {
     if (b.resetMfa) {
       await ctx.tx.query('UPDATE users SET totp_enabled = false, totp_secret = NULL, totp_last_step = NULL WHERE id = $1', [id]);
       bump = true;
+    }
+    if (b.unitIds) {
+      const roleNow = b.role ?? cur.rows[0].role;
+      await setUnits(ctx.tx, ctx.tenantId, id, roleNow, b.unitIds);
     }
     if (bump) { // acesso anterior deixa de valer imediatamente
       await ctx.tx.query('UPDATE users SET session_version = session_version + 1 WHERE id = $1', [id]);
@@ -80,11 +104,12 @@ export function teamRoutes(app: FastifyInstance) {
     if (has('patient.registry')) out.patients = Number((await ctx.tx.query('SELECT count(*) FROM patients')).rows[0].count);
     if (has('schedule.core')) {
       const r = await ctx.tx.query(
-        `SELECT count(*) FILTER (WHERE status NOT IN ('cancelled','no_show')) AS active,
-                count(*) FILTER (WHERE status IN ('checked_in','called')) AS waiting
-           FROM appointments
-          WHERE starts_at >= (date_trunc('day', now() AT TIME ZONE 'America/Sao_Paulo') AT TIME ZONE 'America/Sao_Paulo')
-            AND starts_at <  (date_trunc('day', now() AT TIME ZONE 'America/Sao_Paulo') AT TIME ZONE 'America/Sao_Paulo') + interval '1 day'`);
+        `SELECT count(*) FILTER (WHERE a.status NOT IN ('cancelled','no_show')) AS active,
+                count(*) FILTER (WHERE a.status IN ('checked_in','called')) AS waiting
+           FROM appointments a
+          WHERE a.starts_at >= (date_trunc('day', now() AT TIME ZONE 'America/Sao_Paulo') AT TIME ZONE 'America/Sao_Paulo')
+            AND a.starts_at <  (date_trunc('day', now() AT TIME ZONE 'America/Sao_Paulo') AT TIME ZONE 'America/Sao_Paulo') + interval '1 day'
+            AND ${apptInScope(1)}`, [await unitScope(ctx)]);
       out.appointmentsToday = Number(r.rows[0].active);
       out.waiting = Number(r.rows[0].waiting);
     }
