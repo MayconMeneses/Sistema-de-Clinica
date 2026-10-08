@@ -325,6 +325,25 @@ describe('cobrança online com o Mercado Pago (servidor falso)', () => {
     expect(movs.filter((m) => m.kind === 'refund')).toHaveLength(1);
   });
 
+  it('parcelamento: o link limita as parcelas no provedor; só vale para link e com parcela mínima de R$ 5,00', async () => {
+    const t = await liveClinic('payinstall');
+    const pid = await patient(t);
+    const c = await newIntent(t, pid, { method: 'link', amountCents: 12000, maxInstallments: 6 });
+    expect(c.statusCode).toBe(200);
+    expect(c.json().maxInstallments).toBe(6);
+    const pref = fake.calls.find((x) => x.url === '/checkout/preferences' && x.body.external_reference === c.json().id)!;
+    expect(pref.body.payment_methods).toEqual({ installments: 6 });
+    const avista = (await newIntent(t, pid, { method: 'link', amountCents: 12000 })).json();
+    const pref1 = fake.calls.find((x) => x.url === '/checkout/preferences' && x.body.external_reference === avista.id)!;
+    expect(pref1.body.payment_methods).toBeUndefined();
+    expect(avista.maxInstallments).toBe(1);
+    expect((await newIntent(t, pid, { method: 'pix', maxInstallments: 3 })).statusCode).toBe(400);
+    expect((await newIntent(t, pid, { method: 'link', amountCents: 1000, maxInstallments: 3 })).statusCode).toBe(400); // R$ 3,33 por parcela
+    expect((await newIntent(t, pid, { method: 'link', amountCents: 12000, maxInstallments: 13 })).statusCode).toBe(400);
+    const list = (await t.owner.get(`/api/payments/intents?patientId=${pid}`)).json().intents as { id: string; maxInstallments: number }[];
+    expect(list.find((i) => i.id === c.json().id)?.maxInstallments).toBe(6);
+  });
+
   it('estorno e cancelamento pela API chamam o provedor; pagamento feito no meio do cancelamento prevalece', async () => {
     const t = await liveClinic('payrefund');
     const pid = await patient(t);

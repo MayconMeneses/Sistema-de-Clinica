@@ -7,7 +7,7 @@ interface Intent {
   id: string; patientId: string; patientName: string; amountCents: string; description: string; method: 'pix' | 'link';
   status: 'pending' | 'approved' | 'rejected' | 'cancelled' | 'expired' | 'refunded'; provider: 'mercadopago' | 'sandbox';
   checkoutUrl: string | null; pixQrCode: string | null; pixQrBase64: string | null; expiresAt: string; expired: boolean; createdAt: string;
-  paidMethod: 'pix' | 'card' | null; receiptNumber: number | null; paymentMovementId: string | null; refundedCents?: string; notice?: string;
+  paidMethod: 'pix' | 'card' | null; receiptNumber: number | null; paymentMovementId: string | null; refundedCents?: string; maxInstallments?: number; notice?: string;
 }
 const STATUS: Record<Intent['status'], { label: string; tone: 'neutral' | 'info' | 'ok' | 'bad' | 'warn' }> = {
   pending: { label: 'Aguardando pagamento', tone: 'warn' }, approved: { label: 'Pago', tone: 'ok' }, rejected: { label: 'Recusado', tone: 'bad' },
@@ -24,7 +24,7 @@ export function OnlineCharges({ patientId, balanceCents, canCharge, canRefund, o
   const list = useLoad(() => get<{ intents: Intent[] }>(`/api/payments/intents?patientId=${patientId}`), [patientId]);
   const [creating, setCreating] = useState(false);
   const [shown, setShown] = useState<Intent | null>(null);
-  const [f, setF] = useState({ amount: '', method: 'pix', email: '', description: 'Atendimento odontológico' });
+  const [f, setF] = useState({ amount: '', method: 'pix', email: '', description: 'Atendimento odontológico', installments: '1' });
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [key, setKey] = useState(() => crypto.randomUUID());
@@ -44,7 +44,7 @@ export function OnlineCharges({ patientId, balanceCents, canCharge, canRefund, o
     if (!cents || cents < 100) { setError('Informe um valor de pelo menos R$ 1,00.'); return; }
     setBusy('create'); setError(null);
     try {
-      const r = await post<Intent>('/api/payments/intents', { patientId, amountCents: cents, method: f.method, payerEmail: f.email || undefined, description: f.description, idempotencyKey: key });
+      const r = await post<Intent>('/api/payments/intents', { patientId, amountCents: cents, method: f.method, payerEmail: f.email || undefined, description: f.description, idempotencyKey: key, ...(f.method === 'link' && Number(f.installments) > 1 ? { maxInstallments: Number(f.installments) } : {}) });
       setCreating(false); setShown(r); setKey(crypto.randomUUID()); list.reload();
     } catch (err) { setError((err as Error).message); } finally { setBusy(null); }
   }
@@ -95,7 +95,7 @@ export function OnlineCharges({ patientId, balanceCents, canCharge, canRefund, o
           const st = i.expired ? { label: 'Expirada', tone: 'neutral' as const } : STATUS[i.status];
           return (
             <li key={i.id} className="list-item stack">
-              <div className="row between"><strong>{brl(i.amountCents)} · {i.method === 'pix' ? 'Pix' : 'Link de pagamento'}</strong><span className="row">{i.status === 'approved' && Number(i.refundedCents ?? 0) > 0 && <Badge tone="info">Estornado {brl(i.refundedCents!)}</Badge>}<Badge tone={st.tone}>{st.label}</Badge></span></div>
+              <div className="row between"><strong>{brl(i.amountCents)} · {i.method === 'pix' ? 'Pix' : 'Link de pagamento'}{(i.maxInstallments ?? 1) > 1 ? ` · até ${i.maxInstallments}x` : ''}</strong><span className="row">{i.status === 'approved' && Number(i.refundedCents ?? 0) > 0 && <Badge tone="info">Estornado {brl(i.refundedCents!)}</Badge>}<Badge tone={st.tone}>{st.label}</Badge></span></div>
               <span className="small muted">{dateTimeOf(i.createdAt)} · {i.description}{i.provider === 'sandbox' ? ' · modo de teste' : ''}{i.receiptNumber ? ` · recibo nº ${i.receiptNumber}` : ''}</span>
               <div className="row">
                 {i.status === 'pending' && <Button variant="secondary" className="btn-sm" onClick={() => setShown(i)}>{i.method === 'pix' ? 'Ver Pix' : 'Ver link'}</Button>}
@@ -114,6 +114,11 @@ export function OnlineCharges({ patientId, balanceCents, canCharge, canRefund, o
         <form onSubmit={create} noValidate>
           <TextInput label="Valor (R$)" value={f.amount} onChange={(v) => setF({ ...f, amount: v })} inputMode="decimal" placeholder="150,00" />
           <Select label="Forma" value={f.method} onChange={(v) => setF({ ...f, method: v })}><option value="pix">Pix (QR Code e copia e cola)</option><option value="link">Link de pagamento (cartão, Pix ou saldo)</option></Select>
+          {f.method === 'link' && (
+            <Select label="Parcelamento no cartão (até)" value={f.installments} onChange={(v) => setF({ ...f, installments: v })}>
+              <option value="1">À vista</option>{[2, 3, 4, 5, 6, 8, 10, 12].map((n) => <option key={n} value={n}>{n}x</option>)}
+            </Select>
+          )}
           <TextInput label="E-mail do pagador" value={f.email} onChange={(v) => setF({ ...f, email: v })} inputMode="email" hint="Se ficar em branco, usamos o e-mail do cadastro. O Pix exige um e-mail." />
           <TextInput label="Descrição" value={f.description} onChange={(v) => setF({ ...f, description: v })} />
           {error && <p className="field-msg error" role="alert">{error}</p>}
