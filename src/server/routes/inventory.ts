@@ -59,11 +59,11 @@ export async function consumeFefo(tx: Tx, itemId: string, quantity: number, idem
 
 export const procedureKey = (procedure: string) => procedure.trim().toLowerCase().replace(/\s+/g, ' ');
 
-async function consumeOne(tx: Tx, tenantId: string, userId: string, planItemId: string, itemId: string, quantity: number): Promise<'consumed' | 'shortage'> {
+async function consumeOne(tx: Tx, tenantId: string, userId: string, planItemId: string, itemId: string, quantity: number, procedure: string): Promise<'consumed' | 'shortage'> {
   const key = `proc:${planItemId}:${itemId}`;
   const insert: InsertMovement = (d, lotId, k) => tx.query<{ id: string }>(
     `INSERT INTO inventory_movements (tenant_id, item_id, kind, delta, reason, idempotency_key, created_by, lot_id)
-     VALUES ($1,$2,'out',$3,'Consumo em procedimento',$4,$5,$6) RETURNING id`, [tenantId, itemId, d, k, userId, lotId]);
+     VALUES ($1,$2,'out',$3,$7,$4,$5,$6) RETURNING id`, [tenantId, itemId, d, k, userId, lotId, `Consumo em procedimento: ${procedure}`.slice(0, 200)]);
   await tx.query('SAVEPOINT proc_consume');
   try {
     const it = await tx.query<{ active: boolean }>('SELECT active FROM inventory_items WHERE id = $1 FOR UPDATE', [itemId]);
@@ -83,18 +83,19 @@ async function consumeOne(tx: Tx, tenantId: string, userId: string, planItemId: 
  * impede a conclusão do procedimento.
  */
 export async function consumeProcedureSupplies(tx: Tx, tenantId: string, userId: string, planItemId: string, procedure: string) {
-  const kit = await tx.query<{ item_id: string; quantity: string; name: string }>(
-    `SELECT s.item_id, s.quantity::text, i.name FROM procedure_supplies s JOIN inventory_items i ON i.tenant_id = s.tenant_id AND i.id = s.item_id
+  const kit = await tx.query<{ item_id: string; quantity: string; name: string; unit: string }>(
+    `SELECT s.item_id, s.quantity::text, i.name, i.unit FROM procedure_supplies s JOIN inventory_items i ON i.tenant_id = s.tenant_id AND i.id = s.item_id
       WHERE s.procedure_key = $1 ORDER BY i.name`, [procedureKey(procedure)]);
-  const consumed: string[] = []; const shortages: string[] = [];
+  const consumed: string[] = []; const shortages: string[] = []; const consumedDetails: { name: string; quantity: string; unit: string }[] = [];
   for (const k of kit.rows) {
     const done = await tx.query('SELECT 1 FROM procedure_consumptions WHERE plan_item_id = $1 AND item_id = $2', [planItemId, k.item_id]);
     if (done.rowCount) continue;
-    const st = await consumeOne(tx, tenantId, userId, planItemId, k.item_id, Number(k.quantity));
+    const st = await consumeOne(tx, tenantId, userId, planItemId, k.item_id, Number(k.quantity), procedure);
     await tx.query(`INSERT INTO procedure_consumptions (tenant_id, plan_item_id, item_id, quantity, status) VALUES ($1,$2,$3,$4,$5)`, [tenantId, planItemId, k.item_id, k.quantity, st]);
     (st === 'consumed' ? consumed : shortages).push(k.name);
+    if (st === 'consumed') consumedDetails.push({ name: k.name, quantity: k.quantity, unit: k.unit });
   }
-  return { consumed, shortages };
+  return { consumed, shortages, consumedDetails };
 }
 
 export function inventoryRoutes(app: FastifyInstance) {
@@ -278,7 +279,8 @@ export function inventoryRoutes(app: FastifyInstance) {
     if (!c.rows[0]) throw notFound('Pendência não encontrada.');
     if (c.rows[0].status !== 'shortage') throw conflict('Esta pendência já foi tratada.');
     if (b.action === 'consume') {
-      const st = await consumeOne(ctx.tx, ctx.tenantId, ctx.user.id, p.planItemId, p.itemId, Number(c.rows[0].quantity));
+      const pi = await ctx.tx.query<{ procedure: string }>('SELECT procedure FROM dental_plan_items WHERE id = $1', [p.planItemId]);
+      const st = await consumeOne(ctx.tx, ctx.tenantId, ctx.user.id, p.planItemId, p.itemId, Number(c.rows[0].quantity), pi.rows[0]?.procedure ?? 'procedimento');
       if (st === 'shortage') throw conflict('Ainda não há saldo utilizável suficiente para esta baixa.');
       await ctx.tx.query(`UPDATE procedure_consumptions SET status = 'consumed' WHERE plan_item_id = $1 AND item_id = $2`, [p.planItemId, p.itemId]);
     } else {
