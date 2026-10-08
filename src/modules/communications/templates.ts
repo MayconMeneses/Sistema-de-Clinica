@@ -19,3 +19,12 @@ export const isTemplate = (n: string): n is TemplateName => n in T;
 
 export const whenLabel = (iso: string) =>
   new Date(iso).toLocaleString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
+
+/** Recuperação de senha (transacional: não depende de consentimento de marketing). O link vale por `minutes` e só uma vez. */
+export function renderPasswordReset(v: { name: string; clinic: string; link: string; minutes: number }) {
+  return {
+    subject: `Redefinição de senha — ${v.clinic}`,
+    body: `Olá, ${v.name}. Recebemos um pedido para redefinir sua senha na ${v.clinic}. Use o link abaixo em até ${v.minutes} minutos (ele só funciona uma vez):\n\n${v.link}\n\nSe você não pediu isso, ignore este e-mail: sua senha continua a mesma.`,
+    vars: [v.name, v.clinic, v.link],
+  };
+}

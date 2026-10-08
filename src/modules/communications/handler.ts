@@ -3,7 +3,9 @@ import { withTenant } from '../../db/tenant.js';
 import { integrationEnv } from '../../server/config.js';
 import { resolveAdapter, type Mode } from '../../integrations/registry.js';
 import { AdapterError, CHANNELS, type Channel } from '../../integrations/types.js';
-import { isTemplate, renderTemplate, whenLabel } from './templates.js';
+import { decryptSecret } from '../../server/crypto.js';
+import { config } from '../../server/config.js';
+import { isTemplate, renderPasswordReset, renderTemplate, whenLabel } from './templates.js';
 
 export interface OutboxRow { id: string; tenant_id: string; payload: Record<string, unknown>; attempts: number; max_attempts: number }
 export type Outcome =
@@ -25,7 +27,35 @@ export function sanitizeError(s: string): string {
  * (o worker não guarda telefone/e-mail na fila): consentimento revogado ou consulta alterada após o
  * enfileiramento resultam em "skipped", nunca em envio indevido.
  */
+export const RESET_MINUTES = 30;
+
+/** E-mail de recuperação de senha: o token é lido (cifrado) só aqui, vai no link e é apagado depois do envio. */
+async function handlePasswordReset(appPool: pg.Pool, ev: OutboxRow, resetId: string): Promise<Outcome> {
+  const d = await withTenant(appPool, ev.tenant_id, async (tx) => {
+    const r = await tx.query<{ token_enc: string | null; used_at: Date | null; expired: boolean; email: string; name: string; status: string }>(
+      `SELECT r.token_enc, r.used_at, r.expires_at < now() AS expired, u.email, u.name, u.status
+         FROM password_resets r JOIN users u ON u.tenant_id = r.tenant_id AND u.id = r.user_id WHERE r.id = $1`, [resetId]);
+    const t = await tx.query<{ name: string; slug: string }>('SELECT name, slug FROM tenants');
+    const conn = await tx.query<{ mode: Mode }>(`SELECT mode FROM integration_connections WHERE kind = 'email'`);
+    return { row: r.rows[0], tenant: t.rows[0], mode: conn.rows[0]?.mode ?? integrationEnv().defaultMode };
+  });
+  if (!d.row || !d.tenant) return { kind: 'dead', code: 'reset_not_found', message: 'Pedido não encontrado' };
+  if (d.row.used_at || d.row.expired || !d.row.token_enc || d.row.status !== 'active') return { kind: 'skipped', reason: 'reset_unavailable' };
+  if (d.mode === 'disabled') return { kind: 'skipped', reason: 'integration_disabled' };
+  const link = `${config.publicUrl}/#/redefinir?clinic=${encodeURIComponent(d.tenant.slug)}&token=${encodeURIComponent(decryptSecret(d.row.token_enc))}`;
+  const msg = renderPasswordReset({ name: d.row.name, clinic: d.tenant.name, link, minutes: RESET_MINUTES });
+  try {
+    const r = await resolveAdapter('email', d.mode).send({ channel: 'email', to: d.row.email, subject: msg.subject, body: msg.body, templateName: 'password_reset', idempotencyKey: ev.id, vars: msg.vars });
+    await withTenant(appPool, ev.tenant_id, (tx) => tx.query('UPDATE password_resets SET token_enc = NULL WHERE id = $1', [resetId]));
+    return { kind: 'sent', externalId: r.externalId };
+  } catch (e) {
+    if (e instanceof AdapterError) return e.retryable ? { kind: 'retry', code: e.code, message: sanitizeError(e.message) } : { kind: 'dead', code: e.code, message: sanitizeError(e.message) };
+    return { kind: 'retry', code: 'unexpected', message: 'Erro inesperado ao enviar' };
+  }
+}
+
 export async function handleMessage(appPool: pg.Pool, ev: OutboxRow): Promise<Outcome> {
+  if (ev.payload.template === 'password_reset' && typeof ev.payload.resetId === 'string') return handlePasswordReset(appPool, ev, ev.payload.resetId);
   const p = ev.payload as { channel?: string; template?: string; patientId?: string; appointmentId?: string; startsAt?: string };
   if (!p.channel || !CHANNELS.includes(p.channel as Channel) || !p.template || !isTemplate(p.template) || !p.patientId) {
     return { kind: 'dead', code: 'bad_payload', message: 'Evento malformado' };

@@ -10,6 +10,7 @@ import { generateSecret, otpauthUri } from '../auth/totp.js';
 import { audit, clinicRoute, CLINIC_COOKIE, cookieOptions } from '../context.js';
 import { config } from '../config.js';
 import { encryptSecret } from '../crypto.js';
+import { RESET_MINUTES } from '../../modules/communications/handler.js';
 import { appPool } from '../db.js';
 import { unitScope } from '../scope.js';
 import { badRequest, conflict, HttpError, newSecret, sha256, unauthorized } from '../http.js';
@@ -73,6 +74,74 @@ export function authRoutes(app: FastifyInstance) {
     await limiter.reset(key);
     reply.setCookie(CLINIC_COOKIE, outcome.cookie, cookieOptions('/', config.clinicSessionHours));
     return { ok: true };
+  });
+
+  // ------------------------------------------------------------ recuperação de senha por e-mail
+  // A resposta é sempre a mesma, exista ou não o e-mail (não revela quem tem conta). O link vale RESET_MINUTES e só uma vez.
+  const FORGOT_OK = { ok: true, message: 'Se o e-mail estiver cadastrado, enviamos um link para redefinir a senha. Ele vale por 30 minutos.' };
+
+  app.post('/api/auth/forgot', async (req) => {
+    const { clinic, email } = z.object({
+      clinic: z.string().trim().toLowerCase().min(2).max(63),
+      email: z.string().trim().toLowerCase().email().max(200),
+    }).parse(req.body);
+    const key = `forgot|${req.ip}|${clinic}|${email}`;
+    if (await limiter.tooMany(key)) return FORGOT_OK;           // acima do limite: nada é criado, mas a resposta não muda
+    await limiter.record(key);
+    const dir = await appPool.query<{ tenant_id: string; status: string }>('SELECT tenant_id, status FROM tenant_directory WHERE slug = $1', [clinic]);
+    const entry = dir.rows[0];
+    if (!entry || entry.status !== 'active') return FORGOT_OK;
+    await withTenant(appPool, entry.tenant_id, async (tx) => {
+      const u = await tx.query<{ id: string }>(`SELECT id FROM users WHERE email = $1 AND status = 'active'`, [email]);
+      const user = u.rows[0];
+      if (!user) return;
+      await tx.query('UPDATE password_resets SET used_at = now() WHERE user_id = $1 AND used_at IS NULL', [user.id]); // só o link mais recente vale
+      const token = newSecret();
+      const r = await tx.query<{ id: string }>(
+        `INSERT INTO password_resets (tenant_id, user_id, token_hash, token_enc, expires_at) VALUES ($1,$2,$3,$4, now() + make_interval(mins => $5)) RETURNING id`,
+        [entry.tenant_id, user.id, sha256(token), encryptSecret(token), RESET_MINUTES]);
+      await tx.query(
+        `INSERT INTO outbox_events (tenant_id, topic, payload, idempotency_key) VALUES ($1,'message.send',$2,$3)`,
+        [entry.tenant_id, JSON.stringify({ template: 'password_reset', channel: 'email', resetId: r.rows[0]!.id }), `password_reset:${r.rows[0]!.id}`]);
+      await tx.query(
+        `INSERT INTO audit_events (tenant_id, actor_id, action, entity_type, entity_id, metadata) VALUES ($1, NULL, 'auth.password_reset_requested', 'user', $2, $3)`,
+        [entry.tenant_id, user.id, JSON.stringify({ ip: req.ip })]);
+    });
+    return FORGOT_OK;
+  });
+
+  app.post('/api/auth/reset', async (req) => {
+    const b = z.object({
+      clinic: z.string().trim().toLowerCase().min(2).max(63),
+      token: z.string().trim().min(20).max(200),
+      password: z.string().max(200),
+    }).parse(req.body);
+    const key = `reset|${req.ip}|${b.clinic}`;
+    if (await limiter.tooMany(key)) throw new HttpError(429, 'Muitas tentativas. Aguarde alguns minutos.', 'rate_limited');
+    const policy = passwordPolicyError(b.password);
+    if (policy) throw badRequest(policy);
+    const bad = async () => { await limiter.record(key); throw badRequest('Link inválido ou expirado. Peça um novo link na tela de entrada.'); };
+    const dir = await appPool.query<{ tenant_id: string; status: string }>('SELECT tenant_id, status FROM tenant_directory WHERE slug = $1', [b.clinic]);
+    const entry = dir.rows[0];
+    if (!entry || entry.status !== 'active') return bad();
+    const hash = await hashPassword(b.password);
+    const done = await withTenant(appPool, entry.tenant_id, async (tx) => {
+      const r = await tx.query<{ id: string; user_id: string }>(
+        `SELECT r.id, r.user_id FROM password_resets r JOIN users u ON u.tenant_id = r.tenant_id AND u.id = r.user_id
+          WHERE r.token_hash = $1 AND r.used_at IS NULL AND r.expires_at > now() AND u.status = 'active' FOR UPDATE OF r`, [sha256(b.token)]);
+      const row = r.rows[0];
+      if (!row) return false;
+      await tx.query('UPDATE password_resets SET used_at = now() WHERE user_id = $1 AND used_at IS NULL', [row.user_id]);
+      await tx.query('UPDATE users SET password_hash = $1, session_version = session_version + 1 WHERE id = $2', [hash, row.user_id]);
+      await tx.query('UPDATE sessions SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL', [row.user_id]);   // derruba todas as sessões
+      await tx.query(
+        `INSERT INTO audit_events (tenant_id, actor_id, action, entity_type, entity_id, metadata) VALUES ($1, $2::uuid, 'auth.password_reset_done', 'user', $2::text, $3)`,
+        [entry.tenant_id, row.user_id, JSON.stringify({ ip: req.ip })]);
+      return true;
+    });
+    if (!done) return bad();
+    await limiter.reset(key);
+    return { ok: true, message: 'Senha alterada. Entre com a nova senha. Se você usa verificação em duas etapas, ela continua exigida.' };
   });
 
   clinicRoute(app, 'POST', '/api/auth/logout', {}, async (ctx, _req, reply) => {

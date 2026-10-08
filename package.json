@@ -20,6 +20,7 @@
     "dev:web": "vite",
     "seed": "tsx scripts/seed-demo.ts",
     "totp": "tsx scripts/totp.ts",
+    "rotate-key": "tsx scripts/rotate-key.ts",
     "e2e": "tsx scripts/e2e-smoke.ts",
     "setup:dev": "npm run db:setup && npm run db:migrate && npm run seed && npm run build",
     "drill": "bash scripts/backup-restore-drill.sh",

@@ -48,6 +48,7 @@ export function Login({ mode, onDone }: { mode: 'clinic' | 'master'; onDone: () 
           {((mode === 'master' && masterMfa) || needCode) && <TextInput label={mode === 'master' ? 'Código MFA (6 dígitos)' : 'Código do autenticador (6 dígitos)'} value={code} onChange={setCode} required inputMode="numeric" autoComplete="one-time-code" maxLength={6} />}
           {error && <p className="field-msg error" role="alert">{error}</p>}
           <Button type="submit" busy={busy} className="btn-block">Entrar</Button>
+          {mode === 'clinic' && <p className="small"><a href="#/esqueci">Esqueci minha senha</a></p>}
         </form>
       </div>
     </main>

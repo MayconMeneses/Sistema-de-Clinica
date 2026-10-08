@@ -96,3 +96,8 @@ O Watchtower original (`containrrr`) não funciona com o Docker mais novo. O arq
 git pull origin claude/wizardly-carson-xuhql2
 docker compose -f docker-compose.auto.yml up -d
 ```
+
+## Esqueci minha senha
+Na tela de entrada, clique em **Esqueci minha senha**, informe o identificador da clínica e o e-mail. O sistema responde sempre a mesma mensagem (não revela quem tem conta) e envia um link que vale 30 minutos e só funciona uma vez; usar o link encerra todas as sessões abertas. A verificação em duas etapas, se ativa, continua exigida no próximo login.
+
+**No modo demonstração (Docker) nenhum e-mail sai de verdade.** O link aparece no log do worker: `docker compose -f docker-compose.auto.yml logs worker --tail 20` (procure `[sandbox e-mail]`). Com um provedor de e-mail configurado (`EMAIL_API_URL`, `EMAIL_API_KEY`, `EMAIL_FROM`) e `PUBLIC_BASE_URL` com o endereço público, o e-mail é enviado de verdade.

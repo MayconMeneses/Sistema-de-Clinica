@@ -142,9 +142,9 @@ describe('configuração de pagamentos', () => {
     expect(JSON.stringify(s)).not.toContain(TOKEN);
     expect(JSON.stringify(s)).not.toContain(SECRET);
     const row = (await withTenant(appPool, t.id, (tx) => tx.query('SELECT access_token_enc, webhook_secret_enc FROM payment_settings'))).rows[0];
-    expect(row.access_token_enc).toMatch(/^v1:/);
+    expect(row.access_token_enc).toMatch(/^v2:/);
     expect(row.access_token_enc).not.toContain(TOKEN);
-    expect(row.webhook_secret_enc).toMatch(/^v1:/);
+    expect(row.webhook_secret_enc).toMatch(/^v2:/);
     // trocar só o modo mantém as credenciais; apagar remove
     expect((await t.owner.req('PUT', '/api/payments/settings', { mode: 'disabled' })).statusCode).toBe(200);
     expect((await t.owner.get('/api/payments/settings')).json()).toMatchObject({ mode: 'disabled', tokenConfigured: true });
