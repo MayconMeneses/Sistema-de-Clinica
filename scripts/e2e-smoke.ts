@@ -241,7 +241,7 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
   await page.getByRole('button', { name: 'Nova conta' }).click();
   await page.getByLabel('Descrição').fill('Aluguel e2e');
   await page.getByLabel(/^Valor/).fill('1.250,00');
-  await page.getByLabel('Vencimento').fill(new Date(Date.now() + 3 * 86_400_000).toISOString().slice(0, 10));
+  await page.getByLabel('Vencimento').fill(new Date(Date.now() + 3 * 86_400_000).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }));
   await page.getByRole('dialog').getByRole('button', { name: 'Salvar conta' }).click();
   await page.getByText('Conta salva.').waitFor();
   const conta = page.getByRole('listitem').filter({ hasText: 'Aluguel e2e' });
@@ -336,7 +336,7 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
   await page.screenshot({ path: `${SHOTS}/09-estoque-mobile.png` });
   await page.getByRole('button', { name: 'Fechar' }).click();
   // lote com validade próxima: aparece o aviso "Vence" e a lista de lotes
-  const soon = new Date(Date.now() + 10 * 86_400_000).toISOString().slice(0, 10);
+  const soon = new Date(Date.now() + 10 * 86_400_000).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
   await row.getByRole('button', { name: 'Entrada' }).click();
   await page.getByLabel(/^Quantidade/).fill('2');
   await page.getByLabel('Lote (opcional)').fill('LOTE-E2E');
@@ -385,6 +385,10 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
   must(true, 'indicadores mostram atendimentos, financeiro e CRM');
   await noHorizontalScroll(page, 'indicadores');
   await page.screenshot({ path: `${SHOTS}/11-indicadores-mobile.png`, fullPage: true });
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Exportar CSV' }).click()]);
+  const csvPath = await dl.path();
+  const csv = (await import('node:fs')).readFileSync(csvPath, 'utf8');
+  must(dl.suggestedFilename().startsWith('indicadores-') && csv.includes('Seção;Indicador;Valor;Unidade') && csv.includes('Atendimentos;'), 'indicadores: exportação em CSV baixa o arquivo com os indicadores');
   await ctx.close();
 }
 

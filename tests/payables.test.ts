@@ -11,7 +11,8 @@ let app: FastifyInstance;
 beforeAll(async () => { app = await buildApp(); state.app = app; });
 afterAll(async () => { await app.close(); await appPool.end(); await platformPool.end(); await workerPool.end(); });
 
-const day = (offset: number) => new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
+// Datas no fuso da clínica (São Paulo), como o servidor as interpreta.
+const day = (offset: number) => new Date(Date.now() + offset * 86_400_000).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
 type Row = { id: string; status: string; overdue: boolean; amountCents: string; dueOn: string; installment: number; installments: number };
 const list = async (c: { get: (u: string) => Promise<{ json: () => any }> }, qs = '') => (await c.get(`/api/payables${qs}`)).json() as { payables: Row[]; summary: Record<string, string | number> };
 

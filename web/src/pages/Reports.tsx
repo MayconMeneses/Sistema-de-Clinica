@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { get } from '../api';
+import { downloadFile, get } from '../api';
 import { brl, METHOD_LABEL, shiftDay, todayYmd } from '../format';
-import { Badge, Button, ErrorBox, Spinner, TextInput, useLoad } from '../ui';
+import { Badge, Button, ErrorBox, Spinner, TextInput, useLoad, useToast } from '../ui';
 
 interface Overview {
   period: { from: string; to: string };
@@ -32,6 +32,8 @@ function Bars({ rows }: { rows: { label: string; value: number }[] }) {
 }
 
 export function ReportsPage() {
+  const toast = useToast();
+  const [exporting, setExporting] = useState(false);
   const today = todayYmd();
   const [range, setRange] = useState({ from: shiftDay(today, -29), to: today });
   const data = useLoad(() => get<Overview>(`/api/reports/overview?from=${range.from}&to=${range.to}`), [range.from, range.to]);
@@ -42,7 +44,14 @@ export function ReportsPage() {
   const s = data.data?.sections;
   return (
     <>
-      <div className="page-head"><h1>Indicadores</h1></div>
+      <div className="page-head">
+        <h1>Indicadores</h1>
+        <Button variant="secondary" busy={exporting} onClick={async () => {
+          setExporting(true);
+          try { await downloadFile(`/api/reports/export?from=${range.from}&to=${range.to}`, `indicadores-${range.from}_${range.to}.csv`); toast('Arquivo gerado.'); }
+          catch (err) { toast((err as Error).message, 'bad'); } finally { setExporting(false); }
+        }}>Exportar CSV</Button>
+      </div>
       <div className="card stack">
         <div className="row">
           <Button variant="secondary" className="btn-sm" onClick={() => set(today, today)}>Hoje</Button>

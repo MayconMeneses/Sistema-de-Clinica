@@ -10,7 +10,8 @@ let app: FastifyInstance;
 beforeAll(async () => { app = await buildApp(); state.app = app; });
 afterAll(async () => { await app.close(); await appPool.end(); await platformPool.end(); await workerPool.end(); });
 
-const day = (offset: number) => new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
+// Datas no fuso da clínica (São Paulo), como o servidor as interpreta.
+const day = (offset: number) => new Date(Date.now() + offset * 86_400_000).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
 type T = Awaited<ReturnType<typeof tenant>>;
 async function item(t: T, name: string, min = 0) {
   return (await t.owner.post('/api/inventory/items', { name, unit: 'un', minQuantity: min })).json().id as string;
