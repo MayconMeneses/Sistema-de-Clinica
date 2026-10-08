@@ -6,6 +6,7 @@ import { hasPermission } from '../auth/rbac.js';
 import { enqueueAppointmentMessages } from '../../modules/communications/enqueue.js';
 import { assertActive } from '../../modules/patients/family.js';
 import { badRequest, conflict, forbidden, HttpError, mapDbError, notFound } from '../http.js';
+import { apptInScope, assertApptVisible, assertBookable, proInScopeSql, unitScope } from '../scope.js';
 
 /** Fila da recepção: chegou → chamado → em atendimento → concluído. Voltar para a fila é permitido a quem foi chamado. */
 const TRANSITIONS: Record<string, string[]> = {
@@ -93,7 +94,8 @@ function needOverride(ctx: ClinicCtx, encaixe: boolean) {
 
 export function appointmentRoutes(app: FastifyInstance) {
   clinicRoute(app, 'GET', '/api/professionals', { cap: 'schedule.core', perm: 'agenda.read' }, async (ctx) => {
-    const r = await ctx.tx.query(`SELECT id, name FROM users WHERE role = 'professional' AND status = 'active' ORDER BY name`);
+    const scope = await unitScope(ctx);
+    const r = await ctx.tx.query(`SELECT id, name FROM users WHERE role = 'professional' AND status = 'active' AND ${proInScopeSql('users.id', 1)} ORDER BY name`, [scope]);
     return { professionals: r.rows };
   });
 
@@ -102,8 +104,8 @@ export function appointmentRoutes(app: FastifyInstance) {
     if (new Date(q.to).getTime() - new Date(q.from).getTime() > 62 * 86400_000) throw badRequest('Período máximo: 62 dias.');
     const r = await ctx.tx.query(
       `SELECT ${APPT_SELECT} ${APPT_FROM}
-        WHERE a.starts_at >= $1 AND a.starts_at < $2 AND ($3::uuid IS NULL OR a.professional_id = $3)
-        ORDER BY a.starts_at LIMIT 500`, [q.from, q.to, q.professionalId ?? null]);
+        WHERE a.starts_at >= $1 AND a.starts_at < $2 AND ($3::uuid IS NULL OR a.professional_id = $3) AND ${apptInScope(4)}
+        ORDER BY a.starts_at LIMIT 500`, [q.from, q.to, q.professionalId ?? null, await unitScope(ctx)]);
     return { appointments: r.rows };
   });
 
@@ -117,8 +119,8 @@ export function appointmentRoutes(app: FastifyInstance) {
               COUNT(*) FILTER (WHERE a.status = 'completed')::int AS completed,
               COUNT(*) FILTER (WHERE a.status IN ('cancelled','no_show'))::int AS lost
          FROM appointments a
-        WHERE a.starts_at >= $1 AND a.starts_at < $2 AND ($3::uuid IS NULL OR a.professional_id = $3)
-        GROUP BY 1 ORDER BY 1`, [q.from, q.to, q.professionalId ?? null]);
+        WHERE a.starts_at >= $1 AND a.starts_at < $2 AND ($3::uuid IS NULL OR a.professional_id = $3) AND ${apptInScope(4)}
+        GROUP BY 1 ORDER BY 1`, [q.from, q.to, q.professionalId ?? null, await unitScope(ctx)]);
     return { days: r.rows };
   });
 
@@ -127,6 +129,7 @@ export function appointmentRoutes(app: FastifyInstance) {
     const startsAt = new Date(b.startsAt), endsAt = new Date(b.endsAt);
     if (endsAt <= startsAt) throw badRequest('O término deve ser depois do início.');
     needOverride(ctx, b.encaixe);
+    await assertBookable(ctx, b.professionalId, b.resourceId);
     await checkRefs(ctx, b.professionalId, b.resourceId, b.patientId);
     try {
       const id = await bookOne(ctx, { ...b, startsAt, endsAt, seriesId: null }, b.encaixe);
@@ -149,6 +152,7 @@ export function appointmentRoutes(app: FastifyInstance) {
     const start = new Date(b.startsAt), end = new Date(b.endsAt);
     if (end <= start) throw badRequest('O término deve ser depois do início.');
     needOverride(ctx, b.encaixe);
+    await assertBookable(ctx, b.professionalId, b.resourceId);
     await checkRefs(ctx, b.professionalId, b.resourceId, b.patientId);
 
     const seriesId = randomUUID();
@@ -190,6 +194,7 @@ export function appointmentRoutes(app: FastifyInstance) {
       startsAt: iso.optional(), endsAt: iso.optional(),
       encaixe: z.boolean().default(false),
     }).parse(ctx.req.body);
+    await assertApptVisible(ctx, id);
     const cur = await ctx.tx.query<{ status: string; price_cents: string; patient_id: string; professional_id: string }>(
       'SELECT status, price_cents, patient_id, professional_id FROM appointments WHERE id = $1 FOR UPDATE', [id]);
     const appt = cur.rows[0];

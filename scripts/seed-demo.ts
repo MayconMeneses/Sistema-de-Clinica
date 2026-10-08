@@ -87,6 +87,12 @@ await inTenant(demo.id, async (c) => {
     await c.query('INSERT INTO users (id, tenant_id, email, name, password_hash, role) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING', [randomUUID(), demo.id, `${slug}@demo.demo`, name, hash, role]);
   }
   const owner = (await c.query<{ id: string }>("SELECT id FROM users WHERE role = 'owner' LIMIT 1")).rows[0]!.id;
+  // Unidade da demonstração: gerente e profissionais vinculados (o gerente só enxerga a agenda das suas unidades).
+  let unit = (await c.query<{ id: string }>('SELECT id FROM units ORDER BY created_at LIMIT 1')).rows[0]?.id;
+  if (!unit) unit = (await c.query<{ id: string }>("INSERT INTO units (tenant_id, name) VALUES ($1,'Unidade Centro') RETURNING id", [demo.id])).rows[0]!.id;
+  await c.query(
+    `INSERT INTO user_units (tenant_id, user_id, unit_id) SELECT $1, u.id, $2 FROM users u
+      WHERE u.role IN ('unit_manager','professional') AND NOT EXISTS (SELECT 1 FROM user_units x WHERE x.user_id = u.id)`, [demo.id, unit]);
   if (!(await c.query('SELECT 1 FROM inventory_items LIMIT 1')).rowCount) {
     for (const [name, sku, unit, min, qty] of [['Luva de procedimento', 'LUV-M', 'cx', 5, 12], ['Resina composta A2', 'RES-A2', 'un', 3, 2], ['Anestésico lidocaína', 'ANE-01', 'un', 10, 25]] as const) {
       const id = randomUUID();
