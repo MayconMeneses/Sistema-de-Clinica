@@ -61,7 +61,10 @@ export function dentalRoutes(app: FastifyInstance) {
   clinicRoute(app, 'GET', '/api/patients/:id/dental-plan', { ...CAP, perm: 'dental.read' }, async (ctx) => {
     const { id } = idParam.parse(ctx.req.params);
     const r = await ctx.tx.query(
-      `SELECT id, tooth, procedure, price_cents::text AS "priceCents", priority, status, created_at AS "createdAt", completed_at AS "completedAt"
+      `SELECT id, tooth, procedure, price_cents::text AS "priceCents", priority, status, created_at AS "createdAt", completed_at AS "completedAt",
+              COALESCE((SELECT json_agg(json_build_object('name', ii.name, 'unit', ii.unit, 'quantity', c.quantity::text, 'status', c.status) ORDER BY ii.name)
+                          FROM procedure_consumptions c JOIN inventory_items ii ON ii.tenant_id = c.tenant_id AND ii.id = c.item_id
+                         WHERE c.plan_item_id = dental_plan_items.id), '[]'::json) AS supplies
          FROM dental_plan_items WHERE patient_id = ANY($1::uuid[]) ORDER BY priority, created_at`, [await family(ctx.tx, id)]);
     const open = r.rows.filter((x) => x.status === 'planned' || x.status === 'in_progress');
     const totalOpen = open.reduce((acc, x) => acc + BigInt(x.priceCents), 0n);
@@ -111,7 +114,7 @@ export function dentalRoutes(app: FastifyInstance) {
         charged = (ins.rowCount ?? 0) > 0;
       }
       const supplies = b.status === 'done' && ctx.entitlements.has('inventory.core')
-        ? await consumeProcedureSupplies(ctx.tx, ctx.tenantId, ctx.user.id, id, item.procedure) : { consumed: [], shortages: [] };
+        ? await consumeProcedureSupplies(ctx.tx, ctx.tenantId, ctx.user.id, id, item.procedure) : { consumed: [], shortages: [], consumedDetails: [] };
       await audit(ctx, `dental.plan_item.${b.status}`, 'dental_plan_item', id, { charged, consumed: supplies.consumed.length, shortages: supplies.shortages.length });
       return { ok: true, charged, supplies };
     } catch (e) {

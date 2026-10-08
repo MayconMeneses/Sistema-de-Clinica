@@ -6,7 +6,8 @@ import { Badge, Button, Empty, ErrorBox, Select, Sheet, Spinner, TextInput, useL
 
 interface Finding { tooth: string; surface: string | null; condition: string; note: string | null; createdAt: string }
 interface HistoryEvent { id: string; surface: string | null; condition: string; note: string | null; createdAt: string; authorName: string }
-interface PlanItem { id: string; tooth: string | null; procedure: string; priceCents: string; priority: number; status: string; completedAt: string | null }
+interface PlanSupply { name: string; unit: string; quantity: string; status: 'consumed' | 'shortage' | 'resolved' }
+interface PlanItem { supplies?: PlanSupply[]; id: string; tooth: string | null; procedure: string; priceCents: string; priority: number; status: string; completedAt: string | null }
 
 const COND: Record<string, { label: string; abbr: string }> = {
   healthy: { label: 'Hígido', abbr: 'H' }, caries: { label: 'Cárie', abbr: 'C' }, restoration: { label: 'Restauração', abbr: 'R' },
@@ -166,9 +167,12 @@ function TreatmentPlan({ patientId, canWrite, hasFinance, teeth, reloadKey }: { 
   async function move(item: PlanItem, status: string, charge = false) {
     if (status === 'cancelled' && !window.confirm(`Cancelar "${item.procedure}"? Esta ação não pode ser desfeita.`)) return;
     try {
-      const r = await patch<{ charged: boolean; supplies?: { consumed: string[]; shortages: string[] } }>(`/api/dental-plan/${item.id}`, { status, charge });
-      toast(r.charged ? 'Procedimento concluído e cobrança gerada.' : 'Plano atualizado.'); plan.reload();
-      if (r.supplies?.shortages.length) toast(`Sem saldo para dar baixa em: ${r.supplies.shortages.join(', ')}. Veja em Estoque › Kits.`, 'bad');
+      const r = await patch<{ charged: boolean; supplies?: { consumed: string[]; shortages: string[]; consumedDetails?: { name: string; quantity: string; unit: string }[] } }>(`/api/dental-plan/${item.id}`, { status, charge });
+      const qty = (d: { name: string; quantity: string; unit: string }) => `${d.name} ${Number(d.quantity).toLocaleString('pt-BR', { maximumFractionDigits: 3 })} ${d.unit}`;
+      const parts = [r.charged ? 'Procedimento concluído e cobrança gerada.' : 'Plano atualizado.'];
+      if (r.supplies?.consumedDetails?.length) parts.push(`Baixa no estoque: ${r.supplies.consumedDetails.map(qty).join(', ')}.`);
+      if (r.supplies?.shortages.length) parts.push(`Sem saldo para dar baixa em: ${r.supplies.shortages.join(', ')} (veja Estoque › Kits).`);
+      toast(parts.join(' '), r.supplies?.shortages.length ? 'bad' : undefined); plan.reload();
     } catch (err) { toast((err as Error).message, 'bad'); }
   }
 
@@ -187,6 +191,9 @@ function TreatmentPlan({ patientId, canWrite, hasFinance, teeth, reloadKey }: { 
           <li key={i.id} className="list-item stack">
             <div className="row between"><strong>{i.procedure}{i.tooth ? ` · dente ${i.tooth}` : ''}</strong><Badge tone={STATUS[i.status]!.tone}>{STATUS[i.status]!.label}</Badge></div>
             <span className="small muted">Prioridade {PRIORITY[i.priority]} · {Number(i.priceCents) > 0 ? brl(i.priceCents) : 'sem valor'}</span>
+            {!!i.supplies?.length && (
+              <span className="small muted">Estoque: {i.supplies.map((s) => `${s.name} ${Number(s.quantity).toLocaleString('pt-BR', { maximumFractionDigits: 3 })} ${s.unit} ${s.status === 'consumed' ? '(baixado)' : s.status === 'shortage' ? '(sem saldo, pendente)' : '(encerrado sem baixa)'}`).join(' · ')}</span>
+            )}
             {canWrite && (i.status === 'planned' || i.status === 'in_progress') && (
               <div className="row">
                 {i.status === 'planned' && <Button variant="secondary" className="btn-sm" onClick={() => move(i, 'in_progress')}>Iniciar</Button>}

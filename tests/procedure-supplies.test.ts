@@ -35,14 +35,20 @@ describe('consumo de estoque ligado ao procedimento', () => {
     const a = await plan('RESTAURAÇÃO');
     const r = await dr.c.patch(`/api/dental-plan/${a}`, { status: 'done' });
     expect(r.statusCode).toBe(200);
-    expect(r.json().supplies).toEqual({ consumed: ['Luvas', 'Resina'], shortages: [] });
+    expect(r.json().supplies).toMatchObject({ consumed: ['Luvas', 'Resina'], shortages: [] });
+    expect(r.json().supplies.consumedDetails).toEqual([{ name: 'Luvas', quantity: '4.000', unit: 'un' }, { name: 'Resina', quantity: '1.500', unit: 'un' }]);
+    // o plano mostra o que foi baixado e o histórico do item diz de qual procedimento
+    const planItem = ((await dr.c.get(`/api/patients/${(await dr.c.get('/api/patients')).json().patients[0].id}/dental-plan`)).json().items as { id: string; supplies: { name: string; status: string }[] }[]).find((i) => i.id === a)!;
+    expect(planItem.supplies.map((x) => `${x.name}:${x.status}`)).toEqual(['Luvas:consumed', 'Resina:consumed']);
+    const hist = (await t.owner.get(`/api/inventory/items/${resina}/movements`)).json().movements as { reason: string }[];
+    expect(hist.some((m) => m.reason === 'Consumo em procedimento: RESTAURAÇÃO')).toBe(true);
     expect(await balance(t, resina)).toBe(8.5);
     expect(await balance(t, luva)).toBe(96);
     expect((await dr.c.patch(`/api/dental-plan/${a}`, { status: 'done' })).statusCode).toBe(409); // concluído é definitivo: sem segunda baixa
     expect(await balance(t, resina)).toBe(8.5);
     // procedimento sem kit não mexe no estoque
     const b = await plan('Limpeza');
-    expect((await dr.c.patch(`/api/dental-plan/${b}`, { status: 'done' })).json().supplies).toEqual({ consumed: [], shortages: [] });
+    expect((await dr.c.patch(`/api/dental-plan/${b}`, { status: 'done' })).json().supplies).toMatchObject({ consumed: [], shortages: [] });
     // cancelar não consome
     const c = await plan('Restauração');
     expect((await dr.c.patch(`/api/dental-plan/${c}`, { status: 'cancelled' })).statusCode).toBe(200);

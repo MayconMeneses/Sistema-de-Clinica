@@ -3,7 +3,7 @@
  *   E2E_URL=http://127.0.0.1:3100 E2E_SHOTS=/caminho npm run e2e
  * Falha em: erro de console/CSP, requisição 5xx, rolagem horizontal no celular.
  */
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { chromium, type Page } from 'playwright-core';
 import pg from 'pg';
 import { totpAt } from '../src/server/auth/totp.js';
@@ -803,6 +803,89 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
   await mp.screenshot({ path: `${SHOTS}/12-master-integracoes-mobile.png`, fullPage: true });
   await m.close();
   await ctx.close();
+}
+
+// ---------------- NOVOS FLUXOS: kits de estoque, documentos do paciente e recuperação de senha ----------------
+{
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, locale: 'pt-BR', acceptDownloads: true });
+  const page = await ctx.newPage();
+  watch(page, 'novos-fluxos');
+  await page.goto(BASE);
+  await page.getByLabel('Identificador da clínica').fill('demo');
+  await page.getByLabel('E-mail').fill('dono@demo.demo');
+  await page.getByLabel('Senha').fill(PW);
+  await page.getByRole('button', { name: 'Entrar' }).click();
+  await page.getByRole('navigation', { name: 'Principal' }).waitFor();
+
+  // Kit de materiais de um procedimento
+  await go(page, 'Estoque');
+  await page.getByRole('button', { name: 'Kits', exact: true }).click();
+  const kit = page.getByRole('dialog');
+  await kit.getByLabel('Procedimento', { exact: true }).fill('Restauração E2E');
+  await kit.getByLabel('Material').selectOption({ index: 1 });
+  await kit.getByLabel('Quantidade por procedimento').fill('1,5');
+  await kit.getByRole('button', { name: 'Salvar no kit' }).click();
+  await kit.getByRole('heading', { name: 'restauração e2e' }).waitFor();
+  must(true, 'kits: material cadastrado para o procedimento');
+  await page.screenshot({ path: `${SHOTS}/13-kits-desktop.png` });
+  await page.getByRole('button', { name: 'Fechar' }).click();
+
+  // Documentos do paciente: anexar, listar, baixar
+  await go(page, 'Pacientes');
+  await page.getByRole('link', { name: /Beatriz Lima/ }).click();
+  await page.getByRole('tab', { name: 'Documentos' }).click();
+  await page.locator('#doc-file').setInputFiles({ name: 'exame-e2e.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\nexame e2e\n%%EOF') });
+  await page.getByLabel('Título', { exact: true }).fill('Exame E2E');
+  await page.getByRole('button', { name: 'Anexar', exact: true }).click();
+  await page.getByText('Documento anexado.').waitFor();
+  await page.getByText('Exame E2E').first().waitFor();
+  must(true, 'documentos: PDF anexado aparece na lista');
+  const dl = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Baixar' }).first().click();
+  must((await dl).suggestedFilename() === 'exame-e2e.pdf', 'documentos: download devolve o arquivo com o nome original');
+  await page.screenshot({ path: `${SHOTS}/14-documentos-desktop.png` });
+  await ctx.close();
+
+  // Esqueci minha senha: o link aparece no log do worker (modo sandbox)
+  const logs = (process.env.E2E_WORKER_LOG ?? '/tmp/worker.log,/tmp/srv.log').split(',').filter((f) => existsSync(f));
+  if (logs.length) {
+    const rctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, locale: 'pt-BR' });
+    const rp = await rctx.newPage();
+    watch(rp, 'recuperar-senha');
+    await rp.goto(BASE);
+    await rp.getByRole('link', { name: 'Esqueci minha senha' }).click();
+    await rp.getByRole('heading', { name: 'Esqueci minha senha' }).waitFor();
+    await rp.waitForLoadState('networkidle');
+    await rp.getByLabel('Identificador da clínica').fill('demo');
+    await rp.getByLabel('E-mail cadastrado').fill('fabiofinanceiro@demo.demo');
+    await rp.getByRole('button', { name: 'Enviar link de redefinição' }).click();
+    await rp.getByText(/Se o e-mail estiver cadastrado/).waitFor({ timeout: 8000 }).catch(async () => { console.log('DEBUG página:', (await rp.locator('main').innerText()).replace(/\n+/g, ' | ')); await rp.screenshot({ path: '/tmp/forgot-fail.png' }); throw new Error('mensagem de link não apareceu'); });
+    must(true, 'recuperação de senha: resposta neutra ao pedir o link');
+    let link = '';
+    for (let i = 0; i < 40 && !link; i++) {
+      const found = logs.flatMap((f) => readFileSync(f, 'utf8').match(/\[sandbox e-mail\][^\n]*?(http\S+)/g) ?? []);
+      link = found?.at(-1)?.match(/(http\S+)/)?.[1] ?? '';
+      if (!link) await new Promise((r) => setTimeout(r, 500));
+    }
+    must(!!link, 'recuperação de senha: o worker entregou o link (sandbox)');
+    if (link) {
+      await rp.goto(link.replace(/^https?:\/\/[^/]+/, BASE));
+      await rp.getByLabel('Nova senha', { exact: true }).fill(PW);
+      await rp.getByLabel('Repita a nova senha').fill(PW);
+      await rp.getByRole('button', { name: 'Salvar nova senha' }).click();
+      await rp.getByText(/Senha alterada/).waitFor();
+      must(true, 'recuperação de senha: nova senha salva');
+      await rp.screenshot({ path: `${SHOTS}/15-senha-redefinida-mobile.png` });
+      await rp.goto(BASE);
+      await rp.getByLabel('Identificador da clínica').fill('demo');
+      await rp.getByLabel('E-mail').fill('fabiofinanceiro@demo.demo');
+      await rp.getByLabel('Senha').fill(PW);
+      await rp.getByRole('button', { name: 'Entrar' }).click();
+      await rp.getByRole('navigation', { name: 'Principal' }).waitFor();
+      must(true, 'recuperação de senha: login com a nova senha funciona');
+    }
+    await rctx.close();
+  } else step('recuperação de senha: pulado (sem log do worker)');
 }
 
 await browser.close();
