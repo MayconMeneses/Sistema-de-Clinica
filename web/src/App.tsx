@@ -3,6 +3,7 @@ import { get, type Me } from './api';
 import { ToastProvider, useHash } from './ui';
 import { ClinicShell } from './pages/ClinicShell';
 import { Login } from './pages/Login';
+import { ForgotPassword, ResetPassword } from './pages/PasswordRecovery';
 import { MasterApp } from './pages/Master';
 
 function ClinicApp({ hash }: { hash: string }) {
@@ -16,6 +17,8 @@ function ClinicApp({ hash }: { hash: string }) {
   }, [refresh]);
 
   if (me === undefined) return <main className="auth"><p className="loading" role="status">Carregando…</p></main>;
+  if (me === null && hash.startsWith('/redefinir')) return <ResetPassword hash={hash} />;
+  if (me === null && hash.startsWith('/esqueci')) return <ForgotPassword />;
   if (me === null) return <Login mode="clinic" onDone={refresh} />;
   return <ClinicShell me={me} hash={hash} onLogout={() => { sessionStorage.clear(); setMe(null); }} onRefresh={refresh} />;
 }

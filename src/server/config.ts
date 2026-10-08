@@ -26,7 +26,11 @@ if (isProd && process.env.DEMO_SKIP_MASTER_MFA === '1') throw new Error('DEMO_SK
 export const masterMfaRequired = () => process.env.DEMO_SKIP_MASTER_MFA !== '1';
 
 export const config = {
+  /** Endereço público do sistema, usado nos links enviados por e-mail (nunca vem do cabeçalho da requisição). */
+  publicUrl: (process.env.PUBLIC_BASE_URL || 'http://localhost:3000').replace(/\/+$/, ''),
   dataEncryptionKey: secretKey(),
+  /** Chaves antigas (separadas por vírgula) aceitas só para DECIFRAR durante uma rotação (veja docs/OPERACAO-CHAVES.md). */
+  previousEncryptionKeys: (process.env.DATA_ENCRYPTION_KEY_PREVIOUS ?? '').split(',').map((k) => k.trim()).filter(Boolean),
   isProd,
   port: Number(process.env.PORT ?? 3000),
   host: process.env.HOST ?? '0.0.0.0',

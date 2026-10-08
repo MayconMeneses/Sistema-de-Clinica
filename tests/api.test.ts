@@ -320,7 +320,7 @@ describe('MFA, anti-replay e segredos', () => {
   it('segredos TOTP ficam cifrados em repouso (Master e clínica)', async () => {
     const m = await master();
     const row = await platformPool.query('SELECT totp_secret FROM platform_users WHERE email = $1', [m.email]);
-    expect(row.rows[0].totp_secret).toMatch(/^v1:/);
+    expect(row.rows[0].totp_secret).toMatch(/^v2:/);
     expect(row.rows[0].totp_secret).not.toContain(m.secret);
   });
 

@@ -14,7 +14,8 @@ Legenda: ✅ IMPLEMENTADO e testado localmente · 🟡 PARCIAL · ⬜ PLANEJADO
 - ✅ Auditoria (clínica e plataforma) em ações sensíveis
 - 🟡 Capabilities: faltam addons, quotas, feature flags, assinatura/inadimplência
 - ✅ MFA (TOTP) para usuários da clínica; segredos cifrados em repouso; limitador de tentativas no banco
-- ⬜ Recuperação de senha e convite por e-mail (precisa de provedor), gestão de dispositivos, rotação da chave de cifragem
+- ✅ Recuperação de senha por e-mail (link de uso único, 30 min, derruba sessões; em sandbox o link aparece no log do worker; envio real depende do provedor de e-mail)
+- ⬜ Convite de usuário por e-mail, gestão de dispositivos (rotação da chave de cifragem: ✅ ver docs/OPERACAO-CHAVES.md)
 - ⬜ Acesso de suporte temporário (justificado, limitado, revogável)
 - ✅ Backup + restore em banco temporário com validação (`npm run drill`), reprova ao detectar perda
 - 🟡 CI escrito (`.github/workflows/ci.yml`), **nunca executado no GitHub**
