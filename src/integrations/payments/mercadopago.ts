@@ -8,7 +8,7 @@ import type { CreateInput, LinkCreated, PaymentGateway, PixCreated, ProviderPaym
  * isso exige credenciais da clínica (use primeiro as credenciais de TESTE do próprio Mercado Pago) — ver docs/PAGAMENTOS.md.
  *
  * Endpoints usados: POST /v1/payments (Pix), POST /checkout/preferences (link), GET /v1/payments/{id},
- * GET /v1/payments/search?external_reference=…, PUT /v1/payments/{id} (cancelar), POST /v1/payments/{id}/refunds (estorno total).
+ * GET /v1/payments/search?external_reference=…, PUT /v1/payments/{id} (cancelar), POST /v1/payments/{id}/refunds (estorno total ou parcial).
  */
 export class MercadoPagoGateway implements PaymentGateway {
   readonly provider = 'mercadopago' as const;
@@ -72,9 +72,10 @@ export class MercadoPagoGateway implements PaymentGateway {
     await httpJson({ url: `${this.apiBase}/v1/payments/${encodeURIComponent(id)}`, method: 'PUT', headers: this.auth(), body: { status: 'cancelled' } });
   }
 
-  async refund(id: string, idempotencyKey: string): Promise<void> {
+  async refund(id: string, idempotencyKey: string, amountCents?: number): Promise<void> {
     await httpJson({
-      url: `${this.apiBase}/v1/payments/${encodeURIComponent(id)}/refunds`, headers: this.auth(), idempotencyKey, idempotencyHeader: 'x-idempotency-key', body: {},
+      url: `${this.apiBase}/v1/payments/${encodeURIComponent(id)}/refunds`, headers: this.auth(), idempotencyKey, idempotencyHeader: 'x-idempotency-key',
+      body: amountCents === undefined ? {} : { amount: Number((amountCents / 100).toFixed(2)) },   // sem `amount` o Mercado Pago devolve o total
     });
   }
 

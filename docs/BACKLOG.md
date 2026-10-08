@@ -59,5 +59,6 @@ Legenda: ✅ IMPLEMENTADO e testado localmente · 🟡 PARCIAL · ⬜ PLANEJADO
 - ✅ **Pagamentos online (Mercado Pago):** Pix e link, confirmação por webhook assinado ou botão Verificar, conciliação com recibo, cancelamento e estorno; credenciais por clínica, cifradas. **Não validado com o Mercado Pago real** (roteiro em `docs/PAGAMENTOS.md`)
 - ✅ Catálogo único de integrações (`src/integrations/catalog.ts`); portas e sandbox de **NFS-e** e **assinatura eletrônica** (adaptadores reais pendentes de decisão/contrato)
 - ✅ Backup cifrado (`scripts/backup-encrypted.sh`) exercitado no CI; **sem agendamento nem destino em nuvem** (dependem do ambiente)
-- ⬜ Pagamentos: estorno parcial, parcelamento, taxas do provedor, conciliação bancária
+- ✅ Pagamentos: estorno parcial (cobrança segue paga até a soma devolvida fechar o valor; cada devolução é um movimento imutável; estorno feito direto no painel do provedor é conciliado)
+- ⬜ Pagamentos: parcelamento, taxas do provedor, conciliação bancária
 - ⬜ Papéis da plataforma (Master), portal do paciente, NFS-e, integrações reais, regulados, IA. Convênios/TISS: bloqueado globalmente.

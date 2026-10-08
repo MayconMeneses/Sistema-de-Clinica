@@ -44,7 +44,13 @@ beforeAll(async () => {
       if (!p) return send(404, { message: 'not found' });
       if (req.method === 'GET') return send(200, fake.forceAmount !== null ? { ...p, transaction_amount: fake.forceAmount } : p);
       if (req.method === 'PUT') { if (p.status === 'approved') return send(400, { message: 'cannot cancel approved' }); p.status = 'cancelled'; return send(200, p); }
-      if (req.method === 'POST' && m[2]) { p.status = 'refunded'; p.transaction_amount_refunded = p.transaction_amount; return send(201, { id: 1 }); }
+      if (req.method === 'POST' && m[2]) {
+        const amount = body.amount ?? (p.transaction_amount - p.transaction_amount_refunded);
+        if (amount <= 0 || amount > p.transaction_amount - p.transaction_amount_refunded + 1e-9) return send(400, { message: 'invalid refund amount' });
+        p.transaction_amount_refunded = Math.round((p.transaction_amount_refunded + amount) * 100) / 100;
+        if (p.transaction_amount_refunded >= p.transaction_amount) p.status = 'refunded';
+        return send(201, { id: 1 });
+      }
     }
     if (req.method === 'GET' && url.pathname === '/v1/payments/search') {
       const ref = url.searchParams.get('external_reference');
@@ -353,5 +359,68 @@ describe('cobrança online com o Mercado Pago (servidor falso)', () => {
     expect((await b.owner.post(`/api/payments/intents/${c.id}/cancel`)).statusCode).toBe(404);
     expect((await b.owner.post(`/api/payments/intents/${c.id}/refund`, { reason: 'Tentativa indevida' })).statusCode).toBe(404);
     expect((await b.owner.post('/api/payments/intents', { patientId: pid, amountCents: 1000, method: 'pix', idempotencyKey: key() })).statusCode).toBe(400); // paciente de outra clínica
+  });
+});
+
+describe('estorno parcial', () => {
+  async function paid(label: string) {
+    const t = await liveClinic(label);
+    const pid = await patient(t);
+    const a = (await newIntent(t, pid)).json();
+    const pa = [...fake.payments.values()].find((x) => x.external_reference === a.id)!;
+    pay(pa);
+    await t.owner.post(`/api/payments/intents/${a.id}/sync`);
+    return { t, pid, a, pa };
+  }
+  const refund = (t: Awaited<ReturnType<typeof liveClinic>>, id: string, body: object) => t.owner.post(`/api/payments/intents/${id}/refund`, { reason: 'Procedimento reduzido', ...body });
+
+  it('devolve parte, mantém a cobrança como paga e só vira estornada quando a soma fecha o valor', async () => {
+    const { t, pid, a, pa } = await paid('payrefpart');
+    const total = Number(a.amountCents);                                                // 15050
+    const base = Number(await balance(t, pid));                                         // o que ainda estava em aberto depois do pagamento
+    fake.calls.length = 0;
+    const r1 = await refund(t, a.id, { amountCents: 5000 });
+    expect(r1.statusCode).toBe(200);
+    expect(r1.json()).toMatchObject({ status: 'approved', refundedCents: '5000', notice: 'Estorno parcial registrado.' });
+    const call = fake.calls.find((x) => x.url === `/v1/payments/${pa.id}/refunds`)!;
+    expect(call.body).toEqual({ amount: 50 });                                          // em reais, só a parte
+    expect(call.headers['x-idempotency-key']).toBe(`refund-${a.id}-0-5000`);
+    expect(await balance(t, pid)).toBe(String(base + 5000));                           // devolvido vira saldo a receber de novo
+
+    // mais que o restante: recusa; segundo parcial; o resto fecha
+    expect((await refund(t, a.id, { amountCents: total })).statusCode).toBe(400);
+    expect((await refund(t, a.id, { amountCents: 2000 })).json()).toMatchObject({ status: 'approved', refundedCents: '7000' });
+    const last = await refund(t, a.id, {});                                             // sem valor = o que resta
+    expect(last.json()).toMatchObject({ status: 'refunded', refundedCents: String(total) });
+    expect(await balance(t, pid)).toBe(String(base + total));
+    const movs = (await t.owner.get(`/api/patients/${pid}/finance`)).json().movements as { kind: string; amountCents: string }[];
+    expect(movs.filter((m) => m.kind === 'refund').map((m) => m.amountCents).sort()).toEqual(['2000', '5000', String(total - 7000)].sort());
+    expect((await refund(t, a.id, { amountCents: 100 })).statusCode).toBe(409);        // já estornada por inteiro
+  });
+
+  it('repetir o pedido ou sincronizar não devolve duas vezes; estorno feito direto no painel do provedor é conciliado', async () => {
+    const { t, pid, a, pa } = await paid('payrefsync');
+    const base = Number(await balance(t, pid));
+    await refund(t, a.id, { amountCents: 3000 });
+    await t.owner.post(`/api/payments/intents/${a.id}/sync`);
+    await t.owner.post(`/api/payments/intents/${a.id}/sync`);
+    expect(await balance(t, pid)).toBe(String(base + 3000));
+    // a clínica devolveu mais 4000 direto no painel do Mercado Pago
+    pa.transaction_amount_refunded = 70; // R$ 30 + R$ 40
+    const s = await t.owner.post(`/api/payments/intents/${a.id}/sync`);
+    expect(s.json()).toMatchObject({ status: 'approved', refundedCents: '7000' });
+    expect(await balance(t, pid)).toBe(String(base + 7000));
+    const rows = await withTenant(appPool, t.id, (tx) => tx.query("SELECT amount_cents::text, cumulative_cents::text FROM payment_refunds WHERE intent_id = $1 ORDER BY cumulative_cents", [a.id]));
+    expect(rows.rows).toEqual([{ amount_cents: '3000', cumulative_cents: '3000' }, { amount_cents: '4000', cumulative_cents: '7000' }]);
+  });
+
+  it('banco: valor devolvido nunca diminui nem passa do pago; histórico de devoluções é imutável', async () => {
+    const { t, a } = await paid('payrefdb');
+    await refund(t, a.id, { amountCents: 1000 });
+    const run = (sql: string) => withTenant(appPool, t.id, (tx) => tx.query(sql));
+    await expect(run('UPDATE payment_intents SET refunded_cents = 0')).rejects.toThrow(/não pode diminuir/);
+    await expect(run('UPDATE payment_intents SET refunded_cents = amount_cents + 1')).rejects.toThrow(/refunded_range|check/i);
+    await expect(run('UPDATE payment_refunds SET amount_cents = 1')).rejects.toThrow(/permission denied|append-only/);
+    await expect(run('DELETE FROM payment_refunds')).rejects.toThrow(/permission denied|append-only/);
   });
 });

@@ -6,7 +6,7 @@
 - Gera **Pix** (QR Code e “copia e cola”) ou **link de pagamento** (cartão, Pix ou saldo) para um paciente, na aba Financeiro da ficha.
 - Confirma o pagamento **sozinho** (webhook do Mercado Pago) ou pelo botão **Verificar**. A tela do Pix também confere a cada 5 segundos.
 - Ao confirmar, lança **um** movimento de pagamento no financeiro (imutável, com **recibo numerado**) e o saldo do paciente muda como em qualquer pagamento.
-- **Estorno** (total) pelo sistema: pede ao Mercado Pago e lança o estorno. Estorno feito direto no painel do Mercado Pago também chega pelo webhook e vira um movimento de estorno.
+- **Estorno** (total ou parcial) pelo sistema: pede ao Mercado Pago e lança o estorno. Estorno feito direto no painel do Mercado Pago também chega pelo webhook e vira um movimento de estorno.
 - **Cancelar** cobrança pendente. Se o paciente pagou no meio do caminho, o pagamento prevalece e é registrado.
 
 ## Como funciona por dentro (segurança e dinheiro)
@@ -32,7 +32,7 @@
 Se algo no formato da API divergir, o ajuste fica concentrado em `src/integrations/payments/mercadopago.ts`.
 
 ## Limitações conhecidas (honestas)
-- Só **estorno total**. Estorno parcial feito no painel do Mercado Pago **não** é refletido (o status continua “Pago”).
+- Estorno parcial: veja a seção “Estorno parcial” abaixo.
 - **Chargeback** é tratado como estorno.
 - Sem cartão digitado no sistema (por segurança e escopo PCI): só link e Pix.
 - Sem parcelamento configurável, sem repasse/conciliação bancária, sem NFS-e (ver `docs/INTEGRACOES.md`).
@@ -41,3 +41,12 @@ Se algo no formato da API divergir, o ajuste fica concentrado em `src/integratio
 
 ## Código
 `src/integrations/payments/` (porta, adaptador Mercado Pago, sandbox, verificação de assinatura) · `src/modules/payments/service.ts` (conciliação) · `src/server/routes/payments.ts` e `routes/webhooks.ts` · `migrations/0014_payments.sql` · testes em `tests/payments.test.ts`.
+
+## Estorno parcial
+
+- **Estornar** aceita um valor (opcional). Sem valor, devolve tudo que resta; com valor, devolve só aquela parte. Pode ser repetido até a soma devolvida igualar o valor pago.
+- Enquanto sobrar valor, a cobrança continua **Paga** (com a etiqueta "Estornado R$ x"); ao completar o valor ela vira **Estornada**.
+- Cada devolução gera um movimento de estorno imutável no financeiro do paciente e uma linha em `payment_refunds`; o saldo em aberto do paciente volta a subir na mesma medida.
+- A chave de idempotência enviada ao Mercado Pago depende do que já foi devolvido (`refund-<id>` no total; `refund-<id>-<já devolvido>-<valor>` no parcial): repetir o mesmo clique não devolve duas vezes.
+- Devolução feita direto no painel do Mercado Pago é conciliada ao verificar/receber a notificação: o sistema lança só a diferença.
+- Continua **não validado com o Mercado Pago real** (o parcial usa `POST /v1/payments/{id}/refunds` com `amount`, conforme a documentação; teste com credenciais de teste antes de usar).

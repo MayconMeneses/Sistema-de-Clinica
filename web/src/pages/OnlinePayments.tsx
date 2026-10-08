@@ -7,7 +7,7 @@ interface Intent {
   id: string; patientId: string; patientName: string; amountCents: string; description: string; method: 'pix' | 'link';
   status: 'pending' | 'approved' | 'rejected' | 'cancelled' | 'expired' | 'refunded'; provider: 'mercadopago' | 'sandbox';
   checkoutUrl: string | null; pixQrCode: string | null; pixQrBase64: string | null; expiresAt: string; expired: boolean; createdAt: string;
-  paidMethod: 'pix' | 'card' | null; receiptNumber: number | null; paymentMovementId: string | null; notice?: string;
+  paidMethod: 'pix' | 'card' | null; receiptNumber: number | null; paymentMovementId: string | null; refundedCents?: string; notice?: string;
 }
 const STATUS: Record<Intent['status'], { label: string; tone: 'neutral' | 'info' | 'ok' | 'bad' | 'warn' }> = {
   pending: { label: 'Aguardando pagamento', tone: 'warn' }, approved: { label: 'Pago', tone: 'ok' }, rejected: { label: 'Recusado', tone: 'bad' },
@@ -29,6 +29,7 @@ export function OnlineCharges({ patientId, balanceCents, canCharge, canRefund, o
   const [busy, setBusy] = useState<string | null>(null);
   const [key, setKey] = useState(() => crypto.randomUUID());
   const [refunding, setRefunding] = useState<Intent | null>(null);
+  const [refundAmount, setRefundAmount] = useState('');
   const [reason, setReason] = useState('');
 
   const refresh = () => { list.reload(); onChanged(); };
@@ -64,8 +65,10 @@ export function OnlineCharges({ patientId, balanceCents, canCharge, canRefund, o
     if (!refunding) return;
     setBusy('refund'); setError(null);
     try {
-      const r = await api<Intent>('POST', `/api/payments/intents/${refunding.id}/refund`, { reason });
-      toast(r.notice ?? 'Estorno registrado.'); setRefunding(null); setReason(''); refresh();
+      const cents = refundAmount.trim() ? parseMoney(refundAmount) : undefined;
+      if (cents === null) { setError('Valor inválido. Use o formato 50,00 ou deixe vazio para devolver tudo que resta.'); setBusy(null); return; }
+      const r = await api<Intent>('POST', `/api/payments/intents/${refunding.id}/refund`, { reason, amountCents: cents });
+      toast(r.notice ?? 'Estorno registrado.'); setRefunding(null); setReason(''); setRefundAmount(''); refresh();
     } catch (err) { setError((err as Error).message); } finally { setBusy(null); }
   }
 
@@ -92,7 +95,7 @@ export function OnlineCharges({ patientId, balanceCents, canCharge, canRefund, o
           const st = i.expired ? { label: 'Expirada', tone: 'neutral' as const } : STATUS[i.status];
           return (
             <li key={i.id} className="list-item stack">
-              <div className="row between"><strong>{brl(i.amountCents)} · {i.method === 'pix' ? 'Pix' : 'Link de pagamento'}</strong><Badge tone={st.tone}>{st.label}</Badge></div>
+              <div className="row between"><strong>{brl(i.amountCents)} · {i.method === 'pix' ? 'Pix' : 'Link de pagamento'}</strong><span className="row">{i.status === 'approved' && Number(i.refundedCents ?? 0) > 0 && <Badge tone="info">Estornado {brl(i.refundedCents!)}</Badge>}<Badge tone={st.tone}>{st.label}</Badge></span></div>
               <span className="small muted">{dateTimeOf(i.createdAt)} · {i.description}{i.provider === 'sandbox' ? ' · modo de teste' : ''}{i.receiptNumber ? ` · recibo nº ${i.receiptNumber}` : ''}</span>
               <div className="row">
                 {i.status === 'pending' && <Button variant="secondary" className="btn-sm" onClick={() => setShown(i)}>{i.method === 'pix' ? 'Ver Pix' : 'Ver link'}</Button>}
@@ -100,7 +103,7 @@ export function OnlineCharges({ patientId, balanceCents, canCharge, canRefund, o
                 {canCharge && i.status === 'pending' && i.provider === 'sandbox' && <Button variant="secondary" className="btn-sm" busy={busy === i.id + 'sandbox-approve'} onClick={() => act(i, 'sandbox-approve')}>Simular pagamento (teste)</Button>}
                 {canCharge && i.status === 'pending' && <Button variant="ghost" className="btn-sm" onClick={() => act(i, 'cancel')}>Cancelar</Button>}
                 {i.status === 'approved' && <a className="btn btn-secondary btn-sm" href={`#/recibo/${i.paymentMovementId ?? ''}`}>Ver recibo</a>}
-                {canRefund && i.status === 'approved' && <Button variant="danger" className="btn-sm" onClick={() => { setReason(''); setError(null); setRefunding(i); }}>Estornar</Button>}
+                {canRefund && i.status === 'approved' && <Button variant="danger" className="btn-sm" onClick={() => { setReason(''); setRefundAmount(''); setError(null); setRefunding(i); }}>Estornar</Button>}
               </div>
             </li>
           );
@@ -139,10 +142,15 @@ export function OnlineCharges({ patientId, balanceCents, canCharge, canRefund, o
 
       <Sheet open={refunding !== null} title="Estornar pagamento online" onClose={() => setRefunding(null)}>
         <form onSubmit={refund} noValidate>
-          {refunding && <p>O valor de <strong>{brl(refunding.amountCents)}</strong> será devolvido ao pagador pelo Mercado Pago e o estorno será lançado no financeiro.</p>}
+          {refunding && (
+            <>
+              <p>Pago: <strong>{brl(refunding.amountCents)}</strong>{Number(refunding.refundedCents ?? 0) > 0 ? ` · já devolvido ${brl(refunding.refundedCents!)}` : ''}. Ainda dá para devolver <strong>{brl(String(BigInt(refunding.amountCents) - BigInt(refunding.refundedCents ?? '0')))}</strong>; a devolução é feita pelo Mercado Pago e lançada no financeiro.</p>
+              <TextInput label="Valor a devolver (R$, opcional)" value={refundAmount} onChange={setRefundAmount} inputMode="decimal" hint="Deixe vazio para devolver tudo que resta. Preencha para um estorno parcial." />
+            </>
+          )}
           <TextInput label="Motivo do estorno" value={reason} onChange={setReason} />
           {error && <p className="field-msg error" role="alert">{error}</p>}
-          <Button type="submit" variant="danger" busy={busy === 'refund'} className="btn-block">Estornar</Button>
+          <Button type="submit" variant="danger" busy={busy === 'refund'} className="btn-block">{refundAmount.trim() ? 'Estornar parte' : 'Estornar tudo que resta'}</Button>
         </form>
       </Sheet>
     </section>
