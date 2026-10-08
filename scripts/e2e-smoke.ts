@@ -351,6 +351,20 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
   await page.screenshot({ path: `${SHOTS}/09b-estoque-lotes-mobile.png` });
   await page.getByRole('button', { name: 'Fechar' }).click();
 
+  // Inventário por contagem: conta um item, conclui e o saldo é ajustado
+  await page.getByRole('button', { name: 'Inventário', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Iniciar inventário' }).click();
+  await page.getByText('Inventário iniciado.').waitFor();
+  const linha = page.getByRole('dialog').getByRole('listitem').filter({ hasText: itemName });
+  await linha.getByLabel(/^Contado/).fill('10');
+  await linha.getByRole('button', { name: 'Registrar' }).click();
+  await linha.getByText(/Confere|\+|−|-/).first().waitFor();
+  await page.getByRole('dialog').getByRole('button', { name: 'Concluir e ajustar o estoque' }).click();
+  await page.getByText(/Inventário concluído/).waitFor();
+  must(true, 'estoque: inventário por contagem conta um item e conclui com ajuste');
+  await page.getByRole('button', { name: 'Fechar', exact: true }).click();
+  await row.getByText('10 un').first().waitFor();
+
   // CRM: lead → contatado → anotação → conversão em paciente
   const leadName = `Lead E2E ${Date.now()}`;
   await go(page, 'CRM');

@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { audit, clinicRoute } from '../context.js';
-import { badRequest, conflict, mapDbError, notFound } from '../http.js';
+import { badRequest, conflict, mapDbError, notFound, type Tx } from '../http.js';
 
 const CAP = { cap: 'inventory.core' } as const;
 const idParam = z.object({ id: z.string().uuid() });
@@ -186,4 +186,131 @@ export function inventoryRoutes(app: FastifyInstance) {
         WHERE m.item_id = $1 ORDER BY m.created_at DESC LIMIT 100`, [id]);
     return { item: item.rows[0], movements: r.rows };
   });
+
+  // ------------------------------------------------------------ inventário (contagem)
+  // Uma contagem aberta por vez. O saldo de cada item é fotografado no instante em que ele é contado; ao concluir, a diferença
+  // (contado − saldo no instante da contagem) vira ajuste no livro, e o que se movimentou depois da contagem é preservado.
+  const countRow = `SELECT c.id, c.title, c.status, c.note, c.created_at AS "createdAt", c.finished_at AS "finishedAt", u.name AS "createdByName",
+      (SELECT COUNT(*)::int FROM inventory_count_lines l WHERE l.count_id = c.id) AS "lineCount",
+      (SELECT COUNT(*)::int FROM inventory_count_lines l WHERE l.count_id = c.id AND l.counted IS NOT NULL) AS "countedCount"
+    FROM inventory_counts c LEFT JOIN users u ON u.tenant_id = c.tenant_id AND u.id = c.created_by`;
+
+  clinicRoute(app, 'GET', '/api/inventory/counts', { ...CAP, perm: 'inventory.read' }, async (ctx) => {
+    const r = await ctx.tx.query(`${countRow} ORDER BY c.created_at DESC LIMIT 30`);
+    return { counts: r.rows };
+  });
+
+  clinicRoute(app, 'POST', '/api/inventory/counts', { ...CAP, perm: 'inventory.write' }, async (ctx) => {
+    const b = z.object({ title: z.string().trim().min(2).max(120).optional(), itemIds: z.array(z.string().uuid()).max(500).optional() }).parse(ctx.req.body);
+    const title = b.title ?? `Inventário de ${new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`;
+    try {
+      const c = await ctx.tx.query<{ id: string }>('INSERT INTO inventory_counts (tenant_id, title, created_by) VALUES ($1,$2,$3) RETURNING id', [ctx.tenantId, title, ctx.user.id]);
+      const id = c.rows[0]!.id;
+      const ins = await ctx.tx.query(
+        `INSERT INTO inventory_count_lines (tenant_id, count_id, item_id) SELECT $1, $2, i.id FROM inventory_items i WHERE i.active AND ($3::uuid[] IS NULL OR i.id = ANY($3::uuid[]))`,
+        [ctx.tenantId, id, b.itemIds ?? null]);
+      if (!ins.rowCount) throw badRequest('Não há itens ativos para contar.');
+      await audit(ctx, 'inventory.count.start', 'inventory_count', id, { items: ins.rowCount });
+      return { id, items: ins.rowCount };
+    } catch (e) {
+      if ((e as { code?: string }).code === '23505') throw conflict('Já existe um inventário em andamento. Conclua ou cancele antes de iniciar outro.');
+      if ((e as { status?: number }).status) throw e;
+      return mapDbError(e);
+    }
+  });
+
+  clinicRoute(app, 'GET', '/api/inventory/counts/:id', { ...CAP, perm: 'inventory.read' }, async (ctx) => {
+    const { id } = idParam.parse(ctx.req.params);
+    const c = await ctx.tx.query(`${countRow} WHERE c.id = $1`, [id]);
+    if (!c.rows[0]) throw notFound('Inventário não encontrado.');
+    const lines = await ctx.tx.query(
+      `SELECT l.item_id AS "itemId", i.name, i.sku, i.unit, l.counted::text AS counted, l.balance_at_count::text AS "balanceAtCount",
+              COALESCE((SELECT SUM(m.delta) FROM inventory_movements m WHERE m.tenant_id = i.tenant_id AND m.item_id = i.id), 0)::text AS "currentBalance",
+              (l.counted - l.balance_at_count)::text AS diff
+         FROM inventory_count_lines l JOIN inventory_items i ON i.tenant_id = l.tenant_id AND i.id = l.item_id
+        WHERE l.count_id = $1 ORDER BY lower(i.name)`, [id]);
+    return { count: c.rows[0], lines: lines.rows };
+  });
+
+  clinicRoute(app, 'PUT', '/api/inventory/counts/:id/lines/:itemId', { ...CAP, perm: 'inventory.write' }, async (ctx) => {
+    const { id, itemId } = z.object({ id: z.string().uuid(), itemId: z.string().uuid() }).parse(ctx.req.params);
+    const b = z.object({ counted: z.number().min(0).max(1_000_000).refine((v) => Math.abs(v * 1000 - Math.round(v * 1000)) < 1e-6, 'Use no máximo 3 casas decimais.') }).parse(ctx.req.body);
+    const c = await ctx.tx.query<{ status: string }>('SELECT status FROM inventory_counts WHERE id = $1 FOR SHARE', [id]);
+    if (!c.rows[0]) throw notFound('Inventário não encontrado.');
+    if (c.rows[0].status !== 'open') throw conflict('Este inventário já foi encerrado.');
+    // Trava o item para fotografar o saldo sem corrida com saídas em andamento.
+    await ctx.tx.query('SELECT 1 FROM inventory_items WHERE id = $1 FOR UPDATE', [itemId]);
+    const bal = await ctx.tx.query<{ balance: string }>('SELECT COALESCE(SUM(delta),0)::text AS balance FROM inventory_movements WHERE item_id = $1', [itemId]);
+    const r = await ctx.tx.query(
+      `UPDATE inventory_count_lines SET counted = $3, balance_at_count = $4, counted_by = $5, counted_at = now() WHERE count_id = $1 AND item_id = $2`,
+      [id, itemId, b.counted, bal.rows[0]!.balance, ctx.user.id]);
+    if (!r.rowCount) throw notFound('Este item não faz parte do inventário.');
+    return { itemId, counted: String(b.counted), balanceAtCount: bal.rows[0]!.balance, diff: (b.counted - Number(bal.rows[0]!.balance)).toFixed(3) };
+  });
+
+  clinicRoute(app, 'POST', '/api/inventory/counts/:id/close', { ...CAP, perm: 'inventory.write' }, async (ctx) => {
+    const { id } = idParam.parse(ctx.req.params);
+    const b = z.object({ note: z.string().trim().max(300).optional() }).parse(ctx.req.body);
+    const c = await ctx.tx.query<{ status: string; title: string }>('SELECT status, title FROM inventory_counts WHERE id = $1 FOR UPDATE', [id]);
+    if (!c.rows[0]) throw notFound('Inventário não encontrado.');
+    if (c.rows[0].status !== 'open') throw conflict('Este inventário já foi encerrado.');
+    const lines = await ctx.tx.query<{ item_id: string; counted: string; balance_at_count: string }>(
+      'SELECT item_id, counted::text, balance_at_count::text FROM inventory_count_lines WHERE count_id = $1 AND counted IS NOT NULL ORDER BY item_id FOR UPDATE', [id]);
+    if (!lines.rowCount) throw badRequest('Conte ao menos um item antes de concluir o inventário.');
+    const notCounted = (await ctx.tx.query<{ n: number }>('SELECT COUNT(*)::int AS n FROM inventory_count_lines WHERE count_id = $1 AND counted IS NULL', [id])).rows[0]!.n;
+    let adjusted = 0, unchanged = 0;
+    try {
+      for (const l of lines.rows) {
+        const diff = toMilli(Number(l.counted)) - toMilli(Number(l.balance_at_count));
+        if (diff === 0) { unchanged++; continue; }
+        await ctx.tx.query('SELECT 1 FROM inventory_items WHERE id = $1 FOR UPDATE', [l.item_id]);
+        await applyCountAdjustment(ctx.tx, ctx.tenantId, ctx.user.id, l.item_id, diff, `Inventário: ${c.rows[0].title}`, `count:${id}:${l.item_id}`);
+        adjusted++;
+      }
+    } catch (e) {
+      if ((e as { code?: string; message?: string }).code === '23514' && /saldo insuficiente/.test((e as Error).message)) {
+        throw conflict('O saldo mudou depois da contagem e o ajuste deixaria um item negativo. Conte esse item de novo.');
+      }
+      return mapDbError(e);
+    }
+    await ctx.tx.query(`UPDATE inventory_counts SET status = 'closed', finished_by = $2, finished_at = now(), note = $3 WHERE id = $1`, [id, ctx.user.id, b.note ?? null]);
+    await audit(ctx, 'inventory.count.close', 'inventory_count', id, { adjusted, unchanged, notCounted });
+    return { id, adjusted, unchanged, notCounted };
+  });
+
+  clinicRoute(app, 'POST', '/api/inventory/counts/:id/cancel', { ...CAP, perm: 'inventory.write' }, async (ctx) => {
+    const { id } = idParam.parse(ctx.req.params);
+    const c = await ctx.tx.query<{ status: string }>('SELECT status FROM inventory_counts WHERE id = $1 FOR UPDATE', [id]);
+    if (!c.rows[0]) throw notFound('Inventário não encontrado.');
+    if (c.rows[0].status !== 'open') throw conflict('Este inventário já foi encerrado.');
+    await ctx.tx.query(`UPDATE inventory_counts SET status = 'canceled', finished_by = $2, finished_at = now() WHERE id = $1`, [id, ctx.user.id]);
+    await audit(ctx, 'inventory.count.cancel', 'inventory_count', id);
+    return { ok: true };
+  });
+}
+
+/**
+ * Ajuste de inventário em milésimos. Aumento entra sem lote. Redução sai dos lotes pelo que vence antes (vencidos primeiro, pois é o
+ * que a perda costuma ser) e, no fim, do saldo sem lote; assim nenhum lote fica negativo.
+ */
+async function applyCountAdjustment(tx: Tx, tenantId: string, userId: string, itemId: string, diffMilli: number, reason: string, keyBase: string) {
+  const ins = (delta: number, lotId: string | null, n: number) => tx.query(
+    `INSERT INTO inventory_movements (tenant_id, item_id, kind, delta, reason, idempotency_key, created_by, lot_id) VALUES ($1,$2,'adjust',$3,$4,$5,$6,$7)`,
+    [tenantId, itemId, fromMilli(delta), reason, `${keyBase}#${n}`, userId, lotId]);
+  if (diffMilli > 0) { await ins(diffMilli, null, 0); return; }
+  let need = -diffMilli, n = 0;
+  const lots = await tx.query<{ id: string; bal: string }>(
+    `SELECT l.id, COALESCE(SUM(m.delta), 0)::text AS bal FROM inventory_lots l LEFT JOIN inventory_movements m ON m.tenant_id = l.tenant_id AND m.lot_id = l.id
+      WHERE l.item_id = $1 GROUP BY l.id, l.expires_on, l.created_at HAVING COALESCE(SUM(m.delta), 0) > 0 ORDER BY l.expires_on NULLS LAST, l.created_at`, [itemId]);
+  const tot = await tx.query<{ total: string; inlots: string }>(
+    `SELECT COALESCE(SUM(delta),0)::text AS total, COALESCE(SUM(delta) FILTER (WHERE lot_id IS NOT NULL),0)::text AS inlots FROM inventory_movements WHERE item_id = $1`, [itemId]);
+  const unlotted = Math.max(0, toMilli(Number(tot.rows[0]!.total)) - toMilli(Number(tot.rows[0]!.inlots)));
+  const fromUnlotted = Math.min(need, unlotted);
+  if (fromUnlotted > 0) { await ins(-fromUnlotted, null, n++); need -= fromUnlotted; }
+  for (const l of lots.rows) {
+    if (need <= 0) break;
+    const take = Math.min(need, toMilli(Number(l.bal)));
+    await ins(-take, l.id, n++); need -= take;
+  }
+  if (need > 0) await ins(-need, null, n++); // o gatilho do banco recusa se o item ficaria negativo
 }
