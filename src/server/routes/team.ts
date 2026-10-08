@@ -40,6 +40,8 @@ export function teamRoutes(app: FastifyInstance) {
       password: z.string().max(128),
       unitIds: unitIdsSchema.optional(),
     }).parse(ctx.req.body);
+    // Administrador não cria outro administrador (evita escalada lateral): só o proprietário concede ou altera o papel de administrador.
+    if (b.role === 'admin' && ctx.user.role !== 'owner') throw forbidden('Só o proprietário cria administradores.');
     const policy = passwordPolicyError(b.password);
     if (policy) throw badRequest(policy);
     const dup = await ctx.tx.query('SELECT 1 FROM users WHERE email = $1', [b.email]);
@@ -66,6 +68,7 @@ export function teamRoutes(app: FastifyInstance) {
     const cur = await ctx.tx.query<{ role: string }>('SELECT role FROM users WHERE id = $1 FOR UPDATE', [id]);
     if (!cur.rows[0]) throw notFound('Usuário não encontrado.');
     if (cur.rows[0].role === 'owner') throw forbidden('O proprietário só é alterado pelo suporte da plataforma.');
+    if ((cur.rows[0].role === 'admin' || b.role === 'admin') && ctx.user.role !== 'owner') throw forbidden('Só o proprietário altera administradores.');
     if (b.password !== undefined) {
       const policy = passwordPolicyError(b.password);
       if (policy) throw badRequest(policy);
@@ -101,7 +104,7 @@ export function teamRoutes(app: FastifyInstance) {
   clinicRoute(app, 'GET', '/api/dashboard', {}, async (ctx) => {
     const has = (c: string) => ctx.entitlements.has(c);
     const out: Record<string, unknown> = {};
-    if (has('patient.registry')) out.patients = Number((await ctx.tx.query('SELECT count(*) FROM patients')).rows[0].count);
+    if (has('patient.registry') && hasPermission(ctx.user.role, 'patients.read')) out.patients = Number((await ctx.tx.query('SELECT count(*) FROM patients')).rows[0].count);
     if (has('schedule.core')) {
       const r = await ctx.tx.query(
         `SELECT count(*) FILTER (WHERE a.status NOT IN ('cancelled','no_show')) AS active,

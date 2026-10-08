@@ -13,7 +13,7 @@ afterAll(async () => { await app.close(); await appPool.end(); await platformPoo
 const pdf = Buffer.concat([Buffer.from('%PDF-1.4\n'), Buffer.from('conteudo do exame'), Buffer.from('\n%%EOF')]);
 const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(32, 1)]);
 const upload = (c: { post: (u: string, b?: unknown) => Promise<{ statusCode: number; json: () => any }> }, pid: string, buf: Buffer, extra: object = {}) =>
-  c.post(`/api/patients/${pid}/documents`, { title: 'Radiografia panorâmica', category: 'exam', fileName: 'radio.pdf', contentBase64: buf.toString('base64'), ...extra });
+  c.post(`/api/patients/${pid}/documents`, { title: 'Radiografia panorâmica', category: 'other', fileName: 'radio.pdf', contentBase64: buf.toString('base64'), ...extra });
 
 describe('anexos e documentos do paciente', () => {
   it('envia, lista sem o conteúdo, baixa idêntico e registra no histórico; arquivar exige motivo e some da lista', async () => {
@@ -76,5 +76,25 @@ describe('anexos e documentos do paciente', () => {
     expect((await upload(fin.c, pid, pdf)).statusCode).toBe(403);
     await expect(withTenant(appPool, a.id, (tx) => tx.query('DELETE FROM patient_documents WHERE id = $1', [id]))).rejects.toThrow(/permission denied/);
     await expect(withTenant(appPool, a.id, (tx) => tx.query("UPDATE patient_documents SET title = 'Outro' WHERE id = $1", [id]))).rejects.toThrow(/imutável/);
+  });
+
+  it('exames e laudos seguem a segregação do prontuário: recepção não anexa, não lista, não baixa e não arquiva', async () => {
+    const t = await tenant('docsseg');
+    const dr = await t.mk('professional', 'drseg');
+    const rec = await t.mk('receptionist', 'recseg');
+    const pid = (await dr.c.post('/api/patients', { name: 'Paciente Seg' })).json().id as string;
+    const exam = (await upload(dr.c, pid, pdf, { category: 'exam', title: 'Panorâmica' })).json().id as string;
+    const termo = (await upload(rec.c, pid, pdf, { category: 'consent', title: 'Termo assinado' })).json().id as string;
+    expect((await upload(rec.c, pid, pdf, { category: 'report' })).statusCode).toBe(403);
+    expect((await upload(rec.c, pid, pdf, { category: 'exam' })).statusCode).toBe(403);
+    const seen = (await rec.c.get(`/api/patients/${pid}/documents`)).json().documents as { id: string }[];
+    expect(seen.map((d) => d.id)).toEqual([termo]);
+    expect((await rec.c.req('GET', `/api/documents/${exam}/download`)).statusCode).toBe(404);
+    expect((await rec.c.post(`/api/documents/${exam}/archive`, { reason: 'Tentativa indevida' })).statusCode).toBe(404);
+    expect((await rec.c.req('GET', `/api/documents/${termo}/download`)).statusCode).toBe(200);
+    // quem tem acesso ao prontuário vê tudo; o dono também
+    expect(((await dr.c.get(`/api/patients/${pid}/documents`)).json().documents as unknown[]).length).toBe(2);
+    expect(((await t.owner.get(`/api/patients/${pid}/documents`)).json().documents as unknown[]).length).toBe(2);
+    expect((await dr.c.req('GET', `/api/documents/${exam}/download`)).statusCode).toBe(200);
   });
 });

@@ -5,3 +5,12 @@ dist/
 !.env.example
 *.log
 coverage/
+.data/
+e2e-shots/
+backups/
+*.dump
+*.dump.enc
+*.dump.enc.sha256
+*.sql.gz
+*.pem
+*.key

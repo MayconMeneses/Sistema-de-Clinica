@@ -138,7 +138,7 @@ export function PatientDetail({ id, me }: { id: string; me: Me }) {
       </div>
       {tab === 'dados' && <div className="stack"><div className="card"><PatientForm initial={patient} canAlert={can('notes.read')} onSaved={() => p.reload()} /></div><Consents patientId={id} canWrite={can('patients.write')} /><Guardians patientId={id} canWrite={can('patients.write')} />{can('privacy.open') && <PrivacyCard patientId={id} patientName={patient.name} canExport={can('patients.export')} />}{can('patients.merge') && <div><MergeButton patient={{ id, name: patient.name }} onMerged={(t) => { window.location.hash = `/pacientes/${t}`; }} /></div>}</div>}
       {tab === 'mensagens' && <MessageHistory patientId={id} />}
-      {tab === 'documentos' && <Documents patientId={id} canWrite={can('documents.write')} />}
+      {tab === 'documentos' && <Documents patientId={id} canWrite={can('documents.write')} canClinical={can('notes.read')} />}
       {tab === 'prontuario' && <Notes patientId={id} meId={me.user.id} />}
       {tab === 'odontograma' && <Odontogram patientId={id} canWrite={can('dental.write')} hasFinance={has('finance.basic')} />}
       {tab === 'financeiro' && <PatientFinance patientId={id} canWrite={can('finance.write')} canDiscount={has('finance.advanced') && can('finance.write')} online={has('payments.gateway') && can('finance.read') ? { charge: can('payments.charge'), refund: can('finance.approve') } : null} />}

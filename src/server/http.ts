@@ -32,7 +32,8 @@ export function errorHandler(err: unknown, req: FastifyRequest, reply: FastifyRe
     return reply.status(e.statusCode).send({ error: 'bad_request', message: 'Requisição inválida.', requestId: req.id });
   }
   // Nunca devolver stack, SQL ou detalhes internos.
-  req.log.error({ err, requestId: req.id }, 'erro interno');
+  // O erro bruto do PostgreSQL/driver traz `detail` e `where` com valores das linhas (dados pessoais): só o resumo higienizado vai ao log.
+  req.log.error({ error: safeErrorSummary(err), where: locateError(err), requestId: req.id }, 'erro interno');
   notify({ severity: 'critical', component: 'api', title: 'Erro interno (500)', detail: safeErrorSummary(err), where: locateError(err), ref: req.id, route: routePattern(req), tenant: req.alertTenant });
   return reply.status(500).send({ error: 'internal', message: 'Erro interno. Informe o código ao suporte.', requestId: req.id });
 }

@@ -52,10 +52,6 @@ export function matchTotpStep(secret: string, code: string, nowMs = Date.now()):
   return matched;
 }
 
-export function verifyTotp(secret: string, code: string, nowMs = Date.now()): boolean {
-  return matchTotpStep(secret, code, nowMs) !== null;
-}
-
 export function otpauthUri(secret: string, account: string): string {
   return `otpauth://totp/Clinica%20One:${encodeURIComponent(account)}?secret=${secret}&issuer=Clinica%20One`;
 }

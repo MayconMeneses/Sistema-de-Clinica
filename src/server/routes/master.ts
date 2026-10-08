@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { resolveEntitlements, type TenantStatus } from '../../modules/entitlements/resolve.js';
-import { hashPassword, passwordPolicyError, verifyPassword } from '../auth/password.js';
+import { hashPassword, needsRehash, passwordPolicyError, verifyPassword } from '../auth/password.js';
 import { consumeTotp } from '../auth/mfa.js';
 import { DbRateLimiter } from '../auth/rate-limit.js';
 import { config, masterMfaRequired } from '../config.js';
@@ -38,7 +38,9 @@ export function masterRoutes(app: FastifyInstance) {
       code: z.string().trim().max(10).default(''),
     }).parse(req.body);
     const key = `${req.ip}|master|${body.email}`;
-    if (await limiter.tooMany(key)) throw new HttpError(429, 'Muitas tentativas. Aguarde alguns minutos.', 'rate_limited');
+    const ipKey = `ip|master|${req.ip}`;
+    const ipMax = new DbRateLimiter(platformPool, Number(process.env.LOGIN_IP_MAX ?? 30), 15);
+    if (await limiter.tooMany(key) || await ipMax.tooMany(ipKey)) throw new HttpError(429, 'Muitas tentativas. Aguarde alguns minutos.', 'rate_limited');
 
     const u = await platformPool.query<{ id: string; password_hash: string; totp_secret: string; status: string }>(
       'SELECT id, password_hash, totp_secret, status FROM platform_users WHERE email = $1', [body.email]);
@@ -46,13 +48,14 @@ export function masterRoutes(app: FastifyInstance) {
     const pwOk = await verifyPassword(body.password, user?.password_hash);
     const mfaOk = !!user && pwOk && (!masterMfaRequired() || await consumeTotp(platformPool, 'platform_users', user.id, user.totp_secret, body.code));
     if (!user || !pwOk || !mfaOk || user.status !== 'active') {
-      await limiter.record(key);
+      await limiter.record(key); await limiter.record(ipKey);
       await platformPool.query(
         `INSERT INTO platform_audit_events (operator_id, action, justification, metadata) VALUES ($1,'master.login_failed','tentativa de login',$2)`,
         [body.email, JSON.stringify({ ip: req.ip })]);
       throw unauthorized('E-mail, senha ou código MFA inválidos.');
     }
     await limiter.reset(key);
+    if (needsRehash(user.password_hash)) await platformPool.query('UPDATE platform_users SET password_hash = $1 WHERE id = $2', [await hashPassword(body.password), user.id]);
     const secret = newSecret();
     await platformPool.query(
       `INSERT INTO platform_sessions (user_id, token_hash, expires_at) VALUES ($1,$2, now() + make_interval(hours => $3))`,
