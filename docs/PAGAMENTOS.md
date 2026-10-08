@@ -35,7 +35,7 @@ Se algo no formato da API divergir, o ajuste fica concentrado em `src/integratio
 - Estorno parcial: veja a seção “Estorno parcial” abaixo.
 - **Chargeback** é tratado como estorno.
 - Sem cartão digitado no sistema (por segurança e escopo PCI): só link e Pix.
-- Sem parcelamento configurável, sem repasse/conciliação bancária, sem NFS-e (ver `docs/INTEGRACOES.md`).
+- Parcelamento: só no link de pagamento (até 12x, parcela mínima R$ 5,00); o limite é enviado ao Mercado Pago, que cobra os juros conforme a conta do vendedor. Sem repasse/conciliação bancária, sem NFS-e (ver `docs/INTEGRACOES.md`).
 - O modo de teste interno guarda o estado só na memória do servidor: reiniciar apaga as cobranças simuladas pendentes.
 - Taxas do Mercado Pago não são calculadas nem lançadas.
 

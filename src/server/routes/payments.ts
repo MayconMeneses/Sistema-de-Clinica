@@ -16,7 +16,7 @@ const EXPIRES = { pix: 30 * 60_000, link: 24 * 3600_000 };
 const INTENT_SELECT = `SELECT i.id, i.patient_id AS "patientId", p.name AS "patientName", i.amount_cents::text AS "amountCents", i.description, i.method, i.status,
     i.provider, i.checkout_url AS "checkoutUrl", i.pix_qr_code AS "pixQrCode", i.pix_qr_base64 AS "pixQrBase64", i.expires_at AS "expiresAt",
     (i.status = 'pending' AND i.expires_at < now()) AS expired, i.created_at AS "createdAt", i.paid_method AS "paidMethod", m.receipt_number::int AS "receiptNumber",
-    i.payment_movement_id AS "paymentMovementId", i.refunded_cents::text AS "refundedCents"
+    i.payment_movement_id AS "paymentMovementId", i.refunded_cents::text AS "refundedCents", i.max_installments AS "maxInstallments"
   FROM payment_intents i JOIN patients p ON p.tenant_id = i.tenant_id AND p.id = i.patient_id
   LEFT JOIN financial_movements m ON m.tenant_id = i.tenant_id AND m.id = i.payment_movement_id`;
 
@@ -94,7 +94,11 @@ export function paymentRoutes(app: FastifyInstance) {
       patientId: z.string().uuid(), amountCents: z.number().int().min(100).max(100_000_000), method: z.enum(['pix', 'link']),
       description: z.string().trim().min(2).max(120).default('Atendimento odontológico'),
       payerEmail: z.string().trim().toLowerCase().email().max(200).optional(), idempotencyKey: z.string().trim().min(8).max(100),
+      maxInstallments: z.number().int().min(1).max(12).default(1),
     }).parse(ctx.req.body);
+    if (b.maxInstallments > 1 && b.method !== 'link') throw badRequest('Parcelamento só vale para o link de pagamento (cartão).');
+    // Cada parcela precisa ter ao menos R$ 5,00: o parcelamento oferecido respeita isso.
+    if (b.maxInstallments > Math.floor(b.amountCents / 500)) throw badRequest('Parcelas demais para este valor: cada parcela deve ter ao menos R$ 5,00.');
     const id = intentIdFor(ctx.tenantId, b.idempotencyKey);
     const dup = await ctx.tx.query('SELECT 1 FROM payment_intents WHERE id = $1', [id]);
     if (dup.rowCount) return { ...(await view(ctx, id)), duplicate: true };
@@ -103,15 +107,15 @@ export function paymentRoutes(app: FastifyInstance) {
     const email = b.payerEmail ?? (await ctx.tx.query<{ email: string | null }>('SELECT email FROM patients WHERE id = $1', [b.patientId])).rows[0]?.email ?? undefined;
     if (b.method === 'pix' && !email) throw badRequest('Informe o e-mail do pagador: o Pix do Mercado Pago exige.');
     const expiresAt = new Date(Date.now() + EXPIRES[b.method]);
-    const input = { amountCents: b.amountCents, description: b.description, externalReference: id, idempotencyKey: id, payerEmail: email, notificationUrl: notificationUrl(ctx.tenantId), expiresAt };
+    const input = { amountCents: b.amountCents, description: b.description, externalReference: id, idempotencyKey: id, payerEmail: email, notificationUrl: notificationUrl(ctx.tenantId), expiresAt, maxInstallments: b.maxInstallments };
     // O provedor é chamado antes de gravar: se falhar, nada fica gravado (a mesma chave repete com segurança, pois o id é derivado dela).
     const created = await run(async () => (b.method === 'pix' ? { pix: await gw.createPix(input) } : { link: await gw.createCheckoutLink(input) }));
     try {
       await ctx.tx.query(
-        `INSERT INTO payment_intents (id, tenant_id, patient_id, amount_cents, description, method, provider, provider_payment_id, checkout_url, pix_qr_code, pix_qr_base64, payer_email, expires_at, idempotency_key, created_by, provider_status)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,'pending')`,
+        `INSERT INTO payment_intents (id, tenant_id, patient_id, amount_cents, description, method, provider, provider_payment_id, checkout_url, pix_qr_code, pix_qr_base64, payer_email, expires_at, idempotency_key, created_by, provider_status, max_installments)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,'pending',$16)`,
         [id, ctx.tenantId, b.patientId, b.amountCents, b.description, b.method, gw.provider, created.pix?.providerPaymentId ?? null, created.link?.checkoutUrl ?? null,
-         created.pix?.qrCode ?? null, created.pix?.qrCodeBase64 ?? null, email ?? null, expiresAt, b.idempotencyKey, ctx.user.id]);
+         created.pix?.qrCode ?? null, created.pix?.qrCodeBase64 ?? null, email ?? null, expiresAt, b.idempotencyKey, ctx.user.id, b.maxInstallments]);
     } catch (e) { return mapDbError(e); }
     await audit(ctx, 'payment.create', 'payment_intent', id, { method: b.method, amountCents: b.amountCents, provider: gw.provider });
     return { ...(await view(ctx, id)), duplicate: false };

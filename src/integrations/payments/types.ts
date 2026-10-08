@@ -24,6 +24,8 @@ export interface CreateInput {
   payerEmail?: string | null;
   notificationUrl?: string | null;
   expiresAt: Date;
+  /** Link de pagamento: máximo de parcelas oferecidas no cartão (1 = à vista). */
+  maxInstallments?: number;
 }
 export interface PixCreated { providerPaymentId: string; status: ProviderStatus; qrCode: string; qrCodeBase64: string | null }
 export interface LinkCreated { checkoutUrl: string }

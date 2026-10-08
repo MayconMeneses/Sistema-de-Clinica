@@ -41,6 +41,7 @@ export class MercadoPagoGateway implements PaymentGateway {
         items: [{ title: i.description, quantity: 1, unit_price: this.reais(i.amountCents), currency_id: 'BRL' }],
         external_reference: i.externalReference, ...(i.notificationUrl ? { notification_url: i.notificationUrl } : {}),
         ...(i.payerEmail ? { payer: { email: i.payerEmail } } : {}),
+        ...(i.maxInstallments && i.maxInstallments > 1 ? { payment_methods: { installments: i.maxInstallments } } : {}),
         expires: true, expiration_date_to: toOffsetIso(i.expiresAt),
       },
     });

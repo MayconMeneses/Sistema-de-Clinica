@@ -60,5 +60,6 @@ Legenda: ✅ IMPLEMENTADO e testado localmente · 🟡 PARCIAL · ⬜ PLANEJADO
 - ✅ Catálogo único de integrações (`src/integrations/catalog.ts`); portas e sandbox de **NFS-e** e **assinatura eletrônica** (adaptadores reais pendentes de decisão/contrato)
 - ✅ Backup cifrado (`scripts/backup-encrypted.sh`) exercitado no CI; **sem agendamento nem destino em nuvem** (dependem do ambiente)
 - ✅ Pagamentos: estorno parcial (cobrança segue paga até a soma devolvida fechar o valor; cada devolução é um movimento imutável; estorno feito direto no painel do provedor é conciliado)
-- ⬜ Pagamentos: parcelamento, taxas do provedor, conciliação bancária
+- ✅ Pagamentos: parcelamento no cartão (link, até 12x, parcela mínima R$ 5,00)
+- ⬜ Pagamentos: taxas do provedor, conciliação bancária
 - ⬜ Papéis da plataforma (Master), portal do paciente, NFS-e, integrações reais, regulados, IA. Convênios/TISS: bloqueado globalmente.
