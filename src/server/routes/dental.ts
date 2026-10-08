@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { audit, clinicRoute } from '../context.js';
 import { assertActive, family } from '../../modules/patients/family.js';
+import { consumeProcedureSupplies } from './inventory.js';
 import { badRequest, conflict, mapDbError, notFound } from '../http.js';
 
 const CAP = { cap: 'dental.odontogram' } as const;
@@ -92,8 +93,8 @@ export function dentalRoutes(app: FastifyInstance) {
       status: z.enum(['in_progress', 'done', 'cancelled']),
       charge: z.boolean().optional(), // ao concluir, gera a cobrança (uma única vez)
     }).parse(ctx.req.body);
-    const cur = await ctx.tx.query<{ status: string; patient_id: string; price_cents: string }>(
-      'SELECT status, patient_id, price_cents::text FROM dental_plan_items WHERE id = $1 FOR UPDATE', [id]);
+    const cur = await ctx.tx.query<{ status: string; patient_id: string; price_cents: string; procedure: string }>(
+      'SELECT status, patient_id, price_cents::text, procedure FROM dental_plan_items WHERE id = $1 FOR UPDATE', [id]);
     const item = cur.rows[0];
     if (!item) throw notFound('Item não encontrado.');
     if (!PLAN_TRANSITIONS[item.status]?.includes(b.status)) throw conflict(`Não é possível mudar de "${item.status}" para "${b.status}".`);
@@ -109,8 +110,10 @@ export function dentalRoutes(app: FastifyInstance) {
           [ctx.tenantId, item.patient_id, item.price_cents, `dental:${id}:charge`, ctx.user.id]);
         charged = (ins.rowCount ?? 0) > 0;
       }
-      await audit(ctx, `dental.plan_item.${b.status}`, 'dental_plan_item', id, { charged });
-      return { ok: true, charged };
+      const supplies = b.status === 'done' && ctx.entitlements.has('inventory.core')
+        ? await consumeProcedureSupplies(ctx.tx, ctx.tenantId, ctx.user.id, id, item.procedure) : { consumed: [], shortages: [] };
+      await audit(ctx, `dental.plan_item.${b.status}`, 'dental_plan_item', id, { charged, consumed: supplies.consumed.length, shortages: supplies.shortages.length });
+      return { ok: true, charged, supplies };
     } catch (e) {
       if ((e as { status?: number }).status) throw e;
       return mapDbError(e);

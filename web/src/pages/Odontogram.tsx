@@ -166,8 +166,9 @@ function TreatmentPlan({ patientId, canWrite, hasFinance, teeth, reloadKey }: { 
   async function move(item: PlanItem, status: string, charge = false) {
     if (status === 'cancelled' && !window.confirm(`Cancelar "${item.procedure}"? Esta ação não pode ser desfeita.`)) return;
     try {
-      const r = await patch<{ charged: boolean }>(`/api/dental-plan/${item.id}`, { status, charge });
+      const r = await patch<{ charged: boolean; supplies?: { consumed: string[]; shortages: string[] } }>(`/api/dental-plan/${item.id}`, { status, charge });
       toast(r.charged ? 'Procedimento concluído e cobrança gerada.' : 'Plano atualizado.'); plan.reload();
+      if (r.supplies?.shortages.length) toast(`Sem saldo para dar baixa em: ${r.supplies.shortages.join(', ')}. Veja em Estoque › Kits.`, 'bad');
     } catch (err) { toast((err as Error).message, 'bad'); }
   }
 
