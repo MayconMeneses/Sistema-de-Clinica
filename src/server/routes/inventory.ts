@@ -23,6 +23,80 @@ const dateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a data no formato A
 const toMilli = (v: number) => Math.round(v * 1000);
 const fromMilli = (v: number) => (v / 1000).toFixed(3);
 
+type InsertMovement = (delta: number, lotId: string | null, key: string | null) => Promise<{ rows: { id: string }[] }>;
+
+/**
+ * Saída pelo critério FEFO (Primeiro a Vencer, Primeiro a Sair): consome lotes não vencidos pela validade; o resto sai do saldo
+ * sem lote. Vencido não sai. Lança conflito, sem gravar nada, se o saldo utilizável não bastar.
+ */
+export async function consumeFefo(tx: Tx, itemId: string, quantity: number, idempotencyKey: string | null, insert: InsertMovement): Promise<string[]> {
+  const ids: string[] = [];
+  const lots = await tx.query<{ id: string; bal: string }>(
+    `SELECT l.id, COALESCE(SUM(m.delta), 0)::text AS bal
+       FROM inventory_lots l LEFT JOIN inventory_movements m ON m.tenant_id = l.tenant_id AND m.lot_id = l.id
+      WHERE l.item_id = $1 AND (l.expires_on IS NULL OR l.expires_on >= ${TODAY})
+      GROUP BY l.id, l.expires_on, l.created_at HAVING COALESCE(SUM(m.delta), 0) > 0
+      ORDER BY l.expires_on NULLS LAST, l.created_at`, [itemId]);
+  const tot = await tx.query<{ total: string; inlots: string }>(
+    `SELECT COALESCE(SUM(delta),0)::text AS total, COALESCE(SUM(delta) FILTER (WHERE lot_id IS NOT NULL),0)::text AS inlots FROM inventory_movements WHERE item_id = $1`, [itemId]);
+  const expired = await tx.query<{ q: string }>(
+    `SELECT COALESCE(SUM(m.delta),0)::text AS q FROM inventory_movements m JOIN inventory_lots l ON l.tenant_id = m.tenant_id AND l.id = m.lot_id WHERE m.item_id = $1 AND l.expires_on < ${TODAY}`, [itemId]);
+  const unlotted = toMilli(Number(tot.rows[0]!.total)) - toMilli(Number(tot.rows[0]!.inlots));
+  let need = toMilli(quantity);
+  const usable = lots.rows.reduce((a, l) => a + toMilli(Number(l.bal)), 0) + unlotted;
+  if (need > usable) throw conflict(Number(expired.rows[0]!.q) > 0 ? 'Saldo utilizável insuficiente: o que está vencido não pode sair.' : 'Saldo insuficiente em estoque para esta saída.');
+  const keyFor = (n: number) => idempotencyKey ? (n === 0 ? idempotencyKey : `${idempotencyKey}#${n}`) : null;
+  let n = 0;
+  for (const l of lots.rows) {
+    if (need <= 0) break;
+    const take = Math.min(need, toMilli(Number(l.bal)));
+    ids.push((await insert(-Number(fromMilli(take)), l.id, keyFor(n))).rows[0]!.id);
+    need -= take; n++;
+  }
+  if (need > 0) ids.push((await insert(-Number(fromMilli(need)), null, keyFor(n))).rows[0]!.id);
+  return ids;
+}
+
+export const procedureKey = (procedure: string) => procedure.trim().toLowerCase().replace(/\s+/g, ' ');
+
+async function consumeOne(tx: Tx, tenantId: string, userId: string, planItemId: string, itemId: string, quantity: number): Promise<'consumed' | 'shortage'> {
+  const key = `proc:${planItemId}:${itemId}`;
+  const insert: InsertMovement = (d, lotId, k) => tx.query<{ id: string }>(
+    `INSERT INTO inventory_movements (tenant_id, item_id, kind, delta, reason, idempotency_key, created_by, lot_id)
+     VALUES ($1,$2,'out',$3,'Consumo em procedimento',$4,$5,$6) RETURNING id`, [tenantId, itemId, d, k, userId, lotId]);
+  await tx.query('SAVEPOINT proc_consume');
+  try {
+    const it = await tx.query<{ active: boolean }>('SELECT active FROM inventory_items WHERE id = $1 FOR UPDATE', [itemId]);
+    if (!it.rows[0]?.active) throw conflict('Item inativo.');
+    await consumeFefo(tx, itemId, quantity, key, insert);
+    await tx.query('RELEASE SAVEPOINT proc_consume');
+    return 'consumed';
+  } catch {
+    await tx.query('ROLLBACK TO SAVEPOINT proc_consume');
+    await tx.query('RELEASE SAVEPOINT proc_consume');
+    return 'shortage';
+  }
+}
+
+/**
+ * Baixa o kit do procedimento concluído. Idempotente por (item do plano, material). Falta de saldo vira pendência e não
+ * impede a conclusão do procedimento.
+ */
+export async function consumeProcedureSupplies(tx: Tx, tenantId: string, userId: string, planItemId: string, procedure: string) {
+  const kit = await tx.query<{ item_id: string; quantity: string; name: string }>(
+    `SELECT s.item_id, s.quantity::text, i.name FROM procedure_supplies s JOIN inventory_items i ON i.tenant_id = s.tenant_id AND i.id = s.item_id
+      WHERE s.procedure_key = $1 ORDER BY i.name`, [procedureKey(procedure)]);
+  const consumed: string[] = []; const shortages: string[] = [];
+  for (const k of kit.rows) {
+    const done = await tx.query('SELECT 1 FROM procedure_consumptions WHERE plan_item_id = $1 AND item_id = $2', [planItemId, k.item_id]);
+    if (done.rowCount) continue;
+    const st = await consumeOne(tx, tenantId, userId, planItemId, k.item_id, Number(k.quantity));
+    await tx.query(`INSERT INTO procedure_consumptions (tenant_id, plan_item_id, item_id, quantity, status) VALUES ($1,$2,$3,$4,$5)`, [tenantId, planItemId, k.item_id, k.quantity, st]);
+    (st === 'consumed' ? consumed : shortages).push(k.name);
+  }
+  return { consumed, shortages };
+}
+
 export function inventoryRoutes(app: FastifyInstance) {
   clinicRoute(app, 'GET', '/api/inventory/items', { ...CAP, perm: 'inventory.read' }, async (ctx) => {
     const q = z.object({ q: z.string().trim().max(80).optional(), lowOnly: z.enum(['1']).optional(), includeInactive: z.enum(['1']).optional() }).parse(ctx.req.query);
@@ -108,29 +182,7 @@ export function inventoryRoutes(app: FastifyInstance) {
         const lotId = await ensureLot(ctx.tx, ctx.tenantId, ctx.user.id, b.itemId, b.lotCode, b.expiresOn);
         ids.push((await insert(delta, lotId, b.idempotencyKey ?? null)).rows[0]!.id);
       } else if (b.kind === 'out' && !b.lotId) {
-        // Primeiro a Vencer, Primeiro a Sair (FEFO): consome lotes não vencidos pela validade; o resto sai do saldo sem lote. Vencido não sai.
-        const lots = await ctx.tx.query<{ id: string; bal: string }>(
-          `SELECT l.id, COALESCE(SUM(m.delta), 0)::text AS bal
-             FROM inventory_lots l LEFT JOIN inventory_movements m ON m.tenant_id = l.tenant_id AND m.lot_id = l.id
-            WHERE l.item_id = $1 AND (l.expires_on IS NULL OR l.expires_on >= ${TODAY})
-            GROUP BY l.id, l.expires_on, l.created_at HAVING COALESCE(SUM(m.delta), 0) > 0
-            ORDER BY l.expires_on NULLS LAST, l.created_at`, [b.itemId]);
-        const tot = await ctx.tx.query<{ total: string; inlots: string }>(
-          `SELECT COALESCE(SUM(delta),0)::text AS total, COALESCE(SUM(delta) FILTER (WHERE lot_id IS NOT NULL),0)::text AS inlots FROM inventory_movements WHERE item_id = $1`, [b.itemId]);
-        const expired = await ctx.tx.query<{ q: string }>(
-          `SELECT COALESCE(SUM(m.delta),0)::text AS q FROM inventory_movements m JOIN inventory_lots l ON l.tenant_id = m.tenant_id AND l.id = m.lot_id WHERE m.item_id = $1 AND l.expires_on < ${TODAY}`, [b.itemId]);
-        const unlotted = toMilli(Number(tot.rows[0]!.total)) - toMilli(Number(tot.rows[0]!.inlots));
-        let need = toMilli(Math.abs(b.quantity));
-        const usable = lots.rows.reduce((a, l) => a + toMilli(Number(l.bal)), 0) + unlotted;
-        if (need > usable) throw conflict(Number(expired.rows[0]!.q) > 0 ? 'Saldo utilizável insuficiente: o que está vencido não pode sair.' : 'Saldo insuficiente em estoque para esta saída.');
-        let n = 0;
-        for (const l of lots.rows) {
-          if (need <= 0) break;
-          const take = Math.min(need, toMilli(Number(l.bal)));
-          ids.push((await insert(-Number(fromMilli(take)), l.id, b.idempotencyKey ? (n === 0 ? b.idempotencyKey : `${b.idempotencyKey}#${n}`) : null)).rows[0]!.id);
-          need -= take; n++;
-        }
-        if (need > 0) ids.push((await insert(-Number(fromMilli(need)), null, b.idempotencyKey ? (n === 0 ? b.idempotencyKey : `${b.idempotencyKey}#${n}`) : null)).rows[0]!.id);
+        ids.push(...await consumeFefo(ctx.tx, b.itemId, Math.abs(b.quantity), b.idempotencyKey ?? null, insert));
       } else {
         if (b.lotId) {
           const l = await ctx.tx.query<{ expired: boolean }>(`SELECT COALESCE(expires_on < ${TODAY}, false) AS expired FROM inventory_lots WHERE id = $1 AND item_id = $2`, [b.lotId, b.itemId]);
@@ -174,6 +226,66 @@ export function inventoryRoutes(app: FastifyInstance) {
          LEFT JOIN inventory_lots l ON l.tenant_id = m.tenant_id AND l.id = m.lot_id
         WHERE m.item_id = $1 ORDER BY m.created_at DESC LIMIT 100`, [id]);
     return { item: item.rows[0], movements: r.rows };
+  });
+
+  // ------------------------------------------------------------ kits de materiais por procedimento
+  clinicRoute(app, 'GET', '/api/inventory/procedure-supplies', { ...CAP, perm: 'inventory.read' }, async (ctx) => {
+    const r = await ctx.tx.query(
+      `SELECT s.id, s.procedure_key AS procedure, s.item_id AS "itemId", i.name AS "itemName", i.unit, s.quantity::text AS quantity
+         FROM procedure_supplies s JOIN inventory_items i ON i.tenant_id = s.tenant_id AND i.id = s.item_id
+        ORDER BY s.procedure_key, lower(i.name) LIMIT 1000`);
+    return { supplies: r.rows };
+  });
+
+  clinicRoute(app, 'PUT', '/api/inventory/procedure-supplies', { ...CAP, perm: 'inventory.write' }, async (ctx) => {
+    const b = z.object({ procedure: z.string().trim().min(2).max(160), itemId: z.string().uuid(), quantity: qty }).parse(ctx.req.body);
+    const it = await ctx.tx.query('SELECT 1 FROM inventory_items WHERE id = $1', [b.itemId]);
+    if (!it.rowCount) throw notFound('Item não encontrado.');
+    const r = await ctx.tx.query<{ id: string }>(
+      `INSERT INTO procedure_supplies (tenant_id, procedure_key, item_id, quantity, created_by) VALUES ($1,$2,$3,$4,$5)
+       ON CONFLICT (tenant_id, procedure_key, item_id) DO UPDATE SET quantity = EXCLUDED.quantity RETURNING id`,
+      [ctx.tenantId, procedureKey(b.procedure), b.itemId, b.quantity, ctx.user.id]);
+    await audit(ctx, 'inventory.procedure_supply.set', 'procedure_supply', r.rows[0]!.id, { quantity: b.quantity });
+    return { id: r.rows[0]!.id };
+  });
+
+  clinicRoute(app, 'DELETE', '/api/inventory/procedure-supplies/:id', { ...CAP, perm: 'inventory.write' }, async (ctx) => {
+    const { id } = idParam.parse(ctx.req.params);
+    const r = await ctx.tx.query('DELETE FROM procedure_supplies WHERE id = $1', [id]);
+    if (!r.rowCount) throw notFound('Material do kit não encontrado.');
+    await audit(ctx, 'inventory.procedure_supply.remove', 'procedure_supply', id);
+    return { ok: true };
+  });
+
+  // Baixas que não aconteceram por falta de saldo. Sem dados do paciente.
+  clinicRoute(app, 'GET', '/api/inventory/shortages', { ...CAP, perm: 'inventory.read' }, async (ctx) => {
+    const r = await ctx.tx.query(
+      `SELECT c.plan_item_id AS "planItemId", c.item_id AS "itemId", i.name AS "itemName", i.unit, c.quantity::text AS quantity,
+              p.procedure, c.created_at AS "createdAt"
+         FROM procedure_consumptions c JOIN inventory_items i ON i.tenant_id = c.tenant_id AND i.id = c.item_id
+         JOIN dental_plan_items p ON p.tenant_id = c.tenant_id AND p.id = c.plan_item_id
+        WHERE c.status = 'shortage' ORDER BY c.created_at LIMIT 200`);
+    return { shortages: r.rows };
+  });
+
+  // Tenta dar a baixa agora (depois de repor o estoque) ou encerra a pendência sem baixa, com motivo.
+  clinicRoute(app, 'POST', '/api/inventory/shortages/:planItemId/:itemId/resolve', { ...CAP, perm: 'inventory.write' }, async (ctx) => {
+    const p = z.object({ planItemId: z.string().uuid(), itemId: z.string().uuid() }).parse(ctx.req.params);
+    const b = z.object({ action: z.enum(['consume', 'dismiss']), note: z.string().trim().max(300).optional() }).parse(ctx.req.body);
+    if (b.action === 'dismiss' && (b.note ?? '').length < 3) throw badRequest('Explique por que a baixa não será feita.');
+    const c = await ctx.tx.query<{ quantity: string; status: string }>(
+      'SELECT quantity::text, status FROM procedure_consumptions WHERE plan_item_id = $1 AND item_id = $2 FOR UPDATE', [p.planItemId, p.itemId]);
+    if (!c.rows[0]) throw notFound('Pendência não encontrada.');
+    if (c.rows[0].status !== 'shortage') throw conflict('Esta pendência já foi tratada.');
+    if (b.action === 'consume') {
+      const st = await consumeOne(ctx.tx, ctx.tenantId, ctx.user.id, p.planItemId, p.itemId, Number(c.rows[0].quantity));
+      if (st === 'shortage') throw conflict('Ainda não há saldo utilizável suficiente para esta baixa.');
+      await ctx.tx.query(`UPDATE procedure_consumptions SET status = 'consumed' WHERE plan_item_id = $1 AND item_id = $2`, [p.planItemId, p.itemId]);
+    } else {
+      await ctx.tx.query(`UPDATE procedure_consumptions SET status = 'resolved', note = $3, resolved_by = $4, resolved_at = now() WHERE plan_item_id = $1 AND item_id = $2`, [p.planItemId, p.itemId, b.note, ctx.user.id]);
+    }
+    await audit(ctx, `inventory.shortage.${b.action}`, 'inventory_item', p.itemId, { planItemId: p.planItemId });
+    return { ok: true };
   });
 
   // ------------------------------------------------------------ inventário (contagem)

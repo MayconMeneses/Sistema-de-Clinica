@@ -51,7 +51,7 @@ Legenda: ✅ IMPLEMENTADO e testado localmente · 🟡 PARCIAL · ⬜ PLANEJADO
 - ✅ Estoque: lotes e validade (entrada com lote, saída pelo que vence antes, vencido não sai nem conta no mínimo, baixa por vencimento, alertas)
 - ✅ Estoque: inventário por contagem (um aberto por vez, saldo fotografado ao contar, diferença vira ajuste explicado, perdas saem primeiro dos lotes que vencem antes)
 - ✅ Estoque: fornecedores e pedidos de compra (rascunho → enviado → recebido em parte/total; recebimento entra no estoque com custo, lote e validade; teto de recebimento garantido pelo banco; numeração por clínica)
-- ⬜ Estoque: consumo ligado ao procedimento
+- ✅ Estoque: consumo ligado ao procedimento (kits por procedimento, baixa FEFO ao concluir o item do plano, falta de saldo vira pendência)
 - ✅ CRM: agendar consulta direto do lead (converte em paciente e marca a consulta, tudo ou nada)
 - ⬜ CRM: campanhas e envio (depende de provedor de mensagens)
 - ✅ BI: exportação dos indicadores em CSV (Excel pt-BR, só agregados, respeita plano e perfil, auditada)
