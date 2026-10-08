@@ -26,7 +26,7 @@ export interface ClinicCtx {
   req: FastifyRequest;
 }
 
-interface RouteOpts { cap?: string; perm?: Permission }
+interface RouteOpts { cap?: string; perm?: Permission; bodyLimit?: number }
 type Handler<C> = (ctx: C, req: FastifyRequest, reply: FastifyReply) => Promise<unknown>;
 
 /**
@@ -42,6 +42,7 @@ export function clinicRoute(
 ) {
   app.route({
     method, url,
+    ...(opts.bodyLimit ? { bodyLimit: opts.bodyLimit } : {}),
     handler: async (req, reply) => {
       const raw = req.cookies[CLINIC_COOKIE];
       const dot = raw?.indexOf('.') ?? -1;

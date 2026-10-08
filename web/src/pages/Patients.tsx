@@ -1,3 +1,4 @@
+import { Documents } from './Documents';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { ApiError, get, patch, post, type Me } from '../api';
 import { brl, dateTimeOf, KIND_LABEL, METHOD_LABEL, parseMoney } from '../format';
@@ -113,6 +114,7 @@ export function PatientDetail({ id, me }: { id: string; me: Me }) {
   const tabs = useMemo(() => [
     { key: 'dados', label: 'Dados', show: true },
     { key: 'prontuario', label: 'Prontuário', show: has('clinical.record') && can('notes.read') },
+    { key: 'documentos', label: 'Documentos', show: has('clinical.record') && can('documents.read') },
     { key: 'mensagens', label: 'Mensagens', show: has('communication.inbox') && can('comm.read') },
     { key: 'odontograma', label: 'Odontograma', show: has('dental.odontogram') && can('dental.read') },
     { key: 'financeiro', label: 'Financeiro', show: has('finance.basic') && can('finance.read') },
@@ -136,6 +138,7 @@ export function PatientDetail({ id, me }: { id: string; me: Me }) {
       </div>
       {tab === 'dados' && <div className="stack"><div className="card"><PatientForm initial={patient} canAlert={can('notes.read')} onSaved={() => p.reload()} /></div><Consents patientId={id} canWrite={can('patients.write')} /><Guardians patientId={id} canWrite={can('patients.write')} />{can('privacy.open') && <PrivacyCard patientId={id} patientName={patient.name} canExport={can('patients.export')} />}{can('patients.merge') && <div><MergeButton patient={{ id, name: patient.name }} onMerged={(t) => { window.location.hash = `/pacientes/${t}`; }} /></div>}</div>}
       {tab === 'mensagens' && <MessageHistory patientId={id} />}
+      {tab === 'documentos' && <Documents patientId={id} canWrite={can('documents.write')} />}
       {tab === 'prontuario' && <Notes patientId={id} meId={me.user.id} />}
       {tab === 'odontograma' && <Odontogram patientId={id} canWrite={can('dental.write')} hasFinance={has('finance.basic')} />}
       {tab === 'financeiro' && <PatientFinance patientId={id} canWrite={can('finance.write')} canDiscount={has('finance.advanced') && can('finance.write')} online={has('payments.gateway') && can('finance.read') ? { charge: can('payments.charge'), refund: can('finance.approve') } : null} />}

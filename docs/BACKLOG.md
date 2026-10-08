@@ -31,7 +31,8 @@ Legenda: ✅ IMPLEMENTADO e testado localmente · 🟡 PARCIAL · ⬜ PLANEJADO
 - ✅ Sangria e suprimento do caixa (imutáveis, só com caixa aberto, entram no dinheiro esperado)
 - ✅ Contas a pagar: lançamento, parcelas mensais, atraso/vence em breve, pagamento (com juros/desconto), cancelamento com motivo, imutáveis depois de pagas
 - ✅ Comissões e repasses: percentual por profissional com histórico, produção (cobranças de atendimento/procedimento concluído), repasse calculado no servidor, sem sobreposição de períodos, anulação com motivo
-- ⬜ Comissão sobre valor recebido (hoje é sobre produção), anexos e documentos, caixa por unidade
+- ✅ Anexos e documentos do paciente: PDF/PNG/JPG/WEBP até 5 MB, tipo conferido pelo conteúdo, SHA-256 verificado no download, histórico de acesso, sem exclusão (só arquivar com motivo)
+- ⬜ Comissão sobre valor recebido (hoje é sobre produção), caixa por unidade
 
 ## Fase 3
 - ✅ Odontograma com histórico imutável e plano de tratamento com cobrança
