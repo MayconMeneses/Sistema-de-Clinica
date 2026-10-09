@@ -23,7 +23,7 @@ export function sniffMime(b: Buffer): 'application/pdf' | 'image/png' | 'image/j
   if (b.length >= 12 && b.subarray(0, 4).toString('latin1') === 'RIFF' && b.subarray(8, 12).toString('latin1') === 'WEBP') return 'image/webp';
   return null;
 }
-const safeName = (n: string) => n.replace(/[\r\n"\\/]/g, '_').replace(/[^\p{L}\p{N} ._()-]/gu, '_').slice(0, 160) || 'documento';
+const safeName = (n: string) => n.replace(/\.{2,}/g, '.').replace(/^\.+/, '').replace(/[\r\n"\\/]/g, '_').replace(/[^\p{L}\p{N} ._()-]/gu, '_').slice(0, 160) || 'documento';
 
 export function documentRoutes(app: FastifyInstance) {
   clinicRoute(app, 'GET', '/api/patients/:id/documents', { ...CAP, perm: 'documents.read' }, async (ctx) => {

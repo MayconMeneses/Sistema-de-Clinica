@@ -846,6 +846,16 @@ for (const vp of [{ name: 'desktop', width: 1280, height: 800, mobile: false }, 
   await page.getByRole('button', { name: 'Baixar' }).first().click();
   must((await dl).suggestedFilename() === 'exame-e2e.pdf', 'documentos: download devolve o arquivo com o nome original');
   await page.screenshot({ path: `${SHOTS}/14-documentos-${vp.name}.png` });
+  // XSS armazenado: nome com HTML/script aparece como texto e nada executa
+  if (vp.name === 'desktop') {
+    const evil = `<img src=x onerror="window.__xss=1"><script>window.__xss=2</script> Teste${Date.now() % 100000}`;
+    let dialogs = 0; page.on('dialog', (d) => { dialogs++; void d.dismiss(); });
+    await page.evaluate(async (n) => { await fetch('/api/patients', { method: 'POST', headers: { 'content-type': 'application/json', 'x-requested-with': 'clinica-one' }, body: JSON.stringify({ name: n, confirmNotDuplicate: true }) }); }, evil);
+    await go(page, 'Pacientes');
+    await page.getByText(evil, { exact: false }).first().waitFor();
+    must((await page.evaluate(() => (window as unknown as { __xss?: number }).__xss)) === undefined && dialogs === 0, 'XSS: nome com HTML/script é exibido como texto e nada executa');
+    must((await page.locator('main img[src="x"]').count()) === 0, 'XSS: nenhuma tag injetada no DOM');
+  }
   await ctx.close();
 }
 

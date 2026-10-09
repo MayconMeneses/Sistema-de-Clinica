@@ -15,6 +15,20 @@ export const forbidden = (m = 'Você não tem permissão para esta ação.') => 
 export const notFound = (m = 'Não encontrado.') => new HttpError(404, m, 'not_found');
 export const conflict = (m: string) => new HttpError(409, m, 'conflict');
 
+/** AAAA-MM-DD que existe no calendário (recusa 2024-13-45 e 2023-02-30). */
+export const isRealDate = (v: string) => {
+  const d = new Date(`${v}T00:00:00Z`);
+  return /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
+};
+
+/** Texto com byte nulo (\u0000) não existe em dado legítimo e o PostgreSQL o recusa; vale para qualquer parte do corpo. */
+export function hasNulChar(v: unknown, depth = 0): boolean {
+  if (typeof v === 'string') return v.includes('\u0000');
+  if (depth > 25 || v === null || typeof v !== 'object') return false;
+  for (const [k, x] of Object.entries(v as Record<string, unknown>)) if (k.includes('\u0000') || hasNulChar(x, depth + 1)) return true;
+  return false;
+}
+
 export const sha256 = (s: string) => createHash('sha256').update(s).digest('hex');
 export const newSecret = () => randomBytes(32).toString('base64url');
 
@@ -28,6 +42,8 @@ export function errorHandler(err: unknown, req: FastifyRequest, reply: FastifyRe
     return reply.status(400).send({ error: 'validation', message, requestId: req.id });
   }
   const e = err as { statusCode?: number; code?: string };
+  // Erros de dado do PostgreSQL (classe 22: data fora do intervalo, texto inválido, número grande demais) são entrada ruim, não falha do servidor.
+  if (typeof e.code === 'string' && /^22[0-9A-Z]{3}$/.test(e.code)) return reply.status(400).send({ error: 'validation', message: 'Algum dado informado é inválido.', requestId: req.id });
   if (e.statusCode && e.statusCode < 500) {
     return reply.status(e.statusCode).send({ error: 'bad_request', message: 'Requisição inválida.', requestId: req.id });
   }

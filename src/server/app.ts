@@ -7,7 +7,7 @@ import Fastify from 'fastify';
 import { config } from './config.js';
 import { initAlerts } from '../ops/alerts.js';
 import { appPool, platformPool } from './db.js';
-import { errorHandler } from './http.js';
+import { errorHandler, hasNulChar } from './http.js';
 import { appointmentRoutes } from './routes/appointments.js';
 import { authRoutes } from './routes/auth.js';
 import { cashRoutes } from './routes/cash.js';
@@ -66,6 +66,11 @@ export async function buildApp(opts: { logger?: boolean; logStream?: NodeJS.Writ
       if (origin) { try { originOk = new URL(origin).host === req.headers.host; } catch { originOk = false; } } // "null" ou malformado => bloqueia
       const bad = req.headers['x-requested-with'] !== 'clinica-one' || !originOk;
       if (bad) return reply.status(403).send({ error: 'csrf', message: 'Requisição bloqueada.', requestId: req.id });
+    }
+  });
+  app.addHook('preValidation', async (req, reply) => {
+    if (req.body && typeof req.body === 'object' && !Buffer.isBuffer(req.body) && hasNulChar(req.body)) {
+      return reply.status(400).send({ error: 'validation', message: 'O texto contém caracteres inválidos.', requestId: req.id });
     }
   });
   app.addHook('onSend', async (req, reply) => {

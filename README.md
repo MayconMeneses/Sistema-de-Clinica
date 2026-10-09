@@ -16,6 +16,22 @@
 - **Idempotência.** Lançamentos financeiros, movimentos de estoque, webhooks de pagamento e estornos usam chaves de idempotência, então repetir uma chamada não duplica nada.
 - **Operação.** Alertas de erro por Telegram dizendo qual componente e qual clínica falhou, com o arquivo e a linha de origem, e comandos de consulta (`/status`, `/erros`, `/fila`). Backup e restore validados por script. Deploy por Docker com atualização automática (Watchtower) a partir de imagem publicada no GHCR pelo CI.
 
+## Telas
+
+Capturas do sistema com os dados fictícios de demonstração (geradas por `scripts/readme-shots.ts`).
+
+| Agenda | Pacientes | Odontograma |
+|---|---|---|
+| ![Agenda do dia](docs/img/agenda.png) | ![Lista de pacientes](docs/img/pacientes.png) | ![Odontograma e plano de tratamento](docs/img/odontograma.png) |
+
+| Financeiro | Estoque | Indicadores |
+|---|---|---|
+| ![Financeiro](docs/img/financeiro.png) | ![Estoque](docs/img/estoque.png) | ![Indicadores](docs/img/indicadores.png) |
+
+| Agenda no celular | Recepção no celular |
+|---|---|
+| <img src="docs/img/agenda-celular.png" width="260" alt="Agenda no celular"> | <img src="docs/img/recepcao-celular.png" width="260" alt="Fila da recepção no celular"> |
+
 ## Funcionalidades
 
 | Área | O que tem |
