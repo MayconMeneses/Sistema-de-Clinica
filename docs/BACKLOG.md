@@ -38,7 +38,8 @@ Legenda: ✅ IMPLEMENTADO e testado localmente · 🟡 PARCIAL · ⬜ PLANEJADO
 ## Fase 3
 - ✅ Odontograma com histórico imutável e plano de tratamento com cobrança
 - ✅ Orçamento com versões e aceite registrado pela clínica (o aceite gera os itens do plano de tratamento)
-- ⬜ Imagens/radiografias, próteses/laboratórios, repasses, assinatura eletrônica do aceite (provedor externo)
+- ✅ Imagens e radiografias: aba Imagens (PNG/JPG/WEBP até 5 MB, dente e data do exame, miniatura leve, filtro por dente, visualizador e comparação lado a lado), mesma segregação do prontuário e liberação opcional no portal. Falta: DICOM, zoom/medidas e ligar a imagem ao achado do odontograma
+- ⬜ Próteses/laboratórios, repasses, assinatura eletrônica do aceite (provedor externo)
 - ✅ Camada de integrações: outbox transacional, worker (retry/backoff/dead-letter), webhooks assinados, consentimento, adaptadores WhatsApp/e-mail/SMS (sandbox + real escrito), armazenamento local
 - ⛔ Envio real: depende de escolher/contratar provedores e validar adaptadores (`docs/INTEGRACOES.md`)
 - ⬜ Inbox, templates editáveis, automações, opt-out por resposta, portal inicial

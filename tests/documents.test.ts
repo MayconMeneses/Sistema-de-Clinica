@@ -97,4 +97,56 @@ describe('anexos e documentos do paciente', () => {
     expect(((await t.owner.get(`/api/patients/${pid}/documents`)).json().documents as unknown[]).length).toBe(2);
     expect((await dr.c.req('GET', `/api/documents/${exam}/download`)).statusCode).toBe(200);
   });
+
+  it('radiografias e fotos: só imagens, dente e data opcionais, miniatura JPEG pequena, galeria separada dos arquivos e restrita ao prontuário', async () => {
+    const t = await tenant('docsimg');
+    const dr = await t.mk('professional', 'drimg');
+    const rec = await t.mk('receptionist', 'recimg');
+    const pid = (await dr.c.post('/api/patients', { name: 'Paciente Imagens' })).json().id as string;
+    const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(2000, 7)]);
+    const thumb = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(500, 9)]);
+    const body = (extra: object = {}) => ({ title: 'Panorâmica inicial', category: 'xray', fileName: 'pan.jpg', contentBase64: jpeg.toString('base64'), ...extra });
+    const post = (b: object) => dr.c.post(`/api/patients/${pid}/documents`, b);
+
+    expect((await post(body({ contentBase64: pdf.toString('base64') }))).statusCode).toBe(400);                 // radiografia precisa ser imagem
+    expect((await post(body({ tooth: '99' }))).statusCode).toBe(400);                                          // dente fora da numeração FDI
+    expect((await post(body({ takenOn: '2024-13-45' }))).statusCode).toBe(400);
+    expect((await post(body({ takenOn: '2999-01-01' }))).statusCode).toBe(400);
+    expect((await post(body({ thumbnailBase64: pdf.toString('base64') }))).statusCode).toBe(400);              // miniatura que não é JPEG
+    expect((await post(body({ thumbnailBase64: Buffer.concat([Buffer.from([0xff, 0xd8, 0xff]), Buffer.alloc(90_000)]).toString('base64') }))).statusCode).toBe(400);
+    expect((await dr.c.post(`/api/patients/${pid}/documents`, { title: 'Termo com dente', category: 'consent', fileName: 't.pdf', contentBase64: pdf.toString('base64'), tooth: '16' })).statusCode).toBe(400);
+    expect((await rec.c.post(`/api/patients/${pid}/documents`, body())).statusCode).toBe(403);                  // recepção não anexa radiografia
+
+    const a = await post(body({ tooth: '16', takenOn: '2026-03-10', thumbnailBase64: thumb.toString('base64') }));
+    const b = await post(body({ title: 'Foto do sorriso', category: 'photo', fileName: 'foto.png', contentBase64: Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(300)]).toString('base64') }));
+    const c = await post(body({ title: 'Radiografia do 26', tooth: '26', takenOn: '2026-04-01' }));
+    expect([a.statusCode, b.statusCode, c.statusCode]).toEqual([200, 200, 200]);
+    const idA = a.json().id as string;
+
+    const imgs = (await dr.c.get(`/api/patients/${pid}/documents?kind=images`)).json().documents as { id: string; tooth: string | null; takenOn: string | null; hasThumbnail: boolean; category: string }[];
+    expect(imgs).toHaveLength(3);
+    expect(imgs.find((x) => x.id === idA)).toMatchObject({ tooth: '16', takenOn: '2026-03-10', hasThumbnail: true, category: 'xray' });
+    expect(((await dr.c.get(`/api/patients/${pid}/documents?kind=images&tooth=26`)).json().documents as unknown[]).length).toBe(1);
+    expect(((await dr.c.get(`/api/patients/${pid}/documents`)).json().documents as unknown[]).length).toBe(0);  // a lista de arquivos não mistura imagens
+    expect(((await rec.c.get(`/api/patients/${pid}/documents?kind=images`)).json().documents as unknown[]).length).toBe(0);
+
+    const th = await dr.c.get(`/api/documents/${idA}/thumb`);
+    expect(th.statusCode).toBe(200);
+    expect(th.headers['content-type']).toBe('image/jpeg'); expect(th.headers['x-content-type-options']).toBe('nosniff'); expect(th.headers['content-disposition']).toBe('inline');
+    expect((await dr.c.get(`/api/documents/${c.json().id}/thumb`)).statusCode).toBe(404);                      // sem miniatura
+    const full = await dr.c.get(`/api/documents/${idA}/image`);
+    expect(full.statusCode).toBe(200);
+    expect(Buffer.from(full.rawPayload).equals(jpeg)).toBe(true);
+    expect(full.headers['cache-control']).toContain('no-store');
+    expect((await rec.c.get(`/api/documents/${idA}/thumb`)).statusCode).toBe(404);
+    expect((await rec.c.get(`/api/documents/${idA}/image`)).statusCode).toBe(404);
+    expect((await rec.c.req('GET', `/api/documents/${idA}/download`)).statusCode).toBe(404);
+
+    const ev = await withTenant(appPool, t.id, async (tx) => (await tx.query(`SELECT action, metadata FROM audit_events WHERE entity_id = $1 OR action = 'document.images_listed' ORDER BY occurred_at`, [idA])).rows);
+    expect(ev.some((e) => e.action === 'document.images_listed')).toBe(true);
+    expect(ev.some((e) => e.action === 'document.read' && e.metadata.view === 'image')).toBe(true);
+    // o banco não deixa trocar dente/data/miniatura depois de gravado
+    await expect(withTenant(appPool, t.id, (tx) => tx.query("UPDATE patient_documents SET tooth = '11' WHERE id = $1", [idA]))).rejects.toThrow(/imutável/);
+    await expect(withTenant(appPool, t.id, (tx) => tx.query("UPDATE patient_documents SET thumbnail = NULL WHERE id = $1", [idA]))).rejects.toThrow(/imutável/);
+  });
 });
