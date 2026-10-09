@@ -36,6 +36,8 @@ export interface Me {
   mfaEnabled: boolean;
   /** null = sem restrição; lista (talvez vazia) = o perfil só enxerga a agenda destas unidades. */
   unitScope?: string[] | null;
+  /** Só para o proprietário: situação da cobrança da plataforma (aviso de fatura em atraso). */
+  billing?: { state: 'ok' | 'late' | 'suspend'; daysOverdue: number; graceLeft: number | null } | null;
 }
 
 /** O servidor de demonstração pode dispensar o código MFA do Master (DEMO_SKIP_MASTER_MFA). */

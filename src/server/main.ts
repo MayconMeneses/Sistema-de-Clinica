@@ -1,5 +1,6 @@
 import { startWorker } from '../worker/main.js';
 import { installProcessHandlers } from '../ops/alerts.js';
+import { startBillingJob } from '../modules/billing/job.js';
 import { buildApp } from './app.js';
 import { config } from './config.js';
 import { appPool, platformPool, workerPool } from './db.js';
@@ -12,9 +13,12 @@ await app.listen({ port: config.port, host: config.host });
 const inline = process.env.WORKER_INLINE === '1' || (!config.isProd && process.env.WORKER_INLINE !== '0');
 const stopWorker = inline ? startWorker((msg, extra) => app.log.info(extra ?? {}, msg)) : () => undefined;
 
+const stopBilling = startBillingJob(platformPool, (msg, extra) => app.log.info(extra ?? {}, msg));
+
 for (const sig of ['SIGINT', 'SIGTERM'] as const) {
   process.on(sig, () => {
     stopWorker();
+    stopBilling();
     void app.close().then(() => Promise.all([appPool.end(), platformPool.end(), workerPool.end()])).then(() => process.exit(0));
   });
 }

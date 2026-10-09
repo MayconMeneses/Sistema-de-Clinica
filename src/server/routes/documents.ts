@@ -1,3 +1,4 @@
+import { assertWithinPlan } from '../limits.js';
 import { createHash } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -72,6 +73,7 @@ export function documentRoutes(app: FastifyInstance) {
       if (thumb.length === 0 || thumb.length > MAX_THUMB || sniffMime(thumb) !== 'image/jpeg') throw badRequest('A miniatura precisa ser um JPEG de até 80 KB.');
     }
     await assertActive(ctx.tx, id);
+    await assertWithinPlan(ctx.tx, 'storage', buf.length / 1_048_576);
     try {
       const r = await ctx.tx.query<{ id: string }>(
         `INSERT INTO patient_documents (tenant_id, patient_id, title, category, file_name, mime_type, size_bytes, sha256, content, created_by, tooth, taken_on, thumbnail)

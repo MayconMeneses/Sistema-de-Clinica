@@ -950,6 +950,12 @@ for (const vp of [{ name: 'desktop', width: 1280, height: 800, mobile: false }, 
   const ap = await api('POST', '/api/appointments', { patientId: pid, professionalId: pros[0]!.id, startsAt: start.toISOString(), endsAt: new Date(start.getTime() + 1_800_000).toISOString(), service: 'Consulta', encaixe: true });
   const doc = await api('POST', `/api/patients/${pid}/documents`, { title: 'Orientações pós-consulta', category: 'other', fileName: 'orientacoes.pdf', contentBase64: Buffer.from('%PDF-1.4\norientacoes\n%%EOF').toString('base64') });
   await api('POST', `/api/documents/${doc.json.id}/share`, { shared: true });
+  const df = await api('POST', '/api/form-templates/defaults', {});
+  const tl = await api('GET', '/api/form-templates');
+  must(df.status === 200 && tl.status === 200, `formulários: modelos prontos instalados (${df.status} ${JSON.stringify(df.json).slice(0, 100)}; ${tl.status})`);
+  const tpls = tl.json.templates as { id: string; key: string }[];
+  const fr = await api('POST', `/api/patients/${pid}/forms`, { templateId: tpls.find((t) => t.key === 'anamnese-odontologica')!.id, appointmentId: ap.json.id });
+  must(fr.status === 200, `formulários: pedido criado para o paciente (${fr.status})`);
   must(ap.status === 200 && doc.status === 200, `portal: dados de teste criados (consulta ${ap.status} ${JSON.stringify(ap.json).slice(0, 120)}; documento ${doc.status})`);
 
   // a equipe gera o link pela tela da ficha do paciente
@@ -987,6 +993,14 @@ for (const vp of [{ name: 'desktop', width: 1280, height: 800, mobile: false }, 
   await pp.getByText('Pedido enviado.').waitFor();
   await pp.getByRole('heading', { name: 'Meus pedidos' }).waitFor();
   must(true, 'portal: paciente pede uma consulta e vê o pedido em análise');
+  await pp.getByRole('heading', { name: 'Formulários para preencher' }).waitFor();
+  await pp.getByRole('button', { name: 'Preencher' }).click();
+  await pp.getByLabel('Qual é o motivo da consulta?').fill('Dor ao mastigar do lado direito');
+  await pp.getByRole('group', { name: /Está em tratamento médico/ }).getByLabel('Não').check();
+  await pp.getByRole('button', { name: 'Enviar respostas' }).click();
+  await pp.getByText('Respostas enviadas. Obrigado!').waitFor();
+  must(await pp.getByRole('heading', { name: 'Formulários para preencher' }).count() === 0, 'formulários: paciente responde pelo portal e o pedido some da lista');
+  await noHorizontalScroll(pp, 'portal');
   await pp.getByRole('button', { name: 'Sair' }).click();
   await pp.getByRole('heading', { name: 'Sessão encerrada' }).waitFor();
   must(true, 'portal: sair encerra a sessão');

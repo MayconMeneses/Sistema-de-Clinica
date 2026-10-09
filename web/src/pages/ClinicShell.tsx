@@ -78,6 +78,9 @@ export function ClinicShell({ me, hash, onLogout, onRefresh }: { me: Me; hash: s
         )}
       </nav>
       <main className="content" id="main">
+        {me.billing && me.billing.state !== 'ok' && (
+          <div className="banner" role="alert">Há uma fatura da plataforma vencida há {me.billing.daysOverdue} dia(s). {me.billing.graceLeft ? `O acesso será suspenso em ${me.billing.graceLeft} dia(s) se não for regularizada.` : 'O acesso pode ser suspenso a qualquer momento.'} Veja em Gestão → Assinatura.</div>
+        )}
         {me.unitScope && (
           <div className="banner" role="note">
             {me.unitScope.length

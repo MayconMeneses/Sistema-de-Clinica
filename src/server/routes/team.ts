@@ -1,3 +1,4 @@
+import { assertWithinPlan } from '../limits.js';
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -46,6 +47,7 @@ export function teamRoutes(app: FastifyInstance) {
     if (policy) throw badRequest(policy);
     const dup = await ctx.tx.query('SELECT 1 FROM users WHERE email = $1', [b.email]);
     if (dup.rowCount) throw conflict('Já existe um usuário com este e-mail.');
+    await assertWithinPlan(ctx.tx, 'users');
     const id = randomUUID();
     await ctx.tx.query(
       'INSERT INTO users (id, tenant_id, email, name, password_hash, role) VALUES ($1,$2,$3,$4,$5,$6)',
