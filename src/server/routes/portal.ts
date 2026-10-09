@@ -11,7 +11,7 @@ import { appPool } from '../db.js';
 import { CLINICAL_CATEGORIES } from './documents.js';
 import { validateAnswers, type FormField } from '../../modules/forms/schema.js';
 import { apptInScope, assertApptVisible, PATIENT_VISIBLE_SQL, unitScope } from '../scope.js';
-import { badRequest, conflict, forbidden, HttpError, isRealDate, mapDbError, newSecret, notFound, sha256, unauthorized } from '../http.js';
+import { badRequest, conflict, HttpError, isRealDate, mapDbError, newSecret, notFound, sha256, unauthorized } from '../http.js';
 
 const CAP = { cap: 'patient.portal' } as const;
 const idParam = z.object({ id: z.string().uuid() });

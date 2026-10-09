@@ -13,7 +13,6 @@ afterAll(async () => { await app.close(); await appPool.end(); await platformPoo
 
 const SELF = new Set(['/api/auth/logout', '/api/me/password']);
 const fill = (url: string) => url.replace(/:[A-Za-z]+/g, () => randomUUID());
-const uuid = () => randomUUID();
 
 // Valores hostis que um cliente malicioso pode mandar em qualquer campo.
 const HOSTILE: unknown[] = ['\u0000', 'A'.repeat(70_000), '', -1, 1e21, null, [], { $ne: 1 }, '2024-13-45', "' OR 1=1 --", 'not-a-uuid', '😀\u202E'];

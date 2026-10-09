@@ -64,7 +64,6 @@ function MonthCompare() {
           <select aria-label="Indicador" className="input" value={ind?.key ?? key} onChange={(e) => setKey(e.target.value)}>{data.data?.indicators.map((i) => <option key={i.key} value={i.key}>{i.label}</option>)}</select>
           <select aria-label="Quantidade de meses" className="input" value={months} onChange={(e) => setMonths(Number(e.target.value))}>{[3, 6, 12].map((m) => <option key={m} value={m}>{m} meses</option>)}</select>
         </span></div>
-      <MonthCompare />
       {data.loading && !data.data && <Spinner />}
       {data.error && <ErrorBox message={data.error} onRetry={data.reload} />}
       {data.data && !ind && <p className="small muted">Nenhum indicador disponível para o seu plano ou perfil.</p>}
@@ -128,6 +127,7 @@ export function ReportsPage() {
           <TextInput label="Até" type="date" value={range.to} onChange={(v) => v && setRange({ ...range, to: v })} />
         </div>
       </div>
+      <MonthCompare />
       {data.loading && !data.data && <Spinner />}
       {data.error && <ErrorBox message={data.error} onRetry={data.reload} />}
       {data.data && data.data.omitted.length > 0 && (

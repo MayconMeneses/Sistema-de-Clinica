@@ -125,6 +125,7 @@ export function PatientDetail({ id, me }: { id: string; me: Me }) {
     { key: 'financeiro', label: 'Financeiro', show: has('finance.basic') && can('finance.read') },
   ].filter((t) => t.show), [me]);
   const [tab, setTab] = useState('dados');
+  useEffect(() => setTab('dados'), [id]);   // ao abrir outro paciente, volta para a aba Dados
 
   if (p.loading && !p.data) return <Spinner />;
   if (p.error || !p.data) return <><p><a href="#/pacientes">← Pacientes</a></p><ErrorBox message={p.error ?? 'Paciente não encontrado.'} onRetry={p.reload} /></>;

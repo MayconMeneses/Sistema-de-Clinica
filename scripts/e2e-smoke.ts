@@ -445,7 +445,8 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
   // Indicadores
   await go(page, 'Indicadores');
   await page.getByRole('heading', { name: 'Indicadores' }).waitFor();
-  await page.getByText('Taxa de falta', { exact: true }).first().waitFor();
+  await page.locator('.stat').getByText('Taxa de falta', { exact: true }).first().waitFor();
+  await page.getByRole('heading', { name: 'Comparar meses' }).waitFor();
   await page.getByRole('heading', { name: 'CRM' }).waitFor();
   must(true, 'indicadores mostram atendimentos, financeiro e CRM');
   await noHorizontalScroll(page, 'indicadores');
@@ -795,6 +796,20 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
   await mp.getByRole('heading', { name: 'Integrações' }).waitFor();
   await mp.getByText('Aguardando credenciais').first().waitFor();
   must(true, 'Master mostra provedores aguardando credenciais (sem expor segredos)');
+  await mp.getByRole('link', { name: 'Cobrança' }).click();
+  await mp.getByRole('heading', { name: 'Cobrança', exact: true }).waitFor();
+  await mp.getByRole('heading', { name: 'Planos: preço e limites' }).waitFor();
+  must(true, 'Master: tela de cobrança (planos, clientes e faturas)');
+  await mp.getByRole('link', { name: 'Suporte' }).click();
+  await mp.getByRole('heading', { name: 'Suporte', exact: true }).waitFor();
+  must(true, 'Master: tela de suporte (só abre o que a clínica liberou)');
+  await mp.getByRole('link', { name: 'Operadores' }).click();
+  await mp.getByRole('heading', { name: 'Operadores', exact: true }).waitFor();
+  await mp.getByText('Operador Demo (você)').waitFor();
+  await noHorizontalScroll(mp, 'master-operadores');
+  must(true, 'Master: operadores e papéis');
+  await mp.getByRole('link', { name: 'Integrações' }).click();
+  await mp.getByRole('heading', { name: 'Integrações' }).waitFor();
   await mp.getByRole('button', { name: 'Simular um erro' }).click();
   await mp.getByRole('heading', { name: 'Últimos avisos deste servidor' }).waitFor();
   await mp.getByText('ERRO SIMULADO').first().waitFor();
@@ -957,6 +972,45 @@ for (const vp of [{ name: 'desktop', width: 1280, height: 800, mobile: false }, 
   const fr = await api('POST', `/api/patients/${pid}/forms`, { templateId: tpls.find((t) => t.key === 'anamnese-odontologica')!.id, appointmentId: ap.json.id });
   must(fr.status === 200, `formulários: pedido criado para o paciente (${fr.status})`);
   must(ap.status === 200 && doc.status === 200, `portal: dados de teste criados (consulta ${ap.status} ${JSON.stringify(ap.json).slice(0, 120)}; documento ${doc.status})`);
+
+  // telas novas da equipe: indicadores mês a mês, triagem na recepção, assinatura e formulários na Gestão
+  await staff.goto(`${BASE}/#/indicadores`);
+  await staff.getByRole('heading', { name: 'Comparar meses' }).waitFor();
+  await staff.getByRole('img', { name: /por mês/ }).waitFor();
+  must(await staff.locator('table.table tbody tr').count() >= 3, 'indicadores: gráfico e tabela de comparação mensal');
+  await staff.selectOption('select[aria-label="Indicador"]', 'newPatients');
+  await staff.selectOption('select[aria-label="Quantidade de meses"]', '12');
+  await staff.waitForFunction(() => document.querySelectorAll('table.table tbody tr').length === 12);
+  must(true, 'indicadores: 12 meses de um indicador');
+  const soon = new Date(Date.now() + 600_000);
+  const pid2 = (await api('POST', '/api/patients', { name: `Paciente Triagem ${suffix}`, birthDate: '1985-06-06', confirmNotDuplicate: true })).json.id as string;
+  const apr = await api('POST', '/api/appointments', { patientId: pid2, professionalId: pros[0]!.id, startsAt: soon.toISOString(), endsAt: new Date(soon.getTime() + 1_800_000).toISOString(), service: 'Triagem E2E', encaixe: true });
+  must(apr.status === 200, `recepção: consulta de hoje criada (${apr.status})`);
+  await staff.goto(`${BASE}/#/recepcao`);
+  await staff.getByRole('button', { name: 'Fazer triagem' }).first().click();
+  await staff.getByLabel('Peso (kg)').fill('70,5');
+  await staff.getByLabel('Queixa principal').fill('Dor ao mastigar');
+  await staff.getByRole('button', { name: 'Registrar triagem' }).click();
+  await staff.getByText('Triagem registrada.').waitFor();
+  await staff.getByText('Triagem feita').first().waitFor();
+  must(true, 'recepção: triagem registrada pela fila e selo "Triagem feita"');
+  await staff.goto(`${BASE}/#/equipe`);
+  await staff.getByRole('tab', { name: 'Assinatura' }).click();
+  await staff.getByRole('heading', { name: 'Acesso do suporte' }).waitFor();
+  await staff.getByLabel('Motivo').fill('Ajuda com a agenda');
+  await staff.getByRole('button', { name: 'Liberar acesso ao suporte' }).click();
+  await staff.getByText('Acesso liberado ao suporte.').waitFor();
+  await staff.getByRole('button', { name: 'Encerrar agora' }).click();
+  await staff.getByText('Acesso do suporte encerrado.').waitFor();
+  must(true, 'gestão: assinatura e acesso do suporte (liberar e encerrar)');
+  await staff.getByRole('tab', { name: 'Formulários' }).click();
+  await staff.getByText('Anamnese odontológica').first().waitFor();
+  must(true, 'gestão: modelos de formulário listados');
+  await staff.goto(`${BASE}/#/pacientes/${pid2}`);
+  await staff.getByRole('tab', { name: 'Formulários' }).click();
+  await staff.getByRole('heading', { name: 'Triagem', level: 3 }).waitFor();
+  await staff.getByText('70,5 kg').waitFor();
+  must(true, 'paciente: aba Formulários mostra a triagem registrada');
 
   // a equipe gera o link pela tela da ficha do paciente
   await staff.goto(`${BASE}/#/pacientes/${pid}`);

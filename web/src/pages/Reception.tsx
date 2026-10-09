@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { get, patch } from '../api';
 import { STATUS_LABEL, timeOf } from '../format';
 import { TriageSheet } from './FormsStaff';
@@ -81,6 +81,7 @@ export function Reception({ canWrite, portal = false, forms = false, canTriage =
             <li key={a.id} className="list-item stack">
               <div className="row between"><strong>{timeOf(a.startsAt)} · {a.patientName}</strong><Badge>{STATUS_LABEL[a.status]}</Badge></div>
               <span className="small muted">{a.professionalName}{a.resourceName ? ` · ${a.resourceName}` : ''} · {a.service}</span>
+              {forms && <FormBadges a={a} canTriage={canTriage} onTriage={() => setTriaging(a)} />}
               {canWrite && (
                 <div className="row">
                   <Button className="btn-sm" onClick={() => move(a, { status: 'checked_in' }, `${a.patientName} chegou.`)}>Chegou</Button>
@@ -92,6 +93,7 @@ export function Reception({ canWrite, portal = false, forms = false, canTriage =
           ))}
         </ul>
       </section>
+      <TriageSheet patientId={triaging?.patientId ?? null} appointmentId={triaging?.id} onClose={() => setTriaging(null)} onDone={() => { setTriaging(null); list.reload(); }} />
     </>
   );
 }

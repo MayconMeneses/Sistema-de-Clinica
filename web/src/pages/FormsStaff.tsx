@@ -94,6 +94,7 @@ function TemplateEditor({ target, onClose, onDone }: { target: Template | 'new' 
 interface FormRow { id: string; status: 'pending' | 'submitted' | 'canceled'; createdAt: string; submittedAt: string | null; submittedVia: string | null; templateName: string; templateVersion: number; fields?: FormField[]; answers: Record<string, unknown> | null }
 interface TriageRow { id: string; recordedAt: string; weightKg: number | null; heightCm: number | null; bpSystolic: number | null; bpDiastolic: number | null; heartRate: number | null; temperatureC: number | null; painScale: number | null; allergies: string | null; medications: string | null; complaint: string | null; notes: string | null; recordedByName: string | null }
 
+const num = (v: number) => v.toLocaleString('pt-BR', { maximumFractionDigits: 1 });
 const show = (v: unknown) => (Array.isArray(v) ? v.join(', ') : v === true ? 'Sim' : v === false ? 'Não' : String(v));
 
 /** Aba do paciente: pedir formulário, preencher na recepção, ler respostas (só prontuário) e triagem. */
@@ -145,7 +146,7 @@ export function PatientForms({ patientId, canAssign, canTriageWrite, canTriageRe
             {triage.data?.triage.map((t) => (
               <li key={t.id} className="list-item stack">
                 <strong>{dateTimeOf(t.recordedAt)}</strong>
-                <span className="small">{[t.weightKg != null && `${t.weightKg} kg`, t.heightCm != null && `${t.heightCm} cm`, t.bpSystolic != null && `PA ${t.bpSystolic}/${t.bpDiastolic}`, t.heartRate != null && `FC ${t.heartRate}`, t.temperatureC != null && `${t.temperatureC} °C`, t.painScale != null && `dor ${t.painScale}/10`].filter(Boolean).join(' · ')}</span>
+                <span className="small">{[t.weightKg != null && `${num(t.weightKg)} kg`, t.heightCm != null && `${num(t.heightCm)} cm`, t.bpSystolic != null && `PA ${t.bpSystolic}/${t.bpDiastolic}`, t.heartRate != null && `FC ${t.heartRate}`, t.temperatureC != null && `${num(t.temperatureC)} °C`, t.painScale != null && `dor ${t.painScale}/10`].filter(Boolean).join(' · ')}</span>
                 {t.complaint && <span className="small">Queixa: {t.complaint}</span>}
                 {t.allergies && <span className="small">Alergias: {t.allergies}</span>}
                 {t.medications && <span className="small">Medicamentos: {t.medications}</span>}
