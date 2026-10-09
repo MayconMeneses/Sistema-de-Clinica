@@ -1,3 +1,4 @@
+import { clinicBillingStatus } from '../../modules/billing/billing.js';
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -168,6 +169,7 @@ export function authRoutes(app: FastifyInstance) {
       permissions: permissionsFor(ctx.user.role),
       entitlements: [...ctx.entitlements].sort(),
       mfaEnabled: m.rows[0]?.totp_enabled ?? false,
+      billing: ctx.user.role === 'owner' ? await clinicBillingStatus(ctx.tx) : null, // aviso de fatura em atraso, só para o proprietário
       unitScope: await unitScope(ctx), // null = sem restrição; lista (talvez vazia) = só estas unidades
     };
   });

@@ -4,6 +4,7 @@ import { dateTimeOf } from '../format';
 import { Badge, Button, Empty, ErrorBox, Select, Sheet, Spinner, TextInput, useLoad, useToast } from '../ui';
 import { useMasterMfa } from '../useMfa';
 import { Login } from './Login';
+import { MasterBilling, MasterSupport } from './MasterBilling';
 
 interface Capability { code: string; description: string; globallyAvailable: boolean; dependsOn: string[] }
 interface Tenant { owner: { name: string; email: string; mfaEnabled: boolean } | null; id: string; slug: string; name: string; status: string; planCode: string; createdAt: string; overrides: { capability: string; mode: 'grant' | 'block'; reason: string }[]; effective: string[] }
@@ -24,10 +25,12 @@ export function MasterApp({ hash }: { hash: string }) {
   if (op === undefined) return <main className="auth"><p className="loading" role="status">Carregando…</p></main>;
   if (op === null) return <Login mode="master" onDone={refresh} />;
 
-  const section = hash.startsWith('/master/funcionalidades') ? 'caps' : hash.startsWith('/master/auditoria') ? 'audit' : hash.startsWith('/master/integracoes') ? 'integrations' : 'tenants';
+  const section = hash.startsWith('/master/funcionalidades') ? 'caps' : hash.startsWith('/master/auditoria') ? 'audit' : hash.startsWith('/master/integracoes') ? 'integrations' : hash.startsWith('/master/cobranca') ? 'billing' : hash.startsWith('/master/suporte') ? 'support' : 'tenants';
   const links = [
     { to: '/master', key: 'tenants', label: 'Clínicas', ico: '▣' },
     { to: '/master/funcionalidades', key: 'caps', label: 'Planos', ico: '◧' },
+    { to: '/master/cobranca', key: 'billing', label: 'Cobrança', ico: '$' },
+    { to: '/master/suporte', key: 'support', label: 'Suporte', ico: '?' },
     { to: '/master/integracoes', key: 'integrations', label: 'Integrações', ico: '⇄' },
     { to: '/master/auditoria', key: 'audit', label: 'Auditoria', ico: '☰' },
   ];
@@ -43,6 +46,8 @@ export function MasterApp({ hash }: { hash: string }) {
       <main className="content">
         {section === 'tenants' && <Tenants />}
         {section === 'caps' && <Plans />}
+        {section === 'billing' && <MasterBilling />}
+        {section === 'support' && <MasterSupport />}
         {section === 'integrations' && <Integrations />}
         {section === 'audit' && <PlatformAudit />}
       </main>

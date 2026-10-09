@@ -11,6 +11,8 @@ const PERMISSIONS = {
   'notes.read': ['owner', 'professional'],
   'notes.write': ['professional'],
   'portal.manage': ['owner', 'admin', 'unit_manager', 'receptionist'],
+  'billing.read': ['owner'],
+  'support.manage': ['owner'],
   'forms.manage': ['owner', 'admin', 'professional'],
   'forms.assign': ['owner', 'admin', 'unit_manager', 'receptionist', 'professional'],
   'triage.write': ['owner', 'admin', 'unit_manager', 'receptionist', 'professional'],

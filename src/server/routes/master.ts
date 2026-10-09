@@ -13,16 +13,16 @@ import { integrationHealth, LIVE_PROVIDERS } from '../../integrations/registry.j
 import { badRequest, conflict, forbidden, HttpError, newSecret, notFound, sha256, unauthorized } from '../http.js';
 
 const limiter = new DbRateLimiter(platformPool);
-const justification = z.string().trim().min(5, 'Informe a justificativa (mín. 5 caracteres).').max(500);
+export const justification = z.string().trim().min(5, 'Informe a justificativa (mín. 5 caracteres).').max(500);
 
-async function platformAudit(c: MasterCtx, action: string, tenantId: string | null, why: string, metadata: object = {}) {
+export async function platformAudit(c: MasterCtx, action: string, tenantId: string | null, why: string, metadata: object = {}) {
   await c.db.query(
     `INSERT INTO platform_audit_events (operator_id, action, tenant_id, justification, metadata) VALUES ($1,$2,$3,$4,$5)`,
     [c.operator.email, action, tenantId, why, JSON.stringify({ ...metadata, ip: c.req.ip })]);
 }
 
 /** Reautenticação (MFA) para ações críticas. Cada código vale uma vez (anti-replay). */
-async function requireFreshMfa(c: MasterCtx, code: string | undefined) {
+export async function requireFreshMfa(c: MasterCtx, code: string | undefined) {
   if (!masterMfaRequired()) return; // modo demonstração
   const r = await c.db.query<{ totp_secret: string }>('SELECT totp_secret FROM platform_users WHERE id = $1', [c.operator.id]);
   if (!code || !r.rows[0] || !(await consumeTotp(c.db, 'platform_users', c.operator.id, r.rows[0].totp_secret, code))) {

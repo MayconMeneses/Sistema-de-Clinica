@@ -1,3 +1,4 @@
+import { assertWithinPlan } from '../limits.js';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { audit, clinicRoute } from '../context.js';
@@ -40,6 +41,7 @@ export function patientRoutes(app: FastifyInstance) {
       const candidates = await findDuplicates(ctx.tx, b);
       if (candidates.length) throw new HttpError(409, 'Já existe um cadastro parecido. Confira antes de criar outro.', 'possible_duplicate', { candidates });
     }
+    await assertWithinPlan(ctx.tx, 'patients');
     const r = await ctx.tx.query<{ id: string }>(
       `INSERT INTO patients (tenant_id, name, social_name, birth_date, phone, email, document, alert, created_by)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,

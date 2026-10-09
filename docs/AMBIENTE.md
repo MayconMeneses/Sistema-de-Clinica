@@ -14,6 +14,7 @@ Sensibilidade: **S** = segredo (nunca no Git/log/front) · **C** = configuraçã
 | `DATABASE_URL_OWNER` | migrations (usar só no deploy) | S | no deploy | engenharia | trimestral |
 | `DATA_ENCRYPTION_KEY` | AES-256-GCM dos segredos TOTP (32 bytes base64) | S | **sim** | segurança | anual + plano de recifragem (ainda não implementado) |
 | `WORKER_INLINE` | `0` desliga o worker embutido | P | `0` | engenharia | — |
+| `BILLING_AUTO` | `1` liga a rotina horária de faturas/inadimplência (padrão: desligada, cobrança só manual no painel) | O | `0` | operação | — |
 | `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID` | envio pela Cloud API | S / C | para ligar WhatsApp | operações | conforme provedor |
 | `WHATSAPP_APP_SECRET` | valida assinatura do webhook da Meta | S | idem | operações | conforme provedor |
 | `WHATSAPP_VERIFY_TOKEN` | handshake do webhook | S | idem | operações | semestral |
