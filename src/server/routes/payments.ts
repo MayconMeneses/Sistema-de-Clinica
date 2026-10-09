@@ -1,3 +1,4 @@
+import { PATIENT_VISIBLE_SQL, unitScope } from '../scope.js';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { audit, clinicRoute, type ClinicCtx } from '../context.js';
@@ -125,7 +126,7 @@ export function paymentRoutes(app: FastifyInstance) {
     const q = z.object({ status: z.enum(['pending', 'approved', 'rejected', 'cancelled', 'expired', 'refunded']).optional(), patientId: z.string().uuid().optional() }).parse(ctx.req.query);
     const fam = q.patientId ? await family(ctx.tx, q.patientId) : null;
     const r = await ctx.tx.query(
-      `${INTENT_SELECT} WHERE ($1::text IS NULL OR i.status = $1) AND ($2::uuid[] IS NULL OR i.patient_id = ANY($2)) ORDER BY i.created_at DESC LIMIT 100`, [q.status ?? null, fam]);
+      `${INTENT_SELECT} WHERE ($1::text IS NULL OR i.status = $1) AND ($2::uuid[] IS NULL OR i.patient_id = ANY($2)) AND ${PATIENT_VISIBLE_SQL('i.patient_id', 3, 4)} ORDER BY i.created_at DESC LIMIT 100`, [q.status ?? null, fam, await unitScope(ctx), ctx.user.id]);
     return { intents: r.rows };
   });
 

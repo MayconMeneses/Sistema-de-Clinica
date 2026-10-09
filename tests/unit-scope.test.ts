@@ -111,7 +111,8 @@ describe('escopo por unidade do gerente', () => {
     expect(rules.length).toBe(1);
     expect(rules[0]!.professionalId).toBe(s.idA);
 
-    // lista de espera
+    // lista de espera (o paciente precisa ser visível ao gerente: consulta na unidade A)
+    expect((await s.book(s.t.owner, s.idA, s.roomA)).statusCode).toBe(200);
     const wB = (await s.t.owner.post('/api/waitlist', { patientId: s.pid, professionalId: s.idB })).json().id as string;
     const wA = (await s.t.owner.post('/api/waitlist', { patientId: s.pid, professionalId: s.idA })).json().id as string;
     const wl = ((await s.mgr.c.get('/api/waitlist')).json().entries as { id: string }[]).map((e) => e.id);

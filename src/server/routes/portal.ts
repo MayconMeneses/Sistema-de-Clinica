@@ -10,7 +10,7 @@ import { audit, auditPortal, clinicRoute, cookieOptions, PORTAL_COOKIE, portalRo
 import { appPool } from '../db.js';
 import { CLINICAL_CATEGORIES } from './documents.js';
 import { validateAnswers, type FormField } from '../../modules/forms/schema.js';
-import { apptInScope, assertApptVisible, unitScope } from '../scope.js';
+import { apptInScope, assertApptVisible, PATIENT_VISIBLE_SQL, unitScope } from '../scope.js';
 import { badRequest, conflict, forbidden, HttpError, isRealDate, mapDbError, newSecret, notFound, sha256, unauthorized } from '../http.js';
 
 const CAP = { cap: 'patient.portal' } as const;
@@ -83,8 +83,8 @@ export function portalRoutes(app: FastifyInstance) {
          FROM portal_requests r JOIN patients p ON p.tenant_id = r.tenant_id AND p.id = r.patient_id
          LEFT JOIN appointments a ON a.tenant_id = r.tenant_id AND a.id = r.appointment_id
          LEFT JOIN users u ON u.tenant_id = a.tenant_id AND u.id = a.professional_id
-        WHERE r.status = $1 AND (r.appointment_id IS NULL OR ${apptInScope(2)})
-        ORDER BY r.created_at DESC LIMIT 100`, [q.status, await unitScope(ctx)]);
+        WHERE r.status = $1 AND (r.appointment_id IS NULL OR ${apptInScope(2)}) AND ${PATIENT_VISIBLE_SQL('r.patient_id', 2, 3)}
+        ORDER BY r.created_at DESC LIMIT 100`, [q.status, await unitScope(ctx), ctx.user.id]);
     return { requests: r.rows };
   });
 

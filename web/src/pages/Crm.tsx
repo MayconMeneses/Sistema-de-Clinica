@@ -1,3 +1,4 @@
+import { UnitPick } from './UnitPick';
 import { useEffect, useState, type FormEvent } from 'react';
 import { ApiError, get, patch, post } from '../api';
 import { dateTimeOf, todayYmd } from '../format';
@@ -18,7 +19,8 @@ const SOURCE: Record<string, string> = { referral: 'Indicação', instagram: 'In
 const EVENT: Record<string, string> = { created: 'Cadastrado', stage: 'Mudou de etapa', note: 'Anotação', assigned: 'Responsável alterado', consent: 'Consentimento', converted: 'Virou paciente' };
 const ymdBr = (d: string) => d.split('-').reverse().join('/');
 
-export function CrmPage({ canWrite, canConvert, canSchedule = false }: { canWrite: boolean; canConvert: boolean; canSchedule?: boolean }) {
+export function CrmPage({ canWrite, canConvert, canSchedule = false, scoped = false }: { canWrite: boolean; canConvert: boolean; canSchedule?: boolean; scoped?: boolean }) {
+  const [unitId, setUnitId] = useState('');
   const toast = useToast();
   const [stage, setStage] = useState<Stage | ''>('');
   const [due, setDue] = useState(false);
@@ -115,8 +117,9 @@ export function CrmPage({ canWrite, canConvert, canSchedule = false }: { canWrit
       </ul>
 
       <Sheet open={creating} title="Novo lead" onClose={() => setCreating(false)}>
-        <form noValidate onSubmit={(e: FormEvent) => { e.preventDefault(); void run(() => post('/api/crm/leads', { name: f.name, phone: f.phone || undefined, email: f.email || undefined, source: f.source, interest: f.interest || undefined, nextContactOn: f.next || undefined, marketingConsent: f.consent }), 'Lead cadastrado.', () => setCreating(false)); }}>
+        <form noValidate onSubmit={(e: FormEvent) => { e.preventDefault(); void run(() => post('/api/crm/leads', { name: f.name, phone: f.phone || undefined, email: f.email || undefined, source: f.source, interest: f.interest || undefined, nextContactOn: f.next || undefined, marketingConsent: f.consent, unitId: unitId || undefined }), 'Lead cadastrado.', () => setCreating(false)); }}>
           <TextInput label="Nome" value={f.name} onChange={(v) => setF({ ...f, name: v })} />
+          <UnitPick value={unitId} onChange={setUnitId} scoped={scoped} centralLabel="Sem unidade (toda a clínica)" />
           <div className="grid2"><TextInput label="Telefone" value={f.phone} onChange={(v) => setF({ ...f, phone: v })} inputMode="tel" /><TextInput label="E-mail" value={f.email} onChange={(v) => setF({ ...f, email: v })} inputMode="email" /></div>
           <Select label="Como chegou" value={f.source} onChange={(v) => setF({ ...f, source: v })}>{Object.entries(SOURCE).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Select>
           <TextInput label="Interesse (opcional)" value={f.interest} onChange={(v) => setF({ ...f, interest: v })} />

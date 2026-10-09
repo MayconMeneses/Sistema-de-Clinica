@@ -5,6 +5,7 @@ import { audit, clinicRoute } from '../context.js';
 import { HttpError, isRealDate, notFound } from '../http.js';
 import { findDuplicates } from '../../modules/patients/family.js';
 import { hasPermission } from '../auth/rbac.js';
+import { PATIENT_VISIBLE_SQL, unitScope } from '../scope.js';
 
 const opt = (max: number) => z.string().trim().max(max).nullish().transform((v) => (v ? v : null));
 const patientBody = z.object({
@@ -29,7 +30,8 @@ export function patientRoutes(app: FastifyInstance) {
     const r = await ctx.tx.query(
       `SELECT ${SELECT} FROM patients
         WHERE merged_into IS NULL AND ($1::text IS NULL OR name ILIKE $1 OR social_name ILIKE $1 OR phone ILIKE $1 OR document ILIKE $1)
-        ORDER BY lower(name) LIMIT 100`, [like]);
+          AND ${PATIENT_VISIBLE_SQL('patients.id', 2, 3)}
+        ORDER BY lower(name) LIMIT 100`, [like, await unitScope(ctx), ctx.user.id]);
     const canSeeAlert = hasPermission(ctx.user.role, 'notes.read');
     return { patients: r.rows.map((p) => (canSeeAlert ? p : { ...p, alert: null })) };
   });
@@ -38,7 +40,7 @@ export function patientRoutes(app: FastifyInstance) {
     const body = z.object({ confirmNotDuplicate: z.boolean().optional() }).passthrough().parse(ctx.req.body);
     const b = patientBody.parse(ctx.req.body);
     if (!body.confirmNotDuplicate) {
-      const candidates = await findDuplicates(ctx.tx, b);
+      const candidates = await findDuplicates(ctx.tx, b, undefined, { scope: await unitScope(ctx), userId: ctx.user.id });
       if (candidates.length) throw new HttpError(409, 'Já existe um cadastro parecido. Confira antes de criar outro.', 'possible_duplicate', { candidates });
     }
     await assertWithinPlan(ctx.tx, 'patients');

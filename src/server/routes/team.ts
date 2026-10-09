@@ -6,7 +6,7 @@ import { hashPassword, passwordPolicyError } from '../auth/password.js';
 import { audit, clinicRoute } from '../context.js';
 import { hasPermission } from '../auth/rbac.js';
 import { badRequest, conflict, forbidden, notFound } from '../http.js';
-import { apptInScope, unitScope } from '../scope.js';
+import { apptInScope, PATIENT_VISIBLE_SQL, unitScope } from '../scope.js';
 
 const idParam = z.object({ id: z.string().uuid() });
 const ROLES = ['admin', 'unit_manager', 'receptionist', 'professional', 'finance', 'stock', 'marketing', 'auditor'] as const; // owner só é criado pelo Master
@@ -106,7 +106,7 @@ export function teamRoutes(app: FastifyInstance) {
   clinicRoute(app, 'GET', '/api/dashboard', {}, async (ctx) => {
     const has = (c: string) => ctx.entitlements.has(c);
     const out: Record<string, unknown> = {};
-    if (has('patient.registry') && hasPermission(ctx.user.role, 'patients.read')) out.patients = Number((await ctx.tx.query('SELECT count(*) FROM patients')).rows[0].count);
+    if (has('patient.registry') && hasPermission(ctx.user.role, 'patients.read')) out.patients = Number((await ctx.tx.query(`SELECT count(*) FROM patients WHERE ${PATIENT_VISIBLE_SQL('patients.id', 1, 2)}`, [await unitScope(ctx), ctx.user.id])).rows[0].count);
     if (has('schedule.core')) {
       const r = await ctx.tx.query(
         `SELECT count(*) FILTER (WHERE a.status NOT IN ('cancelled','no_show')) AS active,

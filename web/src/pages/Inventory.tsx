@@ -1,3 +1,4 @@
+import { UnitPick } from './UnitPick';
 import { useEffect, useState, type FormEvent } from 'react';
 import { get, patch, post, put } from '../api';
 import { brl, dateTimeOf, parseMoney } from '../format';
@@ -19,7 +20,8 @@ function parseQty(input: string): number | null {
 const fmt = (v: string) => Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 3 });
 const KIND: Record<string, string> = { in: 'Entrada', out: 'Saída', adjust: 'Ajuste' };
 
-export function InventoryPage({ canWrite }: { canWrite: boolean }) {
+export function InventoryPage({ canWrite, scoped = false }: { canWrite: boolean; scoped?: boolean }) {
+  const [unitId, setUnitId] = useState('');
   const toast = useToast();
   const [q, setQ] = useState('');
   const [debounced, setDebounced] = useState('');
@@ -64,10 +66,11 @@ export function InventoryPage({ canWrite }: { canWrite: boolean }) {
     e.preventDefault();
     const min = f.min.trim() ? parseQty(f.min) : 0;
     if (f.name.trim().length < 2) { setError('Informe o nome do item.'); return; }
+    if (scoped && editing === 'new' && !unitId) { setError('Escolha a unidade do item.'); return; }
     if (min === null || min < 0) { setError('Estoque mínimo inválido.'); return; }
     setBusy(true); setError(null);
     try {
-      if (editing === 'new') await post('/api/inventory/items', { name: f.name, sku: f.sku || undefined, unit: f.unit || 'un', minQuantity: min });
+      if (editing === 'new') await post('/api/inventory/items', { name: f.name, sku: f.sku || undefined, unit: f.unit || 'un', minQuantity: min, unitId: unitId || undefined });
       else if (editing) await patch(`/api/inventory/items/${editing.id}`, { name: f.name, minQuantity: min });
       toast('Item salvo.'); setEditing(null); list.reload();
     } catch (err) { setError((err as Error).message); } finally { setBusy(false); }
@@ -80,7 +83,7 @@ export function InventoryPage({ canWrite }: { canWrite: boolean }) {
 
   return (
     <>
-      <div className="page-head"><h1>Estoque</h1><span className="row"><Button variant="secondary" onClick={() => setKits(true)}>Kits</Button><Button variant="secondary" onClick={() => setPurchasing('orders')}>Pedidos</Button><Button variant="secondary" onClick={() => setPurchasing('suppliers')}>Fornecedores</Button>{canWrite && <Button variant="secondary" onClick={() => setCounting(true)}>Inventário</Button>}{canWrite && <Button onClick={() => openEdit('new')}>Novo item</Button>}</span></div>
+      <div className="page-head"><h1>Estoque</h1><span className="row">{!scoped && <Button variant="secondary" onClick={() => setKits(true)}>Kits</Button>}{!scoped && <Button variant="secondary" onClick={() => setPurchasing('orders')}>Pedidos</Button>}{!scoped && <Button variant="secondary" onClick={() => setPurchasing('suppliers')}>Fornecedores</Button>}{canWrite && !scoped && <Button variant="secondary" onClick={() => setCounting(true)}>Inventário</Button>}{canWrite && <Button onClick={() => openEdit('new')}>Novo item</Button>}</span></div>
       {list.data && list.data.lowCount > 0 && <div className="banner" role="note">⚠ {list.data.lowCount} {list.data.lowCount === 1 ? 'item está' : 'itens estão'} no estoque mínimo ou abaixo.</div>}
       {list.data && (list.data.expiredCount > 0 || list.data.expiringCount > 0) && (
         <div className="banner" role="note">
@@ -139,6 +142,7 @@ export function InventoryPage({ canWrite }: { canWrite: boolean }) {
       <Sheet open={editing !== null} title={editing === 'new' ? 'Novo item' : 'Editar item'} onClose={() => setEditing(null)}>
         <form onSubmit={submitItem} noValidate>
           <TextInput label="Nome" value={f.name} onChange={(v) => setF({ ...f, name: v })} />
+          {editing === 'new' && <UnitPick value={unitId} onChange={setUnitId} scoped={scoped} centralLabel="Estoque central (todas as unidades)" />}
           {editing === 'new' && <div className="grid2"><TextInput label="Código (opcional)" value={f.sku} onChange={(v) => setF({ ...f, sku: v })} /><TextInput label="Unidade" value={f.unit} onChange={(v) => setF({ ...f, unit: v })} hint="un, cx, ml…" /></div>}
           <TextInput label="Estoque mínimo" value={f.min} onChange={(v) => setF({ ...f, min: v })} inputMode="decimal" hint="Abaixo ou igual a este valor o item aparece como baixo." />
           {error && <p className="field-msg error" role="alert">{error}</p>}

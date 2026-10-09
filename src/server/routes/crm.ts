@@ -5,6 +5,7 @@ import { hasPermission } from '../auth/rbac.js';
 import { assertActive, findDuplicates } from '../../modules/patients/family.js';
 import { badRequest, conflict, forbidden, HttpError, mapDbError, notFound } from '../http.js';
 import { baseBody, createAppointment } from './appointments.js';
+import { assertPatientVisible, assertUnitInScope, unitScope } from '../scope.js';
 
 const CAP = { cap: 'crm.pipeline' } as const;
 const idParam = z.object({ id: z.string().uuid() });
@@ -15,7 +16,7 @@ const ymd = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data inválida.');
 
 const SELECT = `SELECT l.id, l.name, l.phone, l.email, l.source, l.interest, l.stage, l.lost_reason AS "lostReason", l.owner_id AS "ownerId", uo.name AS "ownerName",
     to_char(l.next_contact_on, 'YYYY-MM-DD') AS "nextContactOn", l.marketing_consent AS "marketingConsent", l.patient_id AS "patientId",
-    l.created_at AS "createdAt", l.updated_at AS "updatedAt"
+    l.created_at AS "createdAt", l.updated_at AS "updatedAt", l.unit_id AS "unitId"
   FROM crm_leads l LEFT JOIN users uo ON uo.tenant_id = l.tenant_id AND uo.id = l.owner_id`;
 
 async function event(ctx: ClinicCtx, leadId: string, kind: string, o: { from?: string; to?: string; note?: string | null } = {}) {
@@ -29,17 +30,26 @@ async function checkOwner(ctx: ClinicCtx, ownerId: string | null | undefined) {
   if (!r.rowCount) throw badRequest('Responsável inválido.');
 }
 
+/** Lead de outra unidade "não existe" para o gerente de unidade. */
+async function leadAccess(ctx: ClinicCtx, id: string) {
+  const scope = await unitScope(ctx);
+  if (scope === null) return;
+  if (!(await ctx.tx.query('SELECT 1 FROM crm_leads WHERE id = $1 AND unit_id = ANY($2::uuid[])', [id, scope])).rowCount) throw notFound('Lead não encontrado.');
+}
+
 export function crmRoutes(app: FastifyInstance) {
   clinicRoute(app, 'GET', '/api/crm/leads', { ...CAP, perm: 'crm.read' }, async (ctx) => {
     const q = z.object({ stage: z.enum(STAGES).optional(), q: z.string().trim().max(80).optional(), due: z.enum(['1']).optional() }).parse(ctx.req.query);
+    const scope = await unitScope(ctx);
     const r = await ctx.tx.query(
       `${SELECT} WHERE ($1::text IS NULL OR l.stage = $1) AND ($2::text IS NULL OR l.name ILIKE $2 OR l.phone ILIKE $2 OR l.email ILIKE $2)
          AND ($3::boolean IS NOT TRUE OR (l.stage IN ('new','contacted','scheduled') AND l.next_contact_on <= (now() AT TIME ZONE 'America/Sao_Paulo')::date))
+         AND ($4::uuid[] IS NULL OR l.unit_id = ANY($4))
        ORDER BY l.next_contact_on NULLS LAST, l.created_at DESC LIMIT 300`,
-      [q.stage ?? null, q.q ? `%${q.q.replace(/[%_]/g, '')}%` : null, q.due === '1']);
-    const counts = await ctx.tx.query<{ stage: string; n: number }>('SELECT stage, COUNT(*)::int AS n FROM crm_leads GROUP BY stage');
+      [q.stage ?? null, q.q ? `%${q.q.replace(/[%_]/g, '')}%` : null, q.due === '1', scope]);
+    const counts = await ctx.tx.query<{ stage: string; n: number }>('SELECT stage, COUNT(*)::int AS n FROM crm_leads WHERE ($1::uuid[] IS NULL OR unit_id = ANY($1)) GROUP BY stage', [scope]);
     const due = await ctx.tx.query<{ n: number }>(
-      `SELECT COUNT(*)::int AS n FROM crm_leads WHERE stage IN ('new','contacted','scheduled') AND next_contact_on <= (now() AT TIME ZONE 'America/Sao_Paulo')::date`);
+      `SELECT COUNT(*)::int AS n FROM crm_leads WHERE stage IN ('new','contacted','scheduled') AND next_contact_on <= (now() AT TIME ZONE 'America/Sao_Paulo')::date AND ($1::uuid[] IS NULL OR unit_id = ANY($1))`, [scope]);
     return { leads: r.rows, counts: Object.fromEntries(STAGES.map((s) => [s, counts.rows.find((c) => c.stage === s)?.n ?? 0])), dueCount: due.rows[0]!.n };
   });
 
@@ -49,14 +59,16 @@ export function crmRoutes(app: FastifyInstance) {
       email: z.string().trim().toLowerCase().email('E-mail inválido.').max(200).nullish().or(z.literal('')).transform((v) => v || null),
       source: z.enum(SOURCES).default('other'), interest: opt(200), nextContactOn: ymd.nullish().transform((v) => v ?? null),
       ownerId: z.string().uuid().nullish().transform((v) => v ?? null), marketingConsent: z.boolean().default(false),
+      unitId: z.string().uuid().nullish().transform((v) => v ?? null),   // unidade de interesse; gerente de unidade só cria na sua
     }).parse(ctx.req.body);
+    if (await unitScope(ctx) !== null) await assertUnitInScope(ctx, b.unitId);
     if (!b.phone && !b.email) throw badRequest('Informe telefone ou e-mail para contato.');
     await checkOwner(ctx, b.ownerId);
     try {
       const r = await ctx.tx.query<{ id: string }>(
-        `INSERT INTO crm_leads (tenant_id, name, phone, email, source, interest, next_contact_on, owner_id, marketing_consent, marketing_consent_at, created_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, CASE WHEN $9 THEN now() END, $10) RETURNING id`,
-        [ctx.tenantId, b.name, b.phone, b.email, b.source, b.interest, b.nextContactOn, b.ownerId, b.marketingConsent, ctx.user.id]);
+        `INSERT INTO crm_leads (tenant_id, name, phone, email, source, interest, next_contact_on, owner_id, marketing_consent, marketing_consent_at, created_by, unit_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, CASE WHEN $9 THEN now() END, $10, $11) RETURNING id`,
+        [ctx.tenantId, b.name, b.phone, b.email, b.source, b.interest, b.nextContactOn, b.ownerId, b.marketingConsent, ctx.user.id, b.unitId]);
       await event(ctx, r.rows[0]!.id, 'created', { to: 'new' });
       if (b.marketingConsent) await event(ctx, r.rows[0]!.id, 'consent', { note: 'Autorizou comunicação de marketing ao se cadastrar' });
       await audit(ctx, 'crm.lead.create', 'crm_lead', r.rows[0]!.id, { source: b.source });
@@ -66,6 +78,7 @@ export function crmRoutes(app: FastifyInstance) {
 
   clinicRoute(app, 'GET', '/api/crm/leads/:id', { ...CAP, perm: 'crm.read' }, async (ctx) => {
     const { id } = idParam.parse(ctx.req.params);
+    await leadAccess(ctx, id);
     const l = await ctx.tx.query(`${SELECT} WHERE l.id = $1`, [id]);
     if (!l.rows[0]) throw notFound('Lead não encontrado.');
     const ev = await ctx.tx.query(
@@ -77,6 +90,7 @@ export function crmRoutes(app: FastifyInstance) {
   // Edição de dados e movimentação no funil. Mudança de etapa e de responsável viram eventos.
   clinicRoute(app, 'PATCH', '/api/crm/leads/:id', { ...CAP, perm: 'crm.write' }, async (ctx) => {
     const { id } = idParam.parse(ctx.req.params);
+    await leadAccess(ctx, id);
     const b = z.object({
       stage: z.enum(['new', 'contacted', 'scheduled', 'lost']).optional(), lostReason: z.string().trim().min(3).max(200).optional(),
       interest: opt(200).optional(), phone: opt(30).optional(), nextContactOn: ymd.nullish().optional(),
@@ -110,6 +124,7 @@ export function crmRoutes(app: FastifyInstance) {
 
   clinicRoute(app, 'POST', '/api/crm/leads/:id/notes', { ...CAP, perm: 'crm.write' }, async (ctx) => {
     const { id } = idParam.parse(ctx.req.params);
+    await leadAccess(ctx, id);
     const b = z.object({ note: z.string().trim().min(2).max(500), nextContactOn: ymd.nullish().optional() }).parse(ctx.req.body);
     const r = await ctx.tx.query('SELECT 1 FROM crm_leads WHERE id = $1 FOR UPDATE', [id]);
     if (!r.rowCount) throw notFound('Lead não encontrado.');
@@ -122,6 +137,7 @@ export function crmRoutes(app: FastifyInstance) {
   // Vira paciente (novo cadastro) ou liga a um paciente existente. Exige permissão de cadastrar pacientes.
   clinicRoute(app, 'POST', '/api/crm/leads/:id/convert', { ...CAP, perm: 'crm.write' }, async (ctx) => {
     const { id } = idParam.parse(ctx.req.params);
+    await leadAccess(ctx, id);
     const b = z.object({ patientId: z.string().uuid().optional(), confirmNotDuplicate: z.boolean().optional() }).parse(ctx.req.body ?? {});
     return { patientId: await convertLead(ctx, id, b) };
   });
@@ -129,6 +145,7 @@ export function crmRoutes(app: FastifyInstance) {
   // Agenda direto a partir do lead: converte em paciente (ou usa o já convertido) e marca a consulta, tudo ou nada.
   clinicRoute(app, 'POST', '/api/crm/leads/:id/schedule', { ...CAP, perm: 'crm.write' }, async (ctx) => {
     const { id } = idParam.parse(ctx.req.params);
+    await leadAccess(ctx, id);
     if (!hasPermission(ctx.user.role, 'agenda.write') || !ctx.entitlements.has('schedule.core')) throw forbidden('Seu perfil não pode agendar consultas. Peça à recepção.');
     const b = baseBody.omit({ patientId: true }).extend({ patientId: z.string().uuid().optional(), confirmNotDuplicate: z.boolean().optional() }).parse(ctx.req.body);
     const cur = await ctx.tx.query<{ patient_id: string | null }>('SELECT patient_id FROM crm_leads WHERE id = $1 FOR UPDATE', [id]);
@@ -151,10 +168,11 @@ async function convertLead(ctx: ClinicCtx, id: string, b: { patientId?: string; 
   if (l.patient_id) throw conflict('Este lead já foi convertido.');
   let patientId = b.patientId;
   if (patientId) {
+    await assertPatientVisible(ctx, patientId);
     await assertActive(ctx.tx, patientId);
   } else {
     if (!b.confirmNotDuplicate) {
-      const candidates = await findDuplicates(ctx.tx, { name: l.name, birthDate: null, phone: l.phone, document: null });
+      const candidates = await findDuplicates(ctx.tx, { name: l.name, birthDate: null, phone: l.phone, document: null }, undefined, { scope: await unitScope(ctx), userId: ctx.user.id });
       if (candidates.length) throw new HttpError(409, 'Já existe um cadastro parecido. Ligue o lead a ele ou confirme que é outra pessoa.', 'possible_duplicate', { candidates });
     }
     const p = await ctx.tx.query<{ id: string }>(

@@ -1,3 +1,4 @@
+import { PATIENT_VISIBLE_SQL, unitScope } from '../scope.js';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { audit, clinicRoute, type ClinicCtx } from '../context.js';
@@ -149,8 +150,8 @@ export function cashRoutes(app: FastifyInstance) {
          JOIN patients p ON p.tenant_id = d.tenant_id AND p.id = d.patient_id
          LEFT JOIN users ur ON ur.tenant_id = d.tenant_id AND ur.id = d.requested_by
          LEFT JOIN users ud ON ud.tenant_id = d.tenant_id AND ud.id = d.decided_by
-        WHERE ($1::text IS NULL OR d.status = $1)
-        ORDER BY (d.status = 'pending') DESC, d.requested_at DESC LIMIT 100`, [q.status ?? null]);
+        WHERE ($1::text IS NULL OR d.status = $1) AND ${PATIENT_VISIBLE_SQL('d.patient_id', 2, 3)}
+        ORDER BY (d.status = 'pending') DESC, d.requested_at DESC LIMIT 100`, [q.status ?? null, await unitScope(ctx), ctx.user.id]);
     return { requests: r.rows };
   });
 
