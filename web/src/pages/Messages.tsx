@@ -1,4 +1,3 @@
-import { useEffect } from 'react';
 import { get, post } from '../api';
 import { dateTimeOf } from '../format';
 import { Badge, Button, Empty, ErrorBox, Spinner, useLoad, usePolling, useToast } from '../ui';

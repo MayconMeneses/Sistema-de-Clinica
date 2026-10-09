@@ -16,7 +16,7 @@ Legenda: ✅ IMPLEMENTADO e testado localmente · 🟡 PARCIAL · ⬜ PLANEJADO
 - ✅ MFA (TOTP) para usuários da clínica; segredos cifrados em repouso; limitador de tentativas no banco
 - ✅ Recuperação de senha por e-mail (link de uso único, 30 min, derruba sessões; em sandbox o link aparece no log do worker; envio real depende do provedor de e-mail)
 - ⬜ Convite de usuário por e-mail, gestão de dispositivos (rotação da chave de cifragem: ✅ ver docs/OPERACAO-CHAVES.md)
-- ⬜ Acesso de suporte temporário (justificado, limitado, revogável)
+- ✅ Acesso de suporte temporário (concedido pela clínica, ≤ 24 h, revogável, só leitura de configuração; `docs/COBRANCA-E-SUPORTE.md`)
 - ✅ Backup + restore em banco temporário com validação (`npm run drill`), reprova ao detectar perda
 - 🟡 CI escrito (`.github/workflows/ci.yml`), **nunca executado no GitHub**
 - ✅ Alertas de erro por Telegram (componente + clínica), comandos `/status /erros /clinicas /fila /silenciar /ativar /testar`, erros da tela (docs/ALERTAS.md); falta validar com o Telegram real
@@ -43,12 +43,12 @@ Legenda: ✅ IMPLEMENTADO e testado localmente · 🟡 PARCIAL · ⬜ PLANEJADO
 - ⬜ Próteses/laboratórios, repasses, assinatura eletrônica do aceite (provedor externo)
 - ✅ Camada de integrações: outbox transacional, worker (retry/backoff/dead-letter), webhooks assinados, consentimento, adaptadores WhatsApp/e-mail/SMS (sandbox + real escrito), armazenamento local
 - ⛔ Envio real: depende de escolher/contratar provedores e validar adaptadores (`docs/INTEGRACOES.md`)
-- ⬜ Inbox, templates editáveis, automações, opt-out por resposta, portal inicial
+- ⬜ Inbox, templates editáveis, automações, opt-out por resposta
 
 ## Fases 4–6
 - ✅ Papéis: gerente de unidade, estoque, marketing e auditor interno
 - ✅ Escopo por unidade do gerente na **agenda**: vínculo usuário↔unidade (gerente e profissional); o gerente vê e altera só consultas, salas, horários, bloqueios, lista de espera, recepção, painel e indicadores de atendimento das suas unidades; sem unidade vinculada, não vê nada
-- ⬜ Escopo por unidade para pacientes, financeiro, estoque e CRM (hoje o gerente vê essas áreas da clínica inteira; indicadores dessas áreas ficam indisponíveis para ele)
+- ✅ Escopo por unidade para pacientes, estoque e CRM (`docs/ESCOPO-POR-UNIDADE.md`); caixa, compras e contas a pagar ficam fora do gerente; indicadores dessas áreas ficam indisponíveis para ele
 - ✅ Estoque: itens, livro de movimentos imutável (entrada/saída/ajuste explicado), saldo derivado que nunca fica negativo, alerta de mínimo
 - ✅ CRM: leads, funil (novo → contatado → agendado → paciente/perdido), histórico imutável, consentimento de marketing registrado, conversão em paciente com aviso de duplicidade
 - ✅ Indicadores (BI básico): atendimentos, faltas, pacientes novos, financeiro, CRM e estoque, por período; cada seção respeita plano e perfil
@@ -67,7 +67,7 @@ Legenda: ✅ IMPLEMENTADO e testado localmente · 🟡 PARCIAL · ⬜ PLANEJADO
 - ✅ Pagamentos: parcelamento no cartão (link, até 12x, parcela mínima R$ 5,00)
 - ⬜ Pagamentos: taxas do provedor, conciliação bancária
 - ✅ Portal do paciente (link de uso único + data de nascimento; consultas, confirmação, cancelamento, pedidos e documentos liberados; docs/PORTAL.md). Falta: envio automático do link e agendamento com horários livres
-- ⬜ Papéis da plataforma (Master), NFS-e, integrações reais, regulados, IA. Convênios/TISS: bloqueado globalmente.
+- ⬜ NFS-e, integrações reais, regulados, IA. Convênios/TISS: bloqueado globalmente.
 - ✅ Cobrança dos clientes da plataforma: preço e limites por plano, combinado por cliente, faturas imutáveis, carência, suspensão e reativação por cobrança, aviso ao proprietário, limites de usuários/pacientes/arquivos (`docs/COBRANCA-E-SUPORTE.md`). Baixa é manual; falta gateway próprio da plataforma
 - ✅ Acesso temporário do suporte: concedido pela clínica (≤ 24 h), somente leitura de equipe/unidades/atividades, imposto por RLS, com histórico visível à clínica
 - ✅ Indicadores comparando meses (colunas, linha e variação)

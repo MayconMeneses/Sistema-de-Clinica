@@ -48,7 +48,7 @@ Severidade: Crítica, Alta, Média, Baixa, Info. Confiança: Confirmado (reprodu
 | A-16 | Resposta de "Esqueci minha senha" é igual, mas o tempo de resposta pode diferir (usuário existente faz mais gravações) | Baixa | Provável | Pendente |
 | A-17 | Ações do GitHub fixadas por tag (`@v4`), não por hash do commit | Baixa | Confirmado | Pendente (recomendação) |
 | A-18 | Sem expiração por inatividade da sessão (só validade absoluta em horas) | Info | Confirmado | Decisão do proprietário |
-| A-19 | Escopo por unidade só na agenda; pacientes, estoque, financeiro e CRM veem a clínica inteira | Média | Confirmado | Pendente (decisão do proprietário, ver BACKLOG) |
+| A-19 | Escopo por unidade só na agenda; pacientes, estoque, financeiro e CRM veem a clínica inteira | Média | Confirmado | **Corrigido**: escopo em pacientes, estoque e CRM, com política central e testes (`docs/ESCOPO-POR-UNIDADE.md`); decisão de produto a confirmar pelo proprietário |
 | A-20 | Atrás de proxy sem `TRUST_PROXY=1`, todos compartilham o mesmo IP e os limites por IP valem para todos | Info | Confirmado | Documentado |
 
 ### Evidência e correção por achado
@@ -89,7 +89,7 @@ O token real do Telegram e a chave real de cifra **não** estão no repositório
 - **Removido (confirmado sem uso por busca em todo o repositório e testes depois):** `verifyTotp` (`src/server/auth/totp.ts`), `resetAlertsForTests` (`src/ops/alerts.ts`), importação de tipo sem uso em `tests/api.test.ts`.
 - **Verificados sem achado:** dependências declaradas (todas usadas; `@types/*` e `typescript` são de tipos/ferramenta), tabelas criadas pelas migrations (todas referenciadas), arquivos TS sem importador (nenhum), scripts do `package.json` (todos existem), `noUnusedLocals/Parameters` (limpo).
 - **Candidatos para revisão (não removidos):** as portas `nfse.ts` e `signature.ts` e o armazenamento `storage.ts` só têm sandbox e testes e nenhuma rota os usa ainda (são pontos de extensão previstos para NFS-e, assinatura eletrônica e arquivos), e vários `export` usados só no próprio arquivo (tipos).
-- **Não foi possível determinar:** o conteúdo de `obsidian/` (notas e capturas de tela de demonstração); é documentação, não código, e duplica parte de `docs/`.
+- **Removido depois:** a pasta `obsidian/` (notas e capturas antigas, desatualizadas e duplicadas de `docs/`) saiu do repositório; continua no histórico do Git.
 
 ## 6. Alterações realizadas (arquivos)
 `src/server/auth/password.ts`, `routes/auth.ts`, `routes/master.ts`, `routes/patients.ts`, `routes/documents.ts`, `routes/team.ts`, `http.ts`, `crypto.ts`, `context.ts` (registro de rotas para teste), `auth/totp.ts`, `ops/alerts.ts`; `web/src/pages/Login.tsx`, `Documents.tsx`, `Patients.tsx`; `scripts/backup-encrypted.sh`, `scripts/docker-entrypoint.sh`; `.github/workflows/ci.yml`; `.gitignore`, `.dockerignore`; `vitest.config.ts`, `tests/global-setup.ts`; testes novos `route-matrix`, `cross-tenant-sweep`, `auth-hardening`, `security-regressions`; ajustes em `documents.test.ts` e `api.test.ts`. Nenhuma tentativa falhou ou ficou incompleta; a imagem Docker não foi alterada (A-14).
