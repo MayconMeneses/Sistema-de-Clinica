@@ -6,6 +6,7 @@ import { loadEntitlements } from '../modules/entitlements/load.js';
 import { config } from './config.js';
 import { appPool, platformPool } from './db.js';
 import { forbidden, HttpError, sha256, unauthorized, type Tx } from './http.js';
+import { masterCan, MASTER_ROUTE_PERMS } from './auth/master-rbac.js';
 import { hasPermission, type Permission } from './auth/rbac.js';
 
 export const CLINIC_COOKIE = 'cs';
@@ -112,7 +113,7 @@ export async function audit(ctx: ClinicCtx, action: string, entityType: string, 
 // ---------------------------------------------------------------- MASTER
 export interface MasterCtx {
   db: pg.PoolClient;
-  operator: { id: string; name: string; email: string };
+  operator: { id: string; name: string; email: string; role: string };
   sessionId: string;
   req: FastifyRequest;
 }
@@ -123,6 +124,8 @@ export function masterRoute(
   url: string,
   handler: Handler<MasterCtx>,
 ) {
+  const perm = MASTER_ROUTE_PERMS[`${method} ${url}`];
+  if (!perm) throw new Error(`Rota master sem permissão declarada: ${method} ${url}`);   // deny-by-default
   routeRegistry.push({ kind: 'master', method, url });
   app.route({
     method, url,
@@ -132,8 +135,8 @@ export function masterRoute(
       const db = await platformPool.connect();
       try {
         await db.query('BEGIN');
-        const r = await db.query<{ sid: string; id: string; name: string; email: string; status: string; expires_at: Date; revoked_at: Date | null }>(
-          `SELECT s.id AS sid, s.expires_at, s.revoked_at, u.id, u.name, u.email, u.status
+        const r = await db.query<{ sid: string; id: string; name: string; email: string; role: string; status: string; expires_at: Date; revoked_at: Date | null }>(
+          `SELECT s.id AS sid, s.expires_at, s.revoked_at, u.id, u.name, u.email, u.role, u.status
              FROM platform_sessions s JOIN platform_users u ON u.id = s.user_id WHERE s.token_hash = $1`,
           [sha256(secret)],
         );
@@ -142,7 +145,8 @@ export function masterRoute(
           reply.clearCookie(MASTER_COOKIE, cookieOptions('/api/master', 0));
           throw unauthorized();
         }
-        const out = await handler({ db, operator: { id: row.id, name: row.name, email: row.email }, sessionId: row.sid, req }, req, reply);
+        if (!masterCan(row.role, perm)) throw forbidden('Seu papel na plataforma não permite esta ação.');
+        const out = await handler({ db, operator: { id: row.id, name: row.name, email: row.email, role: row.role }, sessionId: row.sid, req }, req, reply);
         await db.query('COMMIT');
         return out;
       } catch (e) {

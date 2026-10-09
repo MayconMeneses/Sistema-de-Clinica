@@ -3,6 +3,9 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { resolveEntitlements, type TenantStatus } from '../../modules/entitlements/resolve.js';
 import { hashPassword, needsRehash, passwordPolicyError, verifyPassword } from '../auth/password.js';
+import { MASTER_ROLES, MASTER_ROLE_LABEL, masterPermissionsFor, type MasterRole } from '../auth/master-rbac.js';
+import { generateSecret, otpauthUri } from '../auth/totp.js';
+import { encryptSecret } from '../crypto.js';
 import { consumeTotp } from '../auth/mfa.js';
 import { DbRateLimiter } from '../auth/rate-limit.js';
 import { config, masterMfaRequired } from '../config.js';
@@ -76,7 +79,7 @@ export function masterRoutes(app: FastifyInstance) {
     return { ok: true };
   });
 
-  masterRoute(app, 'GET', '/api/master/me', async (c) => ({ operator: c.operator }));
+  masterRoute(app, 'GET', '/api/master/me', async (c) => ({ operator: c.operator, permissions: masterPermissionsFor(c.operator.role), roleLabel: MASTER_ROLE_LABEL[c.operator.role as MasterRole] ?? c.operator.role }));
 
   masterRoute(app, 'GET', '/api/master/overview', async (c) => {
     const plans = await c.db.query('SELECT code, name FROM plans ORDER BY sort_order');
@@ -253,6 +256,56 @@ export function masterRoutes(app: FastifyInstance) {
     const r = await c.db.query(`UPDATE webhook_receipts SET status = 'received', attempts = 0 WHERE status = 'dead'`);
     await platformAudit(c, 'integrations.requeue_dead', b.tenantId, b.justification, { messages: o.rowCount, receipts: r.rowCount });
     return { messages: o.rowCount ?? 0, receipts: r.rowCount ?? 0 };
+  });
+
+  // ------------------------------------------------------------ Operadores da plataforma (só admin)
+  masterRoute(app, 'GET', '/api/master/operators', async (c) => {
+    const r = await c.db.query(`SELECT id, name, email, role, status, created_at AS "createdAt" FROM platform_users ORDER BY name`);
+    return { operators: r.rows, roles: MASTER_ROLES.map((k) => ({ key: k, label: MASTER_ROLE_LABEL[k] })) };
+  });
+
+  masterRoute(app, 'POST', '/api/master/operators', async (c, req) => {
+    const b = z.object({
+      name: z.string().trim().min(2).max(120), email: z.string().trim().toLowerCase().email().max(200),
+      role: z.enum(MASTER_ROLES), password: z.string().max(128), code: z.string().max(10).default(''), justification,
+    }).parse(req.body);
+    await requireFreshMfa(c, b.code);
+    const policy = passwordPolicyError(b.password);
+    if (policy) throw badRequest(policy);
+    const secret = generateSecret();
+    try {
+      await c.db.query('INSERT INTO platform_users (email, name, password_hash, totp_secret, role) VALUES ($1,$2,$3,$4,$5)', [b.email, b.name, await hashPassword(b.password), encryptSecret(secret), b.role]);
+    } catch (e) { if ((e as { code?: string }).code === '23505') throw conflict('Já existe um operador com este e-mail.'); throw e; }
+    await platformAudit(c, 'operator.create', null, b.justification, { email: b.email, role: b.role });
+    // O segredo do app autenticador é mostrado uma única vez, para quem criou entregar ao novo operador.
+    return { ok: true, totpSecret: secret, otpauth: otpauthUri(secret, b.email) };
+  });
+
+  masterRoute(app, 'PATCH', '/api/master/operators/:id', async (c, req) => {
+    const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    const b = z.object({
+      role: z.enum(MASTER_ROLES).optional(), status: z.enum(['active', 'suspended']).optional(), password: z.string().max(128).optional(),
+      code: z.string().max(10).default(''), justification,
+    }).parse(req.body);
+    if (b.role === undefined && b.status === undefined && b.password === undefined) throw badRequest('Nada a alterar.');
+    await requireFreshMfa(c, b.code);
+    const cur = await c.db.query<{ role: string; status: string; email: string }>('SELECT role, status, email FROM platform_users WHERE id = $1 FOR UPDATE', [id]);
+    const op = cur.rows[0];
+    if (!op) throw notFound('Operador não encontrado.');
+    const losesAdmin = op.role === 'admin' && op.status === 'active' && ((b.role && b.role !== 'admin') || b.status === 'suspended');
+    if (id === c.operator.id && (b.role !== undefined && b.role !== op.role || b.status === 'suspended')) throw conflict('Você não pode reduzir o próprio acesso. Peça a outro administrador.');
+    if (losesAdmin) {
+      const others = await c.db.query<{ n: number }>(`SELECT count(*)::int AS n FROM platform_users WHERE role = 'admin' AND status = 'active' AND id <> $1`, [id]);
+      if (!others.rows[0]!.n) throw conflict('A plataforma precisa de ao menos um administrador ativo.');
+    }
+    if (b.password !== undefined) { const policy = passwordPolicyError(b.password); if (policy) throw badRequest(policy); }
+    if (b.role) await c.db.query('UPDATE platform_users SET role = $2 WHERE id = $1', [id, b.role]);
+    if (b.status) await c.db.query('UPDATE platform_users SET status = $2 WHERE id = $1', [id, b.status]);
+    if (b.password !== undefined) await c.db.query('UPDATE platform_users SET password_hash = $2 WHERE id = $1', [id, await hashPassword(b.password)]);
+    // mudou papel, suspendeu ou trocou a senha: derruba as sessões abertas dessa pessoa
+    await c.db.query('UPDATE platform_sessions SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL', [id]);
+    await platformAudit(c, 'operator.update', null, b.justification, { email: op.email, ...(b.role ? { role: b.role } : {}), ...(b.status ? { status: b.status } : {}), ...(b.password !== undefined ? { passwordReset: true } : {}) });
+    return { ok: true };
   });
 
   masterRoute(app, 'GET', '/api/master/audit', async (c) => {

@@ -16,7 +16,7 @@ const centsToReais = (c: number | null) => (c === null ? '' : (c / 100).toFixed(
 const METHODS: Record<string, string> = { pix: 'Pix', boleto: 'Boleto', card: 'Cartão', transfer: 'Transferência', other: 'Outro' };
 
 /** Plataforma → Cobrança: preços e limites por plano, combinado por cliente, faturas e inadimplência. */
-export function MasterBilling() {
+export function MasterBilling({ canManage }: { canManage: boolean }) {
   const toast = useToast();
   const mfa = useMasterMfa();
   const d = useLoad(() => get<Data>('/api/master/billing'), []);
@@ -35,7 +35,7 @@ export function MasterBilling() {
   return (
     <>
       <div className="page-head"><h1>Cobrança</h1></div>
-      <div className="card stack">
+      {canManage && <div className="card stack">
         <TextInput label="Justificativa para as ações desta tela" value={why} onChange={setWhy} hint="Obrigatória e registrada na auditoria (mín. 5 caracteres)." />
         {mfa && <TextInput label="Código MFA atual (preços, limites e suspensões)" value={code} onChange={setCode} inputMode="numeric" maxLength={6} />}
         <div className="row">
@@ -43,7 +43,7 @@ export function MasterBilling() {
           <Button variant="danger" busy={busy} disabled={!justified || (mfa && code.length !== 6)} onClick={() => act(() => post('/api/master/billing/run', { code, justification: why }), (r) => r.changes.length ? r.changes.map((c: { name: string; action: string }) => `${c.name}: ${c.action === 'suspended' ? 'suspensa' : 'reativada'}`).join('; ') : 'Nenhuma clínica mudou de situação.')}>Avaliar inadimplência</Button>
         </div>
         <p className="small muted">Suspensão por cobrança só vale para quem passou da carência; pagar a fatura reativa sozinho. Rotina automática: variável <code>BILLING_AUTO=1</code>.</p>
-      </div>
+      </div>}
       {d.loading && !d.data && <Spinner />}
       {d.error && <ErrorBox message={d.error} onRetry={d.reload} />}
       {d.data && (
@@ -51,7 +51,7 @@ export function MasterBilling() {
           <section className="card stack" aria-labelledby="mb-plans"><h2 id="mb-plans">Planos: preço e limites</h2>
             <ul className="list">{d.data.plans.map((p) => (
               <li key={p.code} className="list-item row between"><span><strong>{p.name}</strong><br /><span className="small muted">{p.priceCents ? brl(p.priceCents) : 'sem preço'} · usuários {p.maxUsers ?? '∞'} · pacientes {p.maxPatients ?? '∞'} · arquivos {p.maxStorageMb ? `${p.maxStorageMb} MB` : '∞'}</span></span>
-                <Button variant="secondary" className="btn-sm" onClick={() => setPlan(p)}>Editar</Button></li>))}</ul>
+                {canManage && <Button variant="secondary" className="btn-sm" onClick={() => setPlan(p)}>Editar</Button>}</li>))}</ul>
           </section>
           <section className="card stack" aria-labelledby="mb-ten"><h2 id="mb-ten">Clientes</h2>
             <ul className="list">{d.data.tenants.map((t) => (
@@ -59,7 +59,7 @@ export function MasterBilling() {
                 <div className="row between"><strong>{t.name}</strong>
                   <span className="row">{t.suspendedByBilling && <Badge tone="bad">Suspensa por cobrança</Badge>}{t.state === 'late' && <Badge tone="warn">Atrasada há {t.daysOverdue} d</Badge>}{t.state === 'suspend' && <Badge tone="bad">Passou da carência ({t.daysOverdue} d)</Badge>}{t.state === 'ok' && !t.suspendedByBilling && <Badge tone="ok">Em dia</Badge>}</span></div>
                 <span className="small muted">{t.planCode} · {t.priceCents ? `${brl(t.priceCents)}${t.overrideCents !== null ? ' (combinado)' : ''}` : 'sem cobrança'} · vence dia {t.dueDay} · carência {t.graceDays} d · {t.openInvoices} em aberto</span>
-                <div><Button variant="secondary" className="btn-sm" onClick={() => setTenant(t)}>Combinar valor e vencimento</Button></div>
+                {canManage && <div><Button variant="secondary" className="btn-sm" onClick={() => setTenant(t)}>Combinar valor e vencimento</Button></div>}
               </li>))}</ul>
           </section>
           <section className="card stack" aria-labelledby="mb-inv"><h2 id="mb-inv">Faturas</h2>
@@ -67,7 +67,7 @@ export function MasterBilling() {
             <ul className="list">{d.data.invoices.map((i) => (
               <li key={i.id} className="list-item row between"><span><strong>{i.tenantName}</strong> · {i.period.slice(5, 7)}/{i.period.slice(0, 4)}<br /><span className="small muted">vence {ymd(i.dueDate)}{i.paidAt ? ` · paga ${dateTimeOf(i.paidAt)} (${METHODS[i.paidMethod ?? ''] ?? ''})` : ''}{i.voidReason ? ` · anulada: ${i.voidReason}` : ''}</span></span>
                 <span className="row"><strong>{brl(i.amountCents)}</strong>
-                  {i.status === 'open' ? <><Button className="btn-sm" disabled={!justified} onClick={() => setPaying(i)}>Dar baixa</Button><Button variant="ghost" className="btn-sm" disabled={!justified} onClick={() => { const r = window.prompt('Motivo da anulação:'); if (r && r.trim().length >= 3) void act(() => post(`/api/master/invoices/${i.id}/void`, { reason: r.trim(), justification: why }), () => 'Fatura anulada.'); }}>Anular</Button></> : <Badge tone={i.status === 'paid' ? 'ok' : 'neutral'}>{i.status === 'paid' ? 'Paga' : 'Anulada'}</Badge>}</span></li>))}</ul>
+                  {i.status === 'open' && canManage ? <><Button className="btn-sm" disabled={!justified} onClick={() => setPaying(i)}>Dar baixa</Button><Button variant="ghost" className="btn-sm" disabled={!justified} onClick={() => { const r = window.prompt('Motivo da anulação:'); if (r && r.trim().length >= 3) void act(() => post(`/api/master/invoices/${i.id}/void`, { reason: r.trim(), justification: why }), () => 'Fatura anulada.'); }}>Anular</Button></> : <Badge tone={i.status === 'paid' ? 'ok' : i.status === 'open' ? 'warn' : 'neutral'}>{i.status === 'paid' ? 'Paga' : i.status === 'open' ? 'Em aberto' : 'Anulada'}</Badge>}</span></li>))}</ul>
           </section>
         </>
       )}

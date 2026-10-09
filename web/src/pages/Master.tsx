@@ -5,6 +5,7 @@ import { Badge, Button, Empty, ErrorBox, Select, Sheet, Spinner, TextInput, useL
 import { useMasterMfa } from '../useMfa';
 import { Login } from './Login';
 import { MasterBilling, MasterSupport } from './MasterBilling';
+import { MasterOperators } from './MasterOperators';
 
 interface Capability { code: string; description: string; globallyAvailable: boolean; dependsOn: string[] }
 interface Tenant { owner: { name: string; email: string; mfaEnabled: boolean } | null; id: string; slug: string; name: string; status: string; planCode: string; createdAt: string; overrides: { capability: string; mode: 'grant' | 'block'; reason: string }[]; effective: string[] }
@@ -12,9 +13,11 @@ interface Overview { plans: { code: string; name: string }[]; capabilities: Capa
 const STATUS_TONE: Record<string, 'ok' | 'warn' | 'bad' | 'neutral'> = { active: 'ok', suspended: 'warn', closed: 'bad', provisioning: 'neutral' };
 const STATUS_TEXT: Record<string, string> = { active: 'Ativa', suspended: 'Suspensa', closed: 'Encerrada', provisioning: 'Em provisionamento' };
 
+interface Operator { id: string; name: string; email: string; role: string; permissions: string[]; roleLabel: string }
+
 export function MasterApp({ hash }: { hash: string }) {
-  const [op, setOp] = useState<{ name: string; email: string } | null | undefined>(undefined);
-  const refresh = useCallback(() => { get<{ operator: { name: string; email: string } }>('/api/master/me').then((r) => setOp(r.operator), () => setOp(null)); }, []);
+  const [op, setOp] = useState<Operator | null | undefined>(undefined);
+  const refresh = useCallback(() => { get<{ operator: Operator; permissions: string[]; roleLabel: string }>('/api/master/me').then((r) => setOp({ ...r.operator, permissions: r.permissions, roleLabel: r.roleLabel }), () => setOp(null)); }, []);
   useEffect(() => {
     refresh();
     const expired = () => setOp(null);
@@ -25,15 +28,17 @@ export function MasterApp({ hash }: { hash: string }) {
   if (op === undefined) return <main className="auth"><p className="loading" role="status">Carregando…</p></main>;
   if (op === null) return <Login mode="master" onDone={refresh} />;
 
-  const section = hash.startsWith('/master/funcionalidades') ? 'caps' : hash.startsWith('/master/auditoria') ? 'audit' : hash.startsWith('/master/integracoes') ? 'integrations' : hash.startsWith('/master/cobranca') ? 'billing' : hash.startsWith('/master/suporte') ? 'support' : 'tenants';
+  const section = hash.startsWith('/master/funcionalidades') ? 'caps' : hash.startsWith('/master/auditoria') ? 'audit' : hash.startsWith('/master/integracoes') ? 'integrations' : hash.startsWith('/master/cobranca') ? 'billing' : hash.startsWith('/master/suporte') ? 'support' : hash.startsWith('/master/operadores') ? 'operators' : 'tenants';
+  const can = (p: string) => op.permissions.includes(p);
   const links = [
-    { to: '/master', key: 'tenants', label: 'Clínicas', ico: '▣' },
-    { to: '/master/funcionalidades', key: 'caps', label: 'Planos', ico: '◧' },
-    { to: '/master/cobranca', key: 'billing', label: 'Cobrança', ico: '$' },
-    { to: '/master/suporte', key: 'support', label: 'Suporte', ico: '?' },
-    { to: '/master/integracoes', key: 'integrations', label: 'Integrações', ico: '⇄' },
-    { to: '/master/auditoria', key: 'audit', label: 'Auditoria', ico: '☰' },
-  ];
+    { to: '/master', key: 'tenants', label: 'Clínicas', ico: '▣', show: can('overview.read') },
+    { to: '/master/funcionalidades', key: 'caps', label: 'Planos', ico: '◧', show: can('overview.read') },
+    { to: '/master/cobranca', key: 'billing', label: 'Cobrança', ico: '$', show: can('billing.read') },
+    { to: '/master/suporte', key: 'support', label: 'Suporte', ico: '?', show: can('support.open') },
+    { to: '/master/integracoes', key: 'integrations', label: 'Integrações', ico: '⇄', show: can('integrations.read') },
+    { to: '/master/auditoria', key: 'audit', label: 'Auditoria', ico: '☰', show: can('audit.read') },
+    { to: '/master/operadores', key: 'operators', label: 'Operadores', ico: '☺', show: can('operators.manage') },
+  ].filter((l) => l.show);
   return (
     <div className="shell master-mode">
       <header className="topbar">
@@ -44,9 +49,11 @@ export function MasterApp({ hash }: { hash: string }) {
         {links.map((l) => <a key={l.key} href={`#${l.to}`} aria-current={section === l.key ? 'page' : undefined}><span className="ico" aria-hidden="true">{l.ico}</span><span className="lbl">{l.label}</span></a>)}
       </nav>
       <main className="content">
-        {section === 'tenants' && <Tenants />}
+        <p className="small muted">{op.name} · {op.roleLabel}</p>
+        {section === 'tenants' && <Tenants canManage={can('clinics.manage')} />}
+        {section === 'operators' && can('operators.manage') && <MasterOperators meId={op.id} />}
         {section === 'caps' && <Plans />}
-        {section === 'billing' && <MasterBilling />}
+        {section === 'billing' && <MasterBilling canManage={can('billing.manage')} />}
         {section === 'support' && <MasterSupport />}
         {section === 'integrations' && <Integrations />}
         {section === 'audit' && <PlatformAudit />}
@@ -55,21 +62,21 @@ export function MasterApp({ hash }: { hash: string }) {
   );
 }
 
-function Tenants() {
+function Tenants({ canManage }: { canManage: boolean }) {
   const ov = useLoad(() => get<Overview>('/api/master/overview'), []);
   const [creating, setCreating] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const tenant = ov.data?.tenants.find((t) => t.id === selected) ?? null;
   return (
     <>
-      <div className="page-head"><h1>Clínicas</h1><Button onClick={() => setCreating(true)}>Nova clínica</Button></div>
+      <div className="page-head"><h1>Clínicas</h1>{canManage && <Button onClick={() => setCreating(true)}>Nova clínica</Button>}</div>
       {ov.loading && !ov.data && <Spinner />}
       {ov.error && <ErrorBox message={ov.error} onRetry={ov.reload} />}
       {ov.data?.tenants.length === 0 && <Empty title="Nenhuma clínica">Crie a primeira clínica cliente.</Empty>}
       <ul className="list">
         {ov.data?.tenants.map((t) => (
           <li key={t.id}>
-            <button className="list-item link btn-block" onClick={() => setSelected(t.id)}>
+            <button className="list-item link btn-block" onClick={() => canManage && setSelected(t.id)}>
               <div className="row between"><strong>{t.name}</strong><Badge tone={STATUS_TONE[t.status]}>{STATUS_TEXT[t.status]}</Badge></div>
               <span className="muted small">{t.slug} · plano {ov.data!.plans.find((p) => p.code === t.planCode)?.name} · {t.effective.length} funcionalidades{t.overrides.length ? ` · ${t.overrides.length} ajuste(s)` : ''}</span>
             </button>
