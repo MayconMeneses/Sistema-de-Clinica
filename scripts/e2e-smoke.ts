@@ -902,6 +902,72 @@ for (const vp of [{ name: 'desktop', width: 1280, height: 800, mobile: false }, 
   } else step('recuperação de senha: pulado (sem log do worker)');
 }
 
+// ---------------- PORTAL DO PACIENTE (celular): convite pela equipe, entrada, confirmar, pedir horário, baixar documento ----------------
+{
+  const staffCtx = await browser.newContext({ viewport: { width: 1280, height: 800 }, locale: 'pt-BR' });
+  const staff = await staffCtx.newPage();
+  watch(staff, 'portal-equipe');
+  await staff.goto(BASE);
+  await staff.getByLabel('Identificador da clínica').fill('demo');
+  await staff.getByLabel('E-mail').fill('dono@demo.demo');
+  await staff.getByLabel('Senha').fill(PW);
+  await staff.getByRole('button', { name: 'Entrar' }).click();
+  await staff.getByRole('navigation', { name: 'Principal' }).waitFor();
+  const api = (method: string, url: string, body?: unknown) => staff.evaluate(async ({ method, url, body }) => {
+    const r = await fetch(url, { method, headers: { 'content-type': 'application/json', 'x-requested-with': 'clinica-one' }, body: body === undefined ? undefined : JSON.stringify(body) });
+    return { status: r.status, json: await r.json().catch(() => ({})) };
+  }, { method, url, body });
+  const suffix = String(Date.now() % 100000);
+  const pat = await api('POST', '/api/patients', { name: `Paciente Portal ${suffix}`, birthDate: '1992-04-23', confirmNotDuplicate: true });
+  const pid = pat.json.id as string;
+  const pros = (await api('GET', '/api/professionals')).json.professionals as { id: string }[];
+  const start = new Date(Date.now() + 5 * 86_400_000); start.setUTCHours(15, 0, 0, 0);
+  const ap = await api('POST', '/api/appointments', { patientId: pid, professionalId: pros[0]!.id, startsAt: start.toISOString(), endsAt: new Date(start.getTime() + 1_800_000).toISOString(), service: 'Consulta', encaixe: true });
+  const doc = await api('POST', `/api/patients/${pid}/documents`, { title: 'Orientações pós-consulta', category: 'other', fileName: 'orientacoes.pdf', contentBase64: Buffer.from('%PDF-1.4\norientacoes\n%%EOF').toString('base64') });
+  await api('POST', `/api/documents/${doc.json.id}/share`, { shared: true });
+  must(ap.status === 200 && doc.status === 200, `portal: dados de teste criados (consulta ${ap.status} ${JSON.stringify(ap.json).slice(0, 120)}; documento ${doc.status})`);
+
+  // a equipe gera o link pela tela da ficha do paciente
+  await staff.goto(`${BASE}/#/pacientes/${pid}`);
+  await staff.getByRole('button', { name: 'Gerar link de acesso' }).click();
+  const link = await staff.getByRole('textbox', { name: 'Link de acesso', exact: true }).inputValue();
+  must(/#\/portal\?clinic=demo&token=/.test(link), 'portal: a equipe gera o link de acesso pela ficha do paciente');
+  await staffCtx.close();
+
+  const pctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, locale: 'pt-BR', acceptDownloads: true });
+  const pp = await pctx.newPage();
+  watch(pp, 'portal-paciente');
+  await pp.goto(link.replace(/^https?:\/\/[^/]+/, BASE));
+  await pp.getByRole('heading', { name: 'Confirme que é você' }).waitFor();
+  await pp.getByLabel('Data de nascimento').fill('1990-01-01');
+  await pp.getByRole('button', { name: 'Entrar' }).click();
+  await pp.getByRole('alert').waitFor();
+  must(/não conferem|inválido/i.test(await pp.getByRole('alert').innerText()), 'portal: data errada não entra e a mensagem não revela detalhes');
+  await pp.getByLabel('Data de nascimento').fill('1992-04-23');
+  await pp.getByRole('button', { name: 'Entrar' }).click();
+  await pp.getByRole('heading', { name: 'Próximas consultas' }).waitFor();
+  must(!pp.url().includes('token='), 'portal: o link de uso único sai do endereço depois de entrar');
+  await pp.getByRole('button', { name: 'Confirmar presença' }).click();
+  await pp.getByText('Presença confirmada.').waitFor();
+  await pp.getByText('Confirmada', { exact: true }).first().waitFor();
+  must(true, 'portal: paciente confirma a presença');
+  await noHorizontalScroll(pp, 'portal');
+  await pp.screenshot({ path: `${SHOTS}/16-portal-mobile.png`, fullPage: true });
+  const dl = pp.waitForEvent('download');
+  await pp.getByRole('button', { name: 'Baixar' }).click();
+  must((await dl).suggestedFilename() === 'orientacoes.pdf', 'portal: paciente baixa o documento liberado');
+  await pp.getByRole('button', { name: 'Pedir consulta' }).click();
+  await pp.getByLabel('Qual dia e horário você prefere?').fill('Terças de manhã');
+  await pp.getByRole('button', { name: 'Enviar pedido' }).click();
+  await pp.getByText('Pedido enviado.').waitFor();
+  await pp.getByRole('heading', { name: 'Meus pedidos' }).waitFor();
+  must(true, 'portal: paciente pede uma consulta e vê o pedido em análise');
+  await pp.getByRole('button', { name: 'Sair' }).click();
+  await pp.getByRole('heading', { name: 'Sessão encerrada' }).waitFor();
+  must(true, 'portal: sair encerra a sessão');
+  await pctx.close();
+}
+
 await browser.close();
 if (problems.length) { console.log('\nPROBLEMAS:\n' + problems.map((p) => ' - ' + p).join('\n')); process.exit(1); }
 console.log('\nE2E OK — sem erros de console/CSP, sem 5xx, sem rolagem horizontal.');

@@ -5,6 +5,7 @@ import { Login } from './pages/Login';
 import { ForgotPassword, ResetPassword } from './pages/PasswordRecovery';
 
 const ClinicShell = lazy(() => import('./pages/ClinicShell').then((m) => ({ default: m.ClinicShell })));
+const PortalApp = lazy(() => import('./pages/Portal').then((m) => ({ default: m.PortalApp })));
 const MasterApp = lazy(() => import('./pages/Master').then((m) => ({ default: m.MasterApp })));
 
 function ClinicApp({ hash }: { hash: string }) {
@@ -29,7 +30,7 @@ export default function App() {
   return (
     <ToastProvider>
       <Suspense fallback={<main className="auth"><p className="loading" role="status">Carregando…</p></main>}>
-        {hash.startsWith('/master') ? <MasterApp hash={hash} /> : <ClinicApp hash={hash} />}
+        {hash.startsWith('/master') ? <MasterApp hash={hash} /> : hash.startsWith('/portal') ? <PortalApp /> : <ClinicApp hash={hash} />}
       </Suspense>
     </ToastProvider>
   );
