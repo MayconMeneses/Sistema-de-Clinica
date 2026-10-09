@@ -32,6 +32,7 @@ export const SCOPE_POLICY: Record<string, ScopeRule> = {
   'GET /api/documents/:id/download': 'via:patient_documents', 'GET /api/documents/:id/thumb': 'via:patient_documents', 'GET /api/documents/:id/image': 'via:patient_documents',
   'POST /api/documents/:id/archive': 'via:patient_documents', 'POST /api/documents/:id/share': 'via:patient_documents',
   'POST /api/patients/:id/portal-invite': 'patient', 'GET /api/patients/:id/portal-status': 'patient', 'POST /api/patients/:id/portal-revoke': 'patient',
+  'GET /api/portal-booking': 'deny', 'PUT /api/portal-booking': 'deny',
   'GET /api/portal-requests': 'handled', 'POST /api/portal-requests/:id/resolve': 'via:portal_requests',
   'POST /api/patients/:id/forms': 'patient', 'GET /api/patients/:id/forms': 'patient', 'GET /api/forms/:id': 'via:form_requests', 'POST /api/forms/:id/submit': 'via:form_requests', 'POST /api/forms/:id/cancel': 'via:form_requests',
   'POST /api/patients/:id/triage': 'patient',

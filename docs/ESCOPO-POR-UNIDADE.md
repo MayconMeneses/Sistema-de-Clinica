@@ -13,6 +13,8 @@ Só o perfil **gerente de unidade** é restrito; os demais perfis não mudam. El
 | **Financeiro** | só o do paciente que enxerga; descontos e cobranças online idem. Caixa, resumo, contas a pagar ficam fora (são da clínica inteira) |
 | **Indicadores** | só a parte de atendimentos da sua unidade |
 
+Configurações da clínica inteira (como o agendamento online do portal) não estão disponíveis para o gerente de unidade.
+
 ## Como é imposto
 - Uma única tabela, `src/server/scope-policy.ts`, classifica cada rota (`open`, `handled`, `deny`, `patient`, `body:*`, `via:*`) e roda **antes** do handler, para o gerente. Rota que ele alcança e não está na tabela é recusada.
 - `tests/unit-scope-data.test.ts` falha se uma rota nova alcançável pelo gerente não for classificada; `tests/pentest2.test.ts` ataca todas as rotas de paciente com um paciente de outra unidade.

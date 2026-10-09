@@ -2,12 +2,13 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { ApiError, downloadFile, get, post } from '../api';
 import { dateTimeOf } from '../format';
 import { FormSheet } from './FormFill';
+import { BookSheet } from './PortalBooking';
 import { Badge, Button, Empty, Sheet, TextInput, useToast } from '../ui';
 
 interface Appt { id: string; startsAt: string; endsAt: string; status: string; service: string; professionalName: string; canCancelNow: boolean; canConfirm: boolean; hasOpenRequest: boolean }
 interface Doc { id: string; title: string; category: string; fileName: string; sizeBytes: number; createdAt: string }
 interface Req { id: string; kind: 'schedule' | 'reschedule' | 'cancel'; message: string | null; status: 'open' | 'done' | 'dismissed'; createdAt: string }
-interface Me { clinic: string; patient: { name: string }; cancelMinHours: number; upcoming: Appt[]; past: Appt[]; documents: Doc[]; requests: Req[]; pendingForms: { id: string; name: string; appointmentAt: string | null }[] }
+interface Me { clinic: string; patient: { name: string }; cancelMinHours: number; upcoming: Appt[]; past: Appt[]; documents: Doc[]; requests: Req[]; pendingForms: { id: string; name: string; appointmentAt: string | null }[]; bookingEnabled: boolean }
 
 const STATUS: Record<string, { label: string; tone: 'neutral' | 'ok' | 'warn' | 'bad' | 'info' }> = {
   scheduled: { label: 'Agendada', tone: 'neutral' }, confirmed: { label: 'Confirmada', tone: 'ok' }, checked_in: { label: 'Chegou', tone: 'info' }, completed: { label: 'Concluída', tone: 'ok' },
@@ -77,6 +78,7 @@ function PortalHome({ me, reload, onLogout }: { me: Me; reload: () => void; onLo
   const [asking, setAsking] = useState<{ kind: 'schedule' | 'reschedule'; appt?: Appt } | null>(null);
   const [cancelling, setCancelling] = useState<Appt | null>(null);
   const [filling, setFilling] = useState<string | null>(null);
+  const [booking, setBooking] = useState(false);
 
   async function act(id: string, fn: () => Promise<string | void>) {
     setBusy(id);
@@ -93,7 +95,7 @@ function PortalHome({ me, reload, onLogout }: { me: Me; reload: () => void; onLo
       </header>
 
       <section aria-labelledby="p-next" className="stack">
-        <div className="row between"><h2 id="p-next">Próximas consultas</h2><Button className="btn-sm" onClick={() => setAsking({ kind: 'schedule' })}>Pedir consulta</Button></div>
+        <div className="row between"><h2 id="p-next">Próximas consultas</h2><span className="row">{me.bookingEnabled && <Button className="btn-sm" onClick={() => setBooking(true)}>Marcar consulta</Button>}<Button variant={me.bookingEnabled ? 'secondary' : 'primary'} className="btn-sm" onClick={() => setAsking({ kind: 'schedule' })}>Pedir consulta</Button></span></div>
         {me.upcoming.length === 0 && <Empty title="Nenhuma consulta marcada">Peça um horário e a clínica retorna para você.</Empty>}
         <ul className="list">
           {me.upcoming.map((a) => (
@@ -162,6 +164,7 @@ function PortalHome({ me, reload, onLogout }: { me: Me; reload: () => void; onLo
       )}
 
       <FormSheet id={filling} base="/api/portal/forms" get={get} post={post} onClose={() => setFilling(null)} onDone={() => { setFilling(null); toast('Respostas enviadas. Obrigado!'); reload(); }} />
+      <BookSheet open={booking} onClose={() => setBooking(false)} onBooked={(when) => { setBooking(false); toast(`Consulta marcada para ${when}.`); reload(); }} />
       <AskSheet ask={asking} onClose={() => setAsking(null)} onSent={() => { setAsking(null); toast('Pedido enviado. A clínica vai responder.'); reload(); }} />
       <CancelSheet appt={cancelling} minHours={me.cancelMinHours} onClose={() => setCancelling(null)} onDone={(m) => { setCancelling(null); toast(m); reload(); }} />
     </main>

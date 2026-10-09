@@ -10,6 +10,8 @@ import { audit, auditPortal, clinicRoute, cookieOptions, PORTAL_COOKIE, portalRo
 import { appPool } from '../db.js';
 import { CLINICAL_CATEGORIES } from './documents.js';
 import { validateAnswers, type FormField } from '../../modules/forms/schema.js';
+import { freeSlots, loadSettings } from '../../modules/booking/slots.js';
+import { enqueueAppointmentMessages } from '../../modules/communications/enqueue.js';
 import { apptInScope, assertApptVisible, PATIENT_VISIBLE_SQL, unitScope } from '../scope.js';
 import { badRequest, conflict, HttpError, isRealDate, mapDbError, newSecret, notFound, sha256, unauthorized } from '../http.js';
 
@@ -180,8 +182,14 @@ export function portalRoutes(app: FastifyInstance) {
            LEFT JOIN appointments a ON a.tenant_id = f.tenant_id AND a.id = f.appointment_id
           WHERE f.patient_id = ANY($1::uuid[]) AND f.status = 'pending' ORDER BY f.created_at DESC LIMIT 20`, [ids])).rows
       : [];
-    return { clinic: ctx.tenantName, patient: { name: ctx.patient.name }, cancelMinHours: CANCEL_MIN_HOURS, upcoming, past, documents: docs.rows, requests: reqs.rows, pendingForms: forms };
+    return { clinic: ctx.tenantName, patient: { name: ctx.patient.name }, cancelMinHours: CANCEL_MIN_HOURS, upcoming, past, documents: docs.rows, requests: reqs.rows, pendingForms: forms, bookingEnabled: await bookingEnabled(ctx) };
   });
+
+  const bookingEnabled = async (ctx: Parameters<Parameters<typeof portalRoute>[4]>[0]) => {
+    if (!ctx.entitlements.has('schedule.core')) return false;
+    if (!(await loadSettings(ctx.tx)).enabled) return false;
+    return (await ctx.tx.query('SELECT 1 FROM portal_bookable_professionals b JOIN users u ON u.tenant_id = b.tenant_id AND u.id = b.professional_id WHERE u.status = \'active\' LIMIT 1')).rowCount! > 0;
+  };
 
   const ownAppt = async (ctx: Parameters<Parameters<typeof portalRoute>[4]>[0], id: string) => {
     const ids = await family(ctx.tx, ctx.patient.id);
@@ -280,5 +288,62 @@ export function portalRoutes(app: FastifyInstance) {
     await ctx.tx.query(`UPDATE form_requests SET status = 'submitted', answers = $2, submitted_at = now(), submitted_via = 'portal' WHERE id = $1`, [id, JSON.stringify(answers)]);
     await auditPortal(ctx, 'portal.form_submitted', 'form_request', id);
     return { ok: true };
+  });
+
+  // ------------------------------------------------------------ AUTOAGENDAMENTO (só horários livres de profissionais liberados)
+  const OFFSET_MS = -3 * 3_600_000;
+  const localYmd = (d: Date) => new Date(d.getTime() + OFFSET_MS).toISOString().slice(0, 10);
+  const bookable = async (ctx: Parameters<Parameters<typeof portalRoute>[4]>[0]) => {
+    if (!ctx.entitlements.has('schedule.core')) throw notFound('Agendamento online indisponível.');
+    const s = await loadSettings(ctx.tx);
+    if (!s.enabled) throw new HttpError(403, 'O agendamento online não está disponível nesta clínica.', 'booking_disabled');
+    return s;
+  };
+  const proBookable = async (ctx: Parameters<Parameters<typeof portalRoute>[4]>[0], id: string) => {
+    const r = await ctx.tx.query(`SELECT 1 FROM portal_bookable_professionals b JOIN users u ON u.tenant_id = b.tenant_id AND u.id = b.professional_id WHERE b.professional_id = $1 AND u.status = 'active' AND u.role = 'professional'`, [id]);
+    if (!r.rowCount) throw notFound('Profissional não disponível para agendamento online.');
+  };
+
+  portalRoute(app, 'GET', '/api/portal/booking', {}, async (ctx) => {
+    const s = await bookable(ctx);
+    const pros = await ctx.tx.query(
+      `SELECT u.id, u.name FROM portal_bookable_professionals b JOIN users u ON u.tenant_id = b.tenant_id AND u.id = b.professional_id
+        WHERE u.status = 'active' AND u.role = 'professional' AND EXISTS (SELECT 1 FROM availability_rules r WHERE r.professional_id = u.id) ORDER BY u.name`);
+    const ids = await family(ctx.tx, ctx.patient.id);
+    const open = await ctx.tx.query<{ n: number }>(`SELECT count(*)::int AS n FROM appointments WHERE patient_id = ANY($1::uuid[]) AND booked_via = 'portal' AND status IN ('scheduled','confirmed') AND starts_at > now()`, [ids]);
+    return { professionals: pros.rows, slotMinutes: s.slotMinutes, minNoticeHours: s.minNoticeHours, maxDaysAhead: s.maxDaysAhead, service: s.service, remaining: Math.max(0, s.maxActivePerPatient - open.rows[0]!.n), today: localYmd(new Date()) };
+  });
+
+  portalRoute(app, 'GET', '/api/portal/booking/slots', {}, async (ctx) => {
+    const q = z.object({ professionalId: z.string().uuid(), date: z.string().refine(isRealDate, 'Data inválida.') }).parse(ctx.req.query);
+    const s = await bookable(ctx);
+    await proBookable(ctx, q.professionalId);
+    const today = localYmd(new Date());
+    if (q.date < today || q.date > localYmd(new Date(Date.now() + s.maxDaysAhead * 86_400_000))) return { slots: [] };
+    const slots = await freeSlots(ctx.tx, s, q.professionalId, q.date, await family(ctx.tx, ctx.patient.id));
+    return { slots: slots.map((d) => d.toISOString()) };
+  });
+
+  portalRoute(app, 'POST', '/api/portal/booking', {}, async (ctx) => {
+    const b = z.object({ professionalId: z.string().uuid(), startsAt: z.string().datetime({ offset: true }) }).parse(ctx.req.body);
+    const s = await bookable(ctx);
+    await proBookable(ctx, b.professionalId);
+    const start = new Date(b.startsAt);
+    const ids = await family(ctx.tx, ctx.patient.id);
+    await ctx.tx.query('SELECT 1 FROM patients WHERE id = $1 FOR UPDATE', [ctx.patient.id]);          // serializa o limite por paciente
+    const open = await ctx.tx.query<{ n: number }>(`SELECT count(*)::int AS n FROM appointments WHERE patient_id = ANY($1::uuid[]) AND booked_via = 'portal' AND status IN ('scheduled','confirmed') AND starts_at > now()`, [ids]);
+    if (open.rows[0]!.n >= s.maxActivePerPatient) throw conflict(`Você já tem ${open.rows[0]!.n} consulta(s) marcada(s) pelo portal. Cancele uma ou fale com a clínica.`);
+    const slots = await freeSlots(ctx.tx, s, b.professionalId, localYmd(start), ids);
+    if (!slots.some((d) => d.getTime() === start.getTime())) throw conflict('Este horário não está mais disponível. Escolha outro.');
+    const end = new Date(start.getTime() + s.slotMinutes * 60_000);
+    let id: string;
+    try {
+      id = (await ctx.tx.query<{ id: string }>(
+        `INSERT INTO appointments (tenant_id, patient_id, professional_id, starts_at, ends_at, service, booked_via) VALUES ($1,$2,$3,$4,$5,$6,'portal') RETURNING id`,
+        [ctx.tenantId, ctx.patient.id, b.professionalId, start, end, s.service])).rows[0]!.id;
+    } catch (e) { return mapDbError(e); }
+    await enqueueAppointmentMessages(ctx, { id, patientId: ctx.patient.id, startsAt: start.toISOString() }, 'confirmation');
+    await auditPortal(ctx, 'portal.appointment_booked', 'appointment', id);
+    return { ok: true, id };
   });
 }
