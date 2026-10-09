@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { get, patch } from '../api';
 import { STATUS_LABEL, timeOf } from '../format';
+import { PortalRequests } from './PortalStaff';
 import { Badge, Button, Empty, ErrorBox, Spinner, useLoad, usePolling, useToast } from '../ui';
 
 interface Appt { id: string; status: string; priority: string; startsAt: string; checkedInAt: string | null; patientId: string; patientName: string; professionalName: string; resourceName: string | null; service: string }
 
 /** Fila do dia: quem ainda vai chegar, quem espera, quem está sendo atendido. Atualiza sozinha a cada 15 s. */
-export function Reception({ canWrite }: { canWrite: boolean }) {
+export function Reception({ canWrite, portal = false }: { canWrite: boolean; portal?: boolean }) {
   const toast = useToast();
   const list = useLoad(() => get<{ appointments: Appt[] }>('/api/reception'), []);
   const [, tick] = useState(0);
@@ -28,6 +29,8 @@ export function Reception({ canWrite }: { canWrite: boolean }) {
       <div className="page-head"><h1>Recepção</h1><Button variant="secondary" className="btn-sm" onClick={list.reload}>Atualizar</Button></div>
       {list.loading && !list.data && <Spinner />}
       {list.error && <ErrorBox message={list.error} onRetry={list.reload} />}
+
+      {portal && <PortalRequests />}
 
       <section aria-labelledby="q-title">
         <h2 id="q-title">Fila de espera ({queue.length})</h2>

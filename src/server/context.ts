@@ -10,6 +10,7 @@ import { hasPermission, type Permission } from './auth/rbac.js';
 
 export const CLINIC_COOKIE = 'cs';
 export const MASTER_COOKIE = 'ms';
+export const PORTAL_COOKIE = 'ps';
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export function cookieOptions(path: string, hours: number) {
@@ -29,7 +30,7 @@ export interface ClinicCtx {
 interface RouteOpts { cap?: string; perm?: Permission; bodyLimit?: number }
 
 /** Registro das rotas autenticadas, usado por testes que provam que TODA rota exige sessão e permissão. */
-export const routeRegistry: { kind: 'clinic' | 'master'; method: string; url: string; perm?: Permission; cap?: string }[] = [];
+export const routeRegistry: { kind: 'clinic' | 'master' | 'portal'; method: string; url: string; perm?: Permission; cap?: string }[] = [];
 type Handler<C> = (ctx: C, req: FastifyRequest, reply: FastifyReply) => Promise<unknown>;
 
 /**
@@ -152,4 +153,63 @@ export function masterRoute(
       }
     },
   });
+}
+
+// ---------------------------------------------------------------- PORTAL DO PACIENTE
+export interface PortalCtx {
+  tx: Tx;
+  tenantId: string;
+  tenantName: string;
+  patient: { id: string; name: string };
+  sessionId: string;
+  req: FastifyRequest;
+}
+
+/**
+ * Rota do paciente. A sessão é própria (cookie `ps`, tabela `portal_sessions`) e NÃO dá acesso a nenhuma rota da equipe.
+ * O RLS isola as clínicas, mas dentro da clínica cada paciente só pode ver o que é dele: toda consulta do portal filtra
+ * explicitamente por `ctx.patient.id` (ou pelo cadastro principal e os mesclados nele).
+ */
+export function portalRoute(
+  app: FastifyInstance,
+  method: 'GET' | 'POST',
+  url: string,
+  opts: { bodyLimit?: number },
+  handler: Handler<PortalCtx>,
+) {
+  routeRegistry.push({ kind: 'portal', method, url });
+  app.route({
+    method, url,
+    ...(opts.bodyLimit ? { bodyLimit: opts.bodyLimit } : {}),
+    handler: async (req, reply) => {
+      const raw = req.cookies[PORTAL_COOKIE];
+      const dot = raw?.indexOf('.') ?? -1;
+      if (!raw || dot < 1) throw unauthorized();
+      const tenantHint = raw.slice(0, dot);
+      const secret = raw.slice(dot + 1);
+      if (!UUID_RE.test(tenantHint) || !secret) throw unauthorized();
+      try {
+        return await withTenant(appPool, tenantHint, async (tx) => {
+          const r = await tx.query<{ sid: string; patient_id: string; expires_at: Date; revoked_at: Date | null; name: string; merged_into: string | null }>(
+            `SELECT s.id AS sid, s.patient_id, s.expires_at, s.revoked_at, p.name, p.merged_into
+               FROM portal_sessions s JOIN patients p ON p.tenant_id = s.tenant_id AND p.id = s.patient_id WHERE s.token_hash = $1`, [sha256(secret)]);
+          const row = r.rows[0];
+          if (!row || row.revoked_at || row.expires_at.getTime() < Date.now() || row.merged_into) throw unauthorized();
+          const t = await tx.query<{ name: string; status: string }>('SELECT name, status FROM tenants');
+          if (!t.rows[0] || t.rows[0].status !== 'active') throw unauthorized();
+          if (!(await loadEntitlements(tx)).has('patient.portal')) throw new HttpError(403, 'O portal do paciente não está disponível.', 'capability_unavailable');
+          return handler({ tx, tenantId: tenantHint, tenantName: t.rows[0].name, patient: { id: row.patient_id, name: row.name }, sessionId: row.sid, req }, req, reply);
+        });
+      } catch (e) {
+        if (e instanceof HttpError && e.status === 401) reply.clearCookie(PORTAL_COOKIE, cookieOptions('/api/portal', 0));
+        throw e;
+      }
+    },
+  });
+}
+
+export async function auditPortal(ctx: PortalCtx, action: string, entityType: string, entityId?: string, metadata: object = {}) {
+  await ctx.tx.query(
+    `INSERT INTO audit_events (tenant_id, actor_id, action, entity_type, entity_id, metadata) VALUES ($1, NULL, $2, $3, $4, $5)`,
+    [ctx.tenantId, action, entityType, entityId ?? null, JSON.stringify({ ...metadata, via: 'portal', patientId: ctx.patient.id, ip: ctx.req.ip })]);
 }

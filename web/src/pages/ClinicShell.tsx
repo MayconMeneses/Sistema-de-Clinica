@@ -49,7 +49,7 @@ export function ClinicShell({ me, hash, onLogout, onRefresh }: { me: Me; hash: s
   if (receiptMatch && can('finance.read') && has('finance.basic')) page = <Receipt id={receiptMatch[1]!} />;
   else if (patientMatch) page = <PatientDetail id={patientMatch[1]!} me={me} />;
   else if (current === '/agenda' && visible.some((i) => i.path === '/agenda')) page = <Agenda me={me} />;
-  else if (current === '/recepcao' && visible.some((i) => i.path === '/recepcao')) page = <Reception canWrite={can('agenda.write')} />;
+  else if (current === '/recepcao' && visible.some((i) => i.path === '/recepcao')) page = <Reception canWrite={can('agenda.write')} portal={has('patient.portal') && can('portal.manage')} />;
   else if (current === '/pacientes' && visible.some((i) => i.path === '/pacientes')) page = <Patients me={me} />;
   else if (current === '/financeiro' && visible.some((i) => i.path === '/financeiro')) page = <FinancePage me={me} />;
   else if (current === '/equipe' && visible.some((i) => i.path === '/equipe')) page = <Team permissions={me.permissions} entitlements={me.entitlements} />;

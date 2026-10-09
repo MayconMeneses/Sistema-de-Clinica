@@ -30,6 +30,7 @@ Sensibilidade: **S** = dado de saúde ou que o revela (LGPD art. 5º, II e art. 
 | CRM (leads) | `crm_leads`, `crm_lead_events` | P | captação | marketing, recepção, gerente | RLS |
 | Solicitações do titular | `privacy_requests` | P | atender LGPD art. 18 | recepção, gerente, dono, admin | prazo de referência de 15 dias; fila |
 | Usuários da clínica | `users`, `sessions` | P | autenticação | dono, admin | senha com hash; MFA cifrado (AES-256-GCM) |
+| Acesso do paciente ao portal | `portal_invites`, `portal_sessions`, `portal_requests` | P | autoatendimento do paciente | o próprio paciente (só o que é dele); recepção, gerente, admin e dono gerenciam | link de uso único + data de nascimento; sessão isolada; auditoria `portal.*` |
 | Auditoria | `audit_events` | P | rastreabilidade | dono, admin, auditor | append-only |
 | Operação da plataforma | `platform_users`, `platform_audit_events`, `tenant_directory` | P | administrar clientes | operadores Master | o Master **não** lê dado clínico (sem privilégio no banco, testado) |
 

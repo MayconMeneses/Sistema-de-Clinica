@@ -10,6 +10,7 @@ const PERMISSIONS = {
   'agenda.write': CLINICAL_FRONT,
   'notes.read': ['owner', 'professional'],
   'notes.write': ['professional'],
+  'portal.manage': ['owner', 'admin', 'unit_manager', 'receptionist'],
   'documents.read': CLINICAL_FRONT,
   'documents.write': CLINICAL_FRONT,
   'patients.merge': ['owner', 'admin'],

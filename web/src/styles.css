@@ -222,3 +222,7 @@ details summary { cursor: pointer; font-weight: 700; min-height: 44px; display: 
 .stats > .stat { min-width: 0; }
 .stat b { font-size: clamp(1.05rem, 4.8vw, 1.5rem); white-space: nowrap; }
 @media (min-width: 900px) { .stat b { font-size: 1.5rem; } }
+
+/* Portal do paciente */
+.portal { max-width: 640px; margin: 0 auto; padding: 1rem 1rem 3rem; display: grid; gap: 1.5rem; }
+.portal h2 { margin: 0; }

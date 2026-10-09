@@ -3,7 +3,7 @@ import { downloadFile, get, post } from '../api';
 import { dateTimeOf } from '../format';
 import { Badge, Button, Empty, ErrorBox, Select, Spinner, TextInput, useLoad, useToast } from '../ui';
 
-interface Doc { id: string; title: string; category: Category; fileName: string; mimeType: string; sizeBytes: number; createdAt: string; authorName: string | null; archivedAt: string | null; archiveReason: string | null }
+interface Doc { id: string; title: string; category: Category; fileName: string; mimeType: string; sizeBytes: number; createdAt: string; authorName: string | null; archivedAt: string | null; archiveReason: string | null; sharedWithPatient?: boolean }
 type Category = 'exam' | 'report' | 'consent' | 'identity' | 'other';
 const CATEGORY: Record<Category, string> = { exam: 'Exame', report: 'Laudo', consent: 'Termo', identity: 'Documento pessoal', other: 'Outro' };
 const MAX = 5 * 1024 * 1024;
@@ -18,7 +18,7 @@ function toBase64(file: File): Promise<string> {
   });
 }
 
-export function Documents({ patientId, canWrite, canClinical }: { patientId: string; canWrite: boolean; canClinical: boolean }) {
+export function Documents({ patientId, canWrite, canClinical, canShare = false }: { patientId: string; canWrite: boolean; canClinical: boolean; canShare?: boolean }) {
   const toast = useToast();
   const [showArchived, setShowArchived] = useState(false);
   const list = useLoad(() => get<{ documents: Doc[] }>(`/api/patients/${patientId}/documents${showArchived ? '?includeArchived=1' : ''}`), [patientId, showArchived]);
@@ -44,6 +44,11 @@ export function Documents({ patientId, canWrite, canClinical }: { patientId: str
     if (!reason) return;
     setBusy(d.id);
     try { await post(`/api/documents/${d.id}/archive`, { reason }); toast('Documento arquivado.'); list.reload(); }
+    catch (err) { toast((err as Error).message, 'bad'); } finally { setBusy(null); }
+  }
+  async function share(d: Doc) {
+    setBusy(d.id);
+    try { await post(`/api/documents/${d.id}/share`, { shared: !d.sharedWithPatient }); toast(d.sharedWithPatient ? 'Documento retirado do portal.' : 'Documento liberado no portal do paciente.'); list.reload(); }
     catch (err) { toast((err as Error).message, 'bad'); } finally { setBusy(null); }
   }
   async function download(d: Doc) {
@@ -80,12 +85,13 @@ export function Documents({ patientId, canWrite, canClinical }: { patientId: str
           <li key={d.id} className="list-item stack">
             <div className="row between">
               <strong>{d.title}</strong>
-              <span className="row">{d.archivedAt && <Badge>Arquivado</Badge>}<Badge tone="info">{CATEGORY[d.category]}</Badge></span>
+              <span className="row">{d.archivedAt && <Badge>Arquivado</Badge>}{d.sharedWithPatient && <Badge tone="ok">No portal</Badge>}<Badge tone="info">{CATEGORY[d.category]}</Badge></span>
             </div>
             <span className="small muted">{d.fileName} · {size(d.sizeBytes)} · {dateTimeOf(d.createdAt)}{d.authorName ? ` · ${d.authorName}` : ''}</span>
             {d.archiveReason && <span className="small muted">Motivo do arquivamento: {d.archiveReason}</span>}
             <div className="row">
               <Button variant="secondary" className="btn-sm" busy={busy === d.id} onClick={() => download(d)}>Baixar</Button>
+              {canWrite && canShare && !d.archivedAt && <Button variant="ghost" className="btn-sm" busy={busy === d.id} onClick={() => share(d)}>{d.sharedWithPatient ? 'Tirar do portal' : 'Liberar no portal'}</Button>}
               {canWrite && !d.archivedAt && <Button variant="ghost" className="btn-sm" onClick={() => archive(d)}>Arquivar</Button>}
             </div>
           </li>

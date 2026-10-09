@@ -64,4 +64,5 @@ Legenda: ✅ IMPLEMENTADO e testado localmente · 🟡 PARCIAL · ⬜ PLANEJADO
 - ✅ Pagamentos: estorno parcial (cobrança segue paga até a soma devolvida fechar o valor; cada devolução é um movimento imutável; estorno feito direto no painel do provedor é conciliado)
 - ✅ Pagamentos: parcelamento no cartão (link, até 12x, parcela mínima R$ 5,00)
 - ⬜ Pagamentos: taxas do provedor, conciliação bancária
-- ⬜ Papéis da plataforma (Master), portal do paciente, NFS-e, integrações reais, regulados, IA. Convênios/TISS: bloqueado globalmente.
+- ✅ Portal do paciente (link de uso único + data de nascimento; consultas, confirmação, cancelamento, pedidos e documentos liberados; docs/PORTAL.md). Falta: envio automático do link e agendamento com horários livres
+- ⬜ Papéis da plataforma (Master), NFS-e, integrações reais, regulados, IA. Convênios/TISS: bloqueado globalmente.

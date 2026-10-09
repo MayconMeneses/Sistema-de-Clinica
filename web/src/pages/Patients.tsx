@@ -1,4 +1,5 @@
 import { Documents } from './Documents';
+import { PortalCard } from './PortalStaff';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { ApiError, get, patch, post, type Me } from '../api';
 import { brl, dateTimeOf, KIND_LABEL, METHOD_LABEL, parseMoney } from '../format';
@@ -136,9 +137,9 @@ export function PatientDetail({ id, me }: { id: string; me: Me }) {
       <div className="tabs" role="tablist">
         {tabs.map((t) => <button key={t.key} role="tab" aria-selected={tab === t.key} className="tab" onClick={() => setTab(t.key)}>{t.label}</button>)}
       </div>
-      {tab === 'dados' && <div className="stack"><div className="card"><PatientForm initial={patient} canAlert={can('notes.read')} onSaved={() => p.reload()} /></div><Consents patientId={id} canWrite={can('patients.write')} /><Guardians patientId={id} canWrite={can('patients.write')} />{can('privacy.open') && <PrivacyCard patientId={id} patientName={patient.name} canExport={can('patients.export')} />}{can('patients.merge') && <div><MergeButton patient={{ id, name: patient.name }} onMerged={(t) => { window.location.hash = `/pacientes/${t}`; }} /></div>}</div>}
+      {tab === 'dados' && <div className="stack"><div className="card"><PatientForm initial={patient} canAlert={can('notes.read')} onSaved={() => p.reload()} /></div><Consents patientId={id} canWrite={can('patients.write')} />{has('patient.portal') && can('portal.manage') && <PortalCard patientId={id} />}<Guardians patientId={id} canWrite={can('patients.write')} />{can('privacy.open') && <PrivacyCard patientId={id} patientName={patient.name} canExport={can('patients.export')} />}{can('patients.merge') && <div><MergeButton patient={{ id, name: patient.name }} onMerged={(t) => { window.location.hash = `/pacientes/${t}`; }} /></div>}</div>}
       {tab === 'mensagens' && <MessageHistory patientId={id} />}
-      {tab === 'documentos' && <Documents patientId={id} canWrite={can('documents.write')} canClinical={can('notes.read')} />}
+      {tab === 'documentos' && <Documents patientId={id} canWrite={can('documents.write')} canClinical={can('notes.read')} canShare={has('patient.portal')} />}
       {tab === 'prontuario' && <Notes patientId={id} meId={me.user.id} />}
       {tab === 'odontograma' && <Odontogram patientId={id} canWrite={can('dental.write')} hasFinance={has('finance.basic')} />}
       {tab === 'financeiro' && <PatientFinance patientId={id} canWrite={can('finance.write')} canDiscount={has('finance.advanced') && can('finance.write')} online={has('payments.gateway') && can('finance.read') ? { charge: can('payments.charge'), refund: can('finance.approve') } : null} />}

@@ -31,7 +31,7 @@ export function documentRoutes(app: FastifyInstance) {
     const q = z.object({ includeArchived: z.enum(['1']).optional() }).parse(ctx.req.query);
     const r = await ctx.tx.query(
       `SELECT d.id, d.title, d.category, d.file_name AS "fileName", d.mime_type AS "mimeType", d.size_bytes AS "sizeBytes",
-              d.created_at AS "createdAt", u.name AS "authorName", d.archived_at AS "archivedAt", d.archive_reason AS "archiveReason"
+              d.created_at AS "createdAt", u.name AS "authorName", d.shared_with_patient AS "sharedWithPatient", d.archived_at AS "archivedAt", d.archive_reason AS "archiveReason"
          FROM patient_documents d LEFT JOIN users u ON u.tenant_id = d.tenant_id AND u.id = d.created_by
         WHERE d.patient_id = ANY($1::uuid[]) AND ($2::boolean OR d.archived_at IS NULL) AND ($3::boolean OR d.category <> ALL($4::text[])) ORDER BY d.created_at DESC LIMIT 200`,
       [await family(ctx.tx, id), q.includeArchived === '1', canClinical(ctx.user.role), CLINICAL_CATEGORIES]);
