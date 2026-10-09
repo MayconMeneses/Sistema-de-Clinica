@@ -74,4 +74,5 @@ Legenda: ✅ IMPLEMENTADO e testado localmente · 🟡 PARCIAL · ⬜ PLANEJADO
 - ✅ Escopo por unidade em pacientes (e tudo que depende deles), estoque e CRM; dados da clínica inteira (caixa, contas a pagar, compras, inventário geral) ficam fora do gerente de unidade. Regras em `src/server/scope-policy.ts`; teste falha se rota nova não for classificada
 - ✅ Papéis da plataforma: administrador, gerência de clínicas, cobrança, suporte e auditor; gestão de operadores (`docs/COBRANCA-E-SUPORTE.md`)
 - ✅ Dockerfile em 3 etapas, sem root, com `tini` e `HEALTHCHECK` (verificado construindo e rodando)
+- ✅ Agendamento online pelo portal: horários livres calculados no servidor, profissionais liberados pela clínica, limite por paciente, conflito decidido pelo banco
 - 🟡 Teste de invasão: duas rodadas locais; o independente (terceiros) continua pendente

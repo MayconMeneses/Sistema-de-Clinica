@@ -982,17 +982,21 @@ for (const vp of [{ name: 'desktop', width: 1280, height: 800, mobile: false }, 
   await staff.selectOption('select[aria-label="Quantidade de meses"]', '12');
   await staff.waitForFunction(() => document.querySelectorAll('table.table tbody tr').length === 12);
   must(true, 'indicadores: 12 meses de um indicador');
-  const soon = new Date(Date.now() + 600_000);
   const pid2 = (await api('POST', '/api/patients', { name: `Paciente Triagem ${suffix}`, birthDate: '1985-06-06', confirmNotDuplicate: true })).json.id as string;
-  const apr = await api('POST', '/api/appointments', { patientId: pid2, professionalId: pros[0]!.id, startsAt: soon.toISOString(), endsAt: new Date(soon.getTime() + 1_800_000).toISOString(), service: 'Triagem E2E', encaixe: true });
-  must(apr.status === 200, `recepção: consulta de hoje criada (${apr.status})`);
+  // consulta de hoje para a fila da recepção: tenta alguns horários próximos (o dia de teste já tem outras consultas)
+  let apr: { status: number; json: any } = { status: 0, json: {} };
+  for (let k = 0; k < 8 && apr.status !== 200; k++) {
+    const soon = new Date(Date.now() + (10 + 35 * k) * 60_000);
+    apr = await api('POST', '/api/appointments', { patientId: pid2, professionalId: (pros[1] ?? pros[0])!.id, startsAt: soon.toISOString(), endsAt: new Date(soon.getTime() + 1_800_000).toISOString(), service: 'Triagem E2E', encaixe: true });
+  }
+  must(apr.status === 200, `recepção: consulta de hoje criada (${apr.status} ${JSON.stringify(apr.json).slice(0, 120)})`);
   await staff.goto(`${BASE}/#/recepcao`);
-  await staff.getByRole('button', { name: 'Fazer triagem' }).first().click();
+  await staff.locator('li', { hasText: `Paciente Triagem ${suffix}` }).getByRole('button', { name: 'Fazer triagem' }).click();
   await staff.getByLabel('Peso (kg)').fill('70,5');
   await staff.getByLabel('Queixa principal').fill('Dor ao mastigar');
   await staff.getByRole('button', { name: 'Registrar triagem' }).click();
   await staff.getByText('Triagem registrada.').waitFor();
-  await staff.getByText('Triagem feita').first().waitFor();
+  await staff.locator('li', { hasText: `Paciente Triagem ${suffix}` }).getByText('Triagem feita').waitFor();
   must(true, 'recepção: triagem registrada pela fila e selo "Triagem feita"');
   await staff.goto(`${BASE}/#/equipe`);
   await staff.getByRole('tab', { name: 'Assinatura' }).click();
@@ -1003,6 +1007,14 @@ for (const vp of [{ name: 'desktop', width: 1280, height: 800, mobile: false }, 
   await staff.getByRole('button', { name: 'Encerrar agora' }).click();
   await staff.getByText('Acesso do suporte encerrado.').waitFor();
   must(true, 'gestão: assinatura e acesso do suporte (liberar e encerrar)');
+  // agendamento online: horário de atendimento do primeiro profissional (sobreposição é ignorada) e liga o recurso pela tela
+  for (let w = 0; w < 7; w++) await api('POST', '/api/availability', { professionalId: pros[0]!.id, weekday: w, start: '08:00', end: '12:00' });
+  await staff.getByRole('tab', { name: 'Agendamento online' }).click();
+  await staff.getByLabel('Permitir que pacientes marquem pelo portal').check();
+  await staff.locator('fieldset').getByRole('checkbox').first().check();
+  await staff.getByRole('button', { name: 'Salvar configuração' }).click();
+  await staff.getByText('Configuração salva.').waitFor();
+  must(true, 'gestão: agendamento online ligado para um profissional');
   await staff.getByRole('tab', { name: 'Formulários' }).click();
   await staff.getByText('Anamnese odontológica').first().waitFor();
   must(true, 'gestão: modelos de formulário listados');
@@ -1047,6 +1059,13 @@ for (const vp of [{ name: 'desktop', width: 1280, height: 800, mobile: false }, 
   await pp.getByText('Pedido enviado.').waitFor();
   await pp.getByRole('heading', { name: 'Meus pedidos' }).waitFor();
   must(true, 'portal: paciente pede uma consulta e vê o pedido em análise');
+  await pp.getByRole('button', { name: 'Marcar consulta' }).click();
+  await pp.getByLabel('Dia').selectOption({ index: 4 });
+  await pp.getByRole('group', { name: 'Horários livres' }).getByRole('button').first().click();
+  await pp.getByRole('button', { name: /^Confirmar / }).click();
+  await pp.getByText(/Consulta marcada para/).waitFor();
+  must(true, 'portal: paciente marca a própria consulta num horário livre');
+  await noHorizontalScroll(pp, 'portal');
   await pp.getByRole('heading', { name: 'Formulários para preencher' }).waitFor();
   await pp.getByRole('button', { name: 'Preencher' }).click();
   await pp.getByLabel('Qual é o motivo da consulta?').fill('Dor ao mastigar do lado direito');
