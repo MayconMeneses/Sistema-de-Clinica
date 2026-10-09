@@ -34,3 +34,28 @@
 - Negação de serviço e carga (proibidos aqui).
 - Provedores externos reais (Mercado Pago, e-mail, WhatsApp).
 - Ataques físicos, phishing de usuários e roubo de dispositivo.
+
+---
+
+# Rodada 2 (local, ainda não independente)
+
+> **Continua não sendo um teste independente.** Mesma autoria, mesmo ambiente. Mudou o método: em vez de seguir o roteiro WSTG, esta rodada é **diferencial** (a mesma chamada com todos os papéis, comparada com a tabela de permissões) e ataca o banco diretamente com o papel da plataforma. Roda em cada mudança: `tests/pentest2.test.ts`.
+
+| Alvo | O que se tentou | Resultado |
+|---|---|---|
+| Painel da plataforma | **todas** as rotas master × 5 papéis (admin, clínicas, cobrança, suporte, auditor): 403 exatamente onde a tabela nega, nunca 5xx; sem sessão sempre 401 | Aprovado (mais de 70 combinações) |
+| Sessões | cookie da clínica no painel e cookie do painel na clínica | Aprovado: 401 nos dois sentidos |
+| Banco × suporte | com a concessão ativa, o papel da plataforma lê equipe/unidades/atividades, mas `password_hash`, `totp_secret`, `metadata` e `entity_id` são negados; 15 tabelas clínicas/financeiras/de sessão negadas; não cria, reabre nem apaga concessão ou histórico; clínica sem concessão invisível | Aprovado |
+| Escopo por unidade | gerente de uma unidade contra **todas** as rotas de paciente usando um paciente de outra unidade (guardiões, consentimentos, privacidade, documentos, portal, formulários, triagem, financeiro, mensagens) e por corpo (agenda, lista de espera, cobrança): sempre 404, sem vazar o nome | Aprovado |
+| Formulários | `__proto__`, `constructor`, operadores estilo NoSQL, listas no lugar de texto, opção fora da lista, 5.000 caracteres, `NUL`, `1e999`; modelo com id reservado, opções repetidas, 61 campos, campo extra | Aprovado: 4xx sem 500, nenhum objeto poluído |
+| Cobrança e suporte | horas 0/-1/1,5/"2"/25/null/1e9; prazo enviado pelo cliente (ignorado: o servidor decide); valores negativos/fracionários/em texto; dia de vencimento 0/29/-3; período com SQL | Aprovado |
+| Dependências | `npm audit --omit=dev` | 0 vulnerabilidades |
+| Segredos | busca por chaves e senhas fixas no código | Nada encontrado fora dos valores de desenvolvimento |
+
+## O que a construção desta rodada revelou (já corrigido)
+1. **Lista de espera e pedidos do portal vazavam nome de paciente de outra unidade** quando o registro não tinha profissional/consulta. Agora seguem a visibilidade do paciente.
+2. **Aviso de duplicidade ao cadastrar paciente** revelaria nome e nascimento de pacientes de outras unidades para o gerente. Agora o aviso considera só os pacientes que ele enxerga.
+3. A primeira versão da função que libera leitura ao suporte usava `SECURITY DEFINER` e, com RLS forçado, **nunca enxergava a concessão** (falha segura, mas inútil); virou `SECURITY INVOKER`.
+
+## Continua fora do alcance
+Tudo o que a primeira rodada já listava (equipe independente, infraestrutura real, carga, provedores reais), mais: a imagem Docker final só foi verificada com um PostgreSQL de base e sem o passo `apt` (a rede deste ambiente bloqueia os repositórios Debian).

@@ -1,7 +1,9 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { audit, clinicRoute } from '../context.js';
-import { badRequest, conflict, mapDbError, notFound, type Tx } from '../http.js';
+import { badRequest, conflict, forbidden, mapDbError, notFound, type Tx } from '../http.js';
+import { assertUnitInScope, unitScope } from '../scope.js';
+import type { ClinicCtx } from '../context.js';
 
 const CAP = { cap: 'inventory.core' } as const;
 const idParam = z.object({ id: z.string().uuid() });
@@ -18,7 +20,17 @@ const ITEM_SELECT = `SELECT i.id, i.name, i.sku, i.unit, i.min_quantity::text AS
     (SELECT to_char(MIN(l.expires_on), 'YYYY-MM-DD') FROM inventory_lots l
       WHERE l.tenant_id = i.tenant_id AND l.item_id = i.id AND l.expires_on >= ${TODAY}
         AND (SELECT COALESCE(SUM(m.delta), 0) FROM inventory_movements m WHERE m.tenant_id = l.tenant_id AND m.lot_id = l.id) > 0) AS "nextExpiry"
-  FROM inventory_items i`;
+  , i.unit_id AS "unitId" FROM inventory_items i`;
+/** Item no alcance do gerente de unidade: o da sua unidade (leitura e escrita) ou o central (só leitura). Fora disso, "não existe". */
+async function itemAccess(ctx: ClinicCtx, itemId: string, write: boolean) {
+  const scope = await unitScope(ctx);
+  if (scope === null) return;
+  const r = await ctx.tx.query<{ unit_id: string | null }>('SELECT unit_id FROM inventory_items WHERE id = $1', [itemId]);
+  if (!r.rows[0]) return;                                  // inexistente: a rota responde 404 do seu jeito
+  const u = r.rows[0].unit_id;
+  if (u === null) { if (write) throw forbidden('Este é um item do estoque central: o gerente de unidade só consulta.'); return; }
+  if (!scope.includes(u)) throw notFound('Item não encontrado.');
+}
 const dateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a data no formato AAAA-MM-DD.');
 const toMilli = (v: number) => Math.round(v * 1000);
 const fromMilli = (v: number) => (v / 1000).toFixed(3);
@@ -102,8 +114,9 @@ export function inventoryRoutes(app: FastifyInstance) {
   clinicRoute(app, 'GET', '/api/inventory/items', { ...CAP, perm: 'inventory.read' }, async (ctx) => {
     const q = z.object({ q: z.string().trim().max(80).optional(), lowOnly: z.enum(['1']).optional(), includeInactive: z.enum(['1']).optional() }).parse(ctx.req.query);
     const r = await ctx.tx.query<{ balance: string; minQuantity: string; expiredQty: string; nextExpiry: string | null }>(
-      `SELECT * FROM (${ITEM_SELECT} WHERE ($1::text IS NULL OR i.name ILIKE $1 OR i.sku ILIKE $1) AND ($2::boolean OR i.active)) x
-        ORDER BY lower(name) LIMIT 500`, [q.q ? `%${q.q.replace(/[%_]/g, '')}%` : null, q.includeInactive === '1']);
+      `SELECT * FROM (${ITEM_SELECT} WHERE ($1::text IS NULL OR i.name ILIKE $1 OR i.sku ILIKE $1) AND ($2::boolean OR i.active)
+              AND ($3::uuid[] IS NULL OR i.unit_id IS NULL OR i.unit_id = ANY($3))) x
+        ORDER BY lower(name) LIMIT 500`, [q.q ? `%${q.q.replace(/[%_]/g, '')}%` : null, q.includeInactive === '1', await unitScope(ctx)]);
     // O mínimo considera só o que pode ser usado: quantidade vencida não conta.
     const items = r.rows.map((i) => {
       const usable = Number(i.balance) - Number(i.expiredQty);
@@ -122,15 +135,18 @@ export function inventoryRoutes(app: FastifyInstance) {
       sku: z.string().trim().min(1).max(40).optional(),
       unit: z.string().trim().min(1).max(10).default('un'),
       minQuantity: qty.or(z.literal(0)).default(0),
+      unitId: z.string().uuid().nullish(),               // unidade dona do item; vazio = estoque central
     }).parse(ctx.req.body);
+    if (await unitScope(ctx) !== null) await assertUnitInScope(ctx, b.unitId);   // gerente cria só na sua unidade
     try {
       const r = await ctx.tx.query<{ id: string }>(
-        'INSERT INTO inventory_items (tenant_id, name, sku, unit, min_quantity, created_by) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id',
-        [ctx.tenantId, b.name, b.sku ?? null, b.unit, b.minQuantity, ctx.user.id]);
+        'INSERT INTO inventory_items (tenant_id, name, sku, unit, min_quantity, created_by, unit_id) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id',
+        [ctx.tenantId, b.name, b.sku ?? null, b.unit, b.minQuantity, ctx.user.id, b.unitId ?? null]);
       await audit(ctx, 'inventory.item.create', 'inventory_item', r.rows[0]!.id);
       return { id: r.rows[0]!.id };
     } catch (e) {
       if ((e as { code?: string }).code === '23505') throw conflict('Já existe um item com este código (SKU).');
+      if ((e as { code?: string }).code === '23503') throw badRequest('Unidade inexistente.');
       return mapDbError(e);
     }
   });
@@ -138,6 +154,7 @@ export function inventoryRoutes(app: FastifyInstance) {
   clinicRoute(app, 'PATCH', '/api/inventory/items/:id', { ...CAP, perm: 'inventory.write' }, async (ctx) => {
     const { id } = idParam.parse(ctx.req.params);
     const b = z.object({ name: z.string().trim().min(2).max(120).optional(), minQuantity: qty.or(z.literal(0)).optional(), active: z.boolean().optional() }).parse(ctx.req.body);
+    await itemAccess(ctx, id, true);
     const r = await ctx.tx.query(
       `UPDATE inventory_items SET name = COALESCE($2, name), min_quantity = COALESCE($3, min_quantity), active = COALESCE($4, active) WHERE id = $1 RETURNING id`,
       [id, b.name ?? null, b.minQuantity ?? null, b.active ?? null]);
@@ -166,6 +183,7 @@ export function inventoryRoutes(app: FastifyInstance) {
     if (b.kind === 'adjust' && (b.reason ?? '').length < 3) throw badRequest('Explique o motivo do ajuste.');
     if (b.kind !== 'in' && b.unitCostCents !== undefined) throw badRequest('O custo unitário só vale para entradas.');
     const delta = b.kind === 'out' ? -Math.abs(b.quantity) : b.quantity;
+    await itemAccess(ctx, b.itemId, true);
     const item = await ctx.tx.query<{ active: boolean }>('SELECT active FROM inventory_items WHERE id = $1 FOR UPDATE', [b.itemId]);
     if (!item.rows[0]) throw notFound('Item não encontrado.');
     if (!item.rows[0].active) throw conflict('Item inativo: reative-o para movimentar.');
@@ -204,6 +222,7 @@ export function inventoryRoutes(app: FastifyInstance) {
   // Lotes de um item, com saldo e situação (vencido / vence em breve / ok).
   clinicRoute(app, 'GET', '/api/inventory/items/:id/lots', { ...CAP, perm: 'inventory.read' }, async (ctx) => {
     const { id } = idParam.parse(ctx.req.params);
+    await itemAccess(ctx, id, false);
     const item = await ctx.tx.query(`${ITEM_SELECT} WHERE i.id = $1`, [id]);
     if (!item.rows[0]) throw notFound('Item não encontrado.');
     const r = await ctx.tx.query<{ id: string; code: string; expiresOn: string | null; balance: string; daysLeft: number | null }>(
@@ -218,6 +237,7 @@ export function inventoryRoutes(app: FastifyInstance) {
 
   clinicRoute(app, 'GET', '/api/inventory/items/:id/movements', { ...CAP, perm: 'inventory.read' }, async (ctx) => {
     const { id } = idParam.parse(ctx.req.params);
+    await itemAccess(ctx, id, false);
     const item = await ctx.tx.query(`${ITEM_SELECT} WHERE i.id = $1`, [id]);
     if (!item.rows[0]) throw notFound('Item não encontrado.');
     const r = await ctx.tx.query(

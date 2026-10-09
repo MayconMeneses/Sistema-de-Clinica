@@ -55,3 +55,35 @@ export async function assertApptVisible(ctx: ClinicCtx, id: string) {
   const r = await ctx.tx.query(`SELECT 1 FROM appointments a WHERE a.id = $1 AND ${apptInScope(2)}`, [id, scope]);
   if (!r.rowCount) throw notFound('Agendamento não encontrado.');
 }
+
+// ---------------------------------------------------------------- pacientes, estoque e CRM no escopo da unidade
+/**
+ * Decisão de produto: o paciente "pertence" à unidade em que tem consulta (ou foi cadastrado pelo próprio gerente). Gerente de
+ * unidade enxerga só esses pacientes e tudo que depende deles (documentos, formulários, financeiro do paciente, mensagens...).
+ * Dados da clínica inteira (caixa, contas a pagar, compras, inventário geral) não existem por unidade: ficam fora do alcance dele.
+ * Estoque e leads têm unidade própria (unit_id): o gerente vê os da sua unidade (e o estoque central, só para consulta).
+ */
+export const PATIENT_VISIBLE_SQL = (col: string, scopeP: number, meP: number) =>
+  `($${scopeP}::uuid[] IS NULL
+    OR EXISTS (SELECT 1 FROM patients vp WHERE vp.id = ${col} AND vp.created_by = $${meP})
+    OR EXISTS (SELECT 1 FROM appointments va
+                WHERE (va.patient_id = ${col} OR va.patient_id IN (SELECT m.id FROM patients m WHERE m.merged_into = ${col} OR m.id = (SELECT mi.merged_into FROM patients mi WHERE mi.id = ${col})))
+                  AND ${apptInScope(scopeP, 'va')}))`;
+
+/** O paciente precisa estar no escopo; fora dele ele "não existe" para o gerente. */
+export async function assertPatientVisible(ctx: ClinicCtx, patientId: string) {
+  const scope = await unitScope(ctx);
+  if (scope === null) return;
+  const r = await ctx.tx.query(`SELECT 1 FROM patients p WHERE p.id = $1 AND ${PATIENT_VISIBLE_SQL('p.id', 2, 3)}`, [patientId, scope, ctx.user.id]);
+  if (!r.rowCount) throw notFound('Paciente não encontrado.');
+}
+
+export async function assertUnitInScope(ctx: ClinicCtx, unitId: string | null | undefined) {
+  const scope = await unitScope(ctx);
+  if (scope === null) return;
+  if (!unitId || !scope.includes(unitId)) throw forbidden('Isto é de outra unidade: seu perfil só gerencia as unidades a que está vinculado.');
+}
+
+export const denyIfScoped = async (ctx: ClinicCtx, what = 'Esta área reúne dados da clínica inteira') => {
+  if ((await unitScope(ctx)) !== null) throw forbidden(`${what} e não está disponível para o gerente de unidade.`);
+};

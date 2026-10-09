@@ -30,7 +30,7 @@ export function ClinicShell({ me, hash, onLogout, onRefresh }: { me: Me; hash: s
     { path: '/agenda', label: 'Agenda', ico: '▦', show: has('schedule.core') && can('agenda.read') },
     { path: '/recepcao', label: 'Recepção', ico: '☎', show: has('schedule.core') && can('agenda.read') },
     { path: '/pacientes', label: 'Pacientes', ico: '☺', show: has('patient.registry') && can('patients.read') },
-    { path: '/financeiro', label: 'Financeiro', ico: '$', show: has('finance.basic') && can('finance.read') },
+    { path: '/financeiro', label: 'Financeiro', ico: '$', show: has('finance.basic') && can('finance.read') && me.unitScope == null },
     { path: '/estoque', label: 'Estoque', ico: '▤', show: has('inventory.core') && can('inventory.read') },
     { path: '/crm', label: 'CRM', ico: '☆', show: has('crm.pipeline') && can('crm.read') },
     { path: '/indicadores', label: 'Indicadores', ico: '◔', show: has('analytics.bi') && can('reports.read') },
@@ -53,8 +53,8 @@ export function ClinicShell({ me, hash, onLogout, onRefresh }: { me: Me; hash: s
   else if (current === '/pacientes' && visible.some((i) => i.path === '/pacientes')) page = <Patients me={me} />;
   else if (current === '/financeiro' && visible.some((i) => i.path === '/financeiro')) page = <FinancePage me={me} />;
   else if (current === '/equipe' && visible.some((i) => i.path === '/equipe')) page = <Team permissions={me.permissions} entitlements={me.entitlements} />;
-  else if (current === '/estoque' && visible.some((i) => i.path === '/estoque')) page = <InventoryPage canWrite={can('inventory.write')} />;
-  else if (current === '/crm' && visible.some((i) => i.path === '/crm')) page = <CrmPage canWrite={can('crm.write')} canConvert={can('patients.write')} canSchedule={can('agenda.write') && can('patients.write') && has('schedule.core') && has('patient.registry')} />;
+  else if (current === '/estoque' && visible.some((i) => i.path === '/estoque')) page = <InventoryPage canWrite={can('inventory.write')} scoped={me.unitScope != null} />;
+  else if (current === '/crm' && visible.some((i) => i.path === '/crm')) page = <CrmPage scoped={me.unitScope != null} canWrite={can('crm.write')} canConvert={can('patients.write')} canSchedule={can('agenda.write') && can('patients.write') && has('schedule.core') && has('patient.registry')} />;
   else if (current === '/indicadores' && visible.some((i) => i.path === '/indicadores')) page = <ReportsPage />;
   else if (current === '/mais' && overflow) page = <MorePage items={extra} />;
   else page = <Dashboard me={me} />;

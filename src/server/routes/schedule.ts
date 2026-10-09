@@ -4,7 +4,7 @@ import { audit, clinicRoute } from '../context.js';
 import { APPT_FROM, APPT_SELECT } from './appointments.js';
 import { assertActive } from '../../modules/patients/family.js';
 import { badRequest, conflict, forbidden, mapDbError, notFound } from '../http.js';
-import { apptInScope, proInScope, proInScopeSql, resourceInScope, unitScope } from '../scope.js';
+import { PATIENT_VISIBLE_SQL,apptInScope, proInScope, proInScopeSql, resourceInScope, unitScope } from '../scope.js';
 
 const CAP = { cap: 'schedule.core' } as const;
 const idParam = z.object({ id: z.string().uuid() });
@@ -131,8 +131,8 @@ export function scheduleRoutes(app: FastifyInstance) {
               w.service, w.notes, w.priority, w.created_at AS "createdAt"
          FROM waitlist_entries w JOIN patients p ON p.tenant_id = w.tenant_id AND p.id = w.patient_id
          LEFT JOIN users u ON u.tenant_id = w.tenant_id AND u.id = w.professional_id
-        WHERE w.status = 'waiting' AND (w.professional_id IS NULL OR ${proInScopeSql('w.professional_id', 1)})
-        ORDER BY (w.priority = 'priority') DESC, w.created_at LIMIT 200`, [await unitScope(ctx)]);
+        WHERE w.status = 'waiting' AND (w.professional_id IS NULL OR ${proInScopeSql('w.professional_id', 1)}) AND ${PATIENT_VISIBLE_SQL('w.patient_id', 1, 2)}
+        ORDER BY (w.priority = 'priority') DESC, w.created_at LIMIT 200`, [await unitScope(ctx), ctx.user.id]);
     return { entries: r.rows };
   });
   clinicRoute(app, 'POST', '/api/waitlist', { ...CAP, perm: 'agenda.write' }, async (ctx) => {

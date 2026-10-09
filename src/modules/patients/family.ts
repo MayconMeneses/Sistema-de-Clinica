@@ -1,3 +1,4 @@
+import { PATIENT_VISIBLE_SQL } from '../../server/scope.js';
 import type pg from 'pg';
 import { conflict } from '../../server/http.js';
 
@@ -18,7 +19,7 @@ export async function assertActive(tx: pg.PoolClient, id: string): Promise<void>
 
 export interface DuplicateCandidate { id: string; name: string; birthDate: string | null; phone: string | null; reason: string }
 
-export async function findDuplicates(tx: pg.PoolClient, p: { name: string; birthDate: string | null; phone: string | null; document: string | null }, excludeId?: string): Promise<DuplicateCandidate[]> {
+export async function findDuplicates(tx: pg.PoolClient, p: { name: string; birthDate: string | null; phone: string | null; document: string | null }, excludeId?: string, visibleTo?: { scope: string[] | null; userId: string }): Promise<DuplicateCandidate[]> {
   // As chaves são calculadas pelo banco (mesmas funções que o trigger usa), então não há divergência de regra.
   const r = await tx.query<DuplicateCandidate>(
     `WITH q AS (SELECT doc_key($1::text) AS doc, phone_key($2::text) AS phone, name_key($3::text) AS name, $4::date AS birth)
@@ -30,6 +31,7 @@ export async function findDuplicates(tx: pg.PoolClient, p: { name: string; birth
       WHERE p.merged_into IS NULL AND ($5::uuid IS NULL OR p.id <> $5)
         AND ((q.doc <> '' AND p.doc_digits = q.doc) OR (q.birth IS NOT NULL AND p.name_key = q.name AND p.birth_date = q.birth)
              OR (q.phone <> '' AND p.phone_digits = q.phone AND split_part(p.name_key, ' ', 1) = split_part(q.name, ' ', 1)))
-      LIMIT 5`, [p.document, p.phone, p.name, p.birthDate, excludeId ?? null]);
+        AND ${PATIENT_VISIBLE_SQL('p.id', 6, 7)}   -- gerente de unidade só é avisado de duplicata entre os pacientes que enxerga
+      LIMIT 5`, [p.document, p.phone, p.name, p.birthDate, excludeId ?? null, visibleTo?.scope ?? null, visibleTo?.userId ?? null]);
   return r.rows;
 }

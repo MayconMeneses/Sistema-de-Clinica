@@ -71,3 +71,7 @@ Legenda: ✅ IMPLEMENTADO e testado localmente · 🟡 PARCIAL · ⬜ PLANEJADO
 - ✅ Cobrança dos clientes da plataforma: preço e limites por plano, combinado por cliente, faturas imutáveis, carência, suspensão e reativação por cobrança, aviso ao proprietário, limites de usuários/pacientes/arquivos (`docs/COBRANCA-E-SUPORTE.md`). Baixa é manual; falta gateway próprio da plataforma
 - ✅ Acesso temporário do suporte: concedido pela clínica (≤ 24 h), somente leitura de equipe/unidades/atividades, imposto por RLS, com histórico visível à clínica
 - ✅ Indicadores comparando meses (colunas, linha e variação)
+- ✅ Escopo por unidade em pacientes (e tudo que depende deles), estoque e CRM; dados da clínica inteira (caixa, contas a pagar, compras, inventário geral) ficam fora do gerente de unidade. Regras em `src/server/scope-policy.ts`; teste falha se rota nova não for classificada
+- ✅ Papéis da plataforma: administrador, gerência de clínicas, cobrança, suporte e auditor; gestão de operadores (`docs/COBRANCA-E-SUPORTE.md`)
+- ✅ Dockerfile em 3 etapas, sem root, com `tini` e `HEALTHCHECK` (verificado construindo e rodando)
+- 🟡 Teste de invasão: duas rodadas locais; o independente (terceiros) continua pendente

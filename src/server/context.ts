@@ -7,6 +7,7 @@ import { config } from './config.js';
 import { appPool, platformPool } from './db.js';
 import { forbidden, HttpError, sha256, unauthorized, type Tx } from './http.js';
 import { masterCan, MASTER_ROUTE_PERMS } from './auth/master-rbac.js';
+import { enforceUnitScope } from './scope-policy.js';
 import { hasPermission, type Permission } from './auth/rbac.js';
 
 export const CLINIC_COOKIE = 'cs';
@@ -65,6 +66,7 @@ export function clinicRoute(
           if (opts.cap && !ctx.entitlements.has(opts.cap)) {
             throw new HttpError(403, 'Este recurso não está incluído no plano contratado.', 'capability_unavailable');
           }
+          await enforceUnitScope(ctx, method, url);
           return handler(ctx, req, reply);
         });
       } catch (e) {
