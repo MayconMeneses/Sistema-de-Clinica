@@ -8,6 +8,7 @@ import { DbRateLimiter } from '../auth/rate-limit.js';
 import { config } from '../config.js';
 import { audit, auditPortal, clinicRoute, cookieOptions, PORTAL_COOKIE, portalRoute } from '../context.js';
 import { appPool } from '../db.js';
+import { CLINICAL_CATEGORIES } from './documents.js';
 import { apptInScope, assertApptVisible, unitScope } from '../scope.js';
 import { badRequest, conflict, forbidden, HttpError, isRealDate, mapDbError, newSecret, notFound, sha256, unauthorized } from '../http.js';
 
@@ -17,7 +18,6 @@ const INVITE_HOURS = 48;
 const SESSION_HOURS = 8;
 const MAX_INVITE_ATTEMPTS = 5;
 const CANCEL_MIN_HOURS = 24;
-const CLINICAL_CATEGORIES = ['exam', 'report', 'xray', 'photo'];
 const GENERIC_LOGIN_ERROR = 'Link inválido ou expirado, ou os dados não conferem. Peça um novo link à clínica.';
 
 const ipLimiter = { tooMany: (k: string) => new DbRateLimiter(appPool, Number(process.env.LOGIN_IP_MAX ?? 30), 15).tooMany(k) };

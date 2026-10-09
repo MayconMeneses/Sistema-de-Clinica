@@ -226,3 +226,13 @@ details summary { cursor: pointer; font-weight: 700; min-height: 44px; display: 
 /* Portal do paciente */
 .portal { max-width: 640px; margin: 0 auto; padding: 1rem 1rem 3rem; display: grid; gap: 1.5rem; }
 .portal h2 { margin: 0; }
+
+/* Galeria de imagens clínicas */
+.gallery { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: .75rem; }
+.gallery-item { display: grid; gap: .25rem; align-content: start; }
+.gallery-thumb { display: grid; place-items: center; width: 100%; aspect-ratio: 4 / 3; padding: 0; border: 1px solid var(--line, #d7e0e0); border-radius: 10px; background: #0f1b1b; overflow: hidden; cursor: pointer; color: #fff; font-size: 2rem; }
+.gallery-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.viewer-img { display: block; max-width: 100%; max-height: 70vh; margin: 0 auto; border-radius: 8px; background: #0f1b1b; }
+.compare { display: grid; gap: 1rem; grid-template-columns: 1fr; }
+.compare figure { margin: 0; }
+@media (min-width: 760px) { .compare { grid-template-columns: 1fr 1fr; } }

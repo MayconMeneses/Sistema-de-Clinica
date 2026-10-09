@@ -1,4 +1,5 @@
 import { Documents } from './Documents';
+import { Images } from './Images';
 import { PortalCard } from './PortalStaff';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { ApiError, get, patch, post, type Me } from '../api';
@@ -115,6 +116,7 @@ export function PatientDetail({ id, me }: { id: string; me: Me }) {
   const tabs = useMemo(() => [
     { key: 'dados', label: 'Dados', show: true },
     { key: 'prontuario', label: 'Prontuário', show: has('clinical.record') && can('notes.read') },
+    { key: 'imagens', label: 'Imagens', show: has('clinical.record') && can('notes.read') && can('documents.read') },
     { key: 'documentos', label: 'Documentos', show: has('clinical.record') && can('documents.read') },
     { key: 'mensagens', label: 'Mensagens', show: has('communication.inbox') && can('comm.read') },
     { key: 'odontograma', label: 'Odontograma', show: has('dental.odontogram') && can('dental.read') },
@@ -139,6 +141,7 @@ export function PatientDetail({ id, me }: { id: string; me: Me }) {
       </div>
       {tab === 'dados' && <div className="stack"><div className="card"><PatientForm initial={patient} canAlert={can('notes.read')} onSaved={() => p.reload()} /></div><Consents patientId={id} canWrite={can('patients.write')} />{has('patient.portal') && can('portal.manage') && <PortalCard patientId={id} />}<Guardians patientId={id} canWrite={can('patients.write')} />{can('privacy.open') && <PrivacyCard patientId={id} patientName={patient.name} canExport={can('patients.export')} />}{can('patients.merge') && <div><MergeButton patient={{ id, name: patient.name }} onMerged={(t) => { window.location.hash = `/pacientes/${t}`; }} /></div>}</div>}
       {tab === 'mensagens' && <MessageHistory patientId={id} />}
+      {tab === 'imagens' && <Images patientId={id} canWrite={can('documents.write')} canShare={has('patient.portal')} />}
       {tab === 'documentos' && <Documents patientId={id} canWrite={can('documents.write')} canClinical={can('notes.read')} canShare={has('patient.portal')} />}
       {tab === 'prontuario' && <Notes patientId={id} meId={me.user.id} />}
       {tab === 'odontograma' && <Odontogram patientId={id} canWrite={can('dental.write')} hasFinance={has('finance.basic')} />}
