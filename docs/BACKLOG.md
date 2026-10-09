@@ -25,7 +25,8 @@ Legenda: ✅ IMPLEMENTADO e testado localmente · 🟡 PARCIAL · ⬜ PLANEJADO
 ## Fase 2 — Operação clínica essencial
 - ✅ Pacientes, agenda com conflito transacional, prontuário com assinatura/adendo, financeiro particular
 - ✅ Unidades/salas/equipamentos, horário de atendimento, encaixe, bloqueios, séries semanais, lista de espera, fila da recepção (chegada→chamada→atendimento→conclusão)
-- 🟡 Recepção (falta triagem, formulários pendentes, checkout com pagamento)
+- ✅ Formulários pré-consulta e triagem: modelos versionados (anamnese pronta + editor), paciente responde pelo portal ou a recepção preenche, respostas imutáveis lidas só por quem acessa o prontuário, triagem append-only, selos na fila da recepção (`docs/PORTAL.md`). Os modelos prontos precisam de revisão do profissional responsável
+- 🟡 Recepção (falta checkout com pagamento)
 - ✅ Responsáveis, detecção e revisão de duplicidade, mesclagem auditada, exportação do paciente, solicitações de privacidade (LGPD: ferramentas)
 - ✅ Caixa (abertura/fechamento com conferência), descontos com aprovação, recibos numerados (não fiscais) — exigem o plano com financeiro avançado
 - ✅ Agenda em visão de dia, semana e mês (contagem por dia calculada no banco)

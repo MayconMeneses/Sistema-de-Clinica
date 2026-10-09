@@ -169,7 +169,11 @@ export function scheduleRoutes(app: FastifyInstance) {
   // ------------------------------------------------------------ recepção (hoje)
   clinicRoute(app, 'GET', '/api/reception', { ...CAP, perm: 'agenda.read' }, async (ctx) => {
     const r = await ctx.tx.query(
-      `SELECT ${APPT_SELECT} ${APPT_FROM}
+      `SELECT ${APPT_SELECT},
+              EXISTS (SELECT 1 FROM triage_records tr WHERE tr.tenant_id = a.tenant_id AND tr.appointment_id = a.id) AS "triageDone",
+              (SELECT count(*)::int FROM form_requests fr WHERE fr.tenant_id = a.tenant_id AND fr.status = 'pending' AND (fr.appointment_id = a.id OR (fr.appointment_id IS NULL AND fr.patient_id = a.patient_id))) AS "formsPending",
+              (SELECT count(*)::int FROM form_requests fr WHERE fr.tenant_id = a.tenant_id AND fr.status = 'submitted' AND (fr.appointment_id = a.id OR (fr.appointment_id IS NULL AND fr.patient_id = a.patient_id AND fr.submitted_at >= a.starts_at - interval '30 days'))) AS "formsSubmitted"
+         ${APPT_FROM}
         WHERE a.status IN ('scheduled','confirmed','checked_in','called','in_service')
           AND a.starts_at >= (date_trunc('day', now() AT TIME ZONE 'America/Sao_Paulo') AT TIME ZONE 'America/Sao_Paulo')
           AND a.starts_at <  (date_trunc('day', now() AT TIME ZONE 'America/Sao_Paulo') AT TIME ZONE 'America/Sao_Paulo') + interval '1 day'

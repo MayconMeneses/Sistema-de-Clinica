@@ -20,6 +20,7 @@ import { financeRoutes } from './routes/finance.js';
 import { inventoryRoutes } from './routes/inventory.js';
 import { masterRoutes } from './routes/master.js';
 import { documentRoutes } from './routes/documents.js';
+import { formRoutes } from './routes/forms.js';
 import { noteRoutes } from './routes/notes.js';
 import { portalRoutes } from './routes/portal.js';
 import { payableRoutes } from './routes/payables.js';
@@ -104,6 +105,7 @@ export async function buildApp(opts: { logger?: boolean; logStream?: NodeJS.Writ
   noteRoutes(app);
   documentRoutes(app);
   portalRoutes(app);
+  formRoutes(app);
   dentalRoutes(app);
   dentalQuoteRoutes(app);
   financeRoutes(app);

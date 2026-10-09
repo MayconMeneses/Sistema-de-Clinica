@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { get, patch, post } from '../api';
 import { dateTimeOf, ROLE_LABEL } from '../format';
 import { Badge, Button, ErrorBox, Select, Sheet, Spinner, TextInput, useLoad, useToast } from '../ui';
+import { FormTemplates } from './FormsStaff';
 import { PrivacyQueue } from './PatientAdmin';
 import { PaymentsSettings } from './OnlinePayments';
 import { Blocks, Hours, UnitsRooms } from './Settings';
@@ -10,7 +11,7 @@ interface User { id: string; name: string; email: string; role: string; status: 
 interface UnitRow { id: string; name: string }
 interface AuditEvent { id: string; occurredAt: string; action: string; entityType: string; actorName: string | null }
 
-type Tab = 'team' | 'units' | 'hours' | 'blocks' | 'payments' | 'privacy' | 'audit';
+type Tab = 'team' | 'units' | 'hours' | 'blocks' | 'payments' | 'forms' | 'privacy' | 'audit';
 
 export function Team({ permissions, entitlements }: { permissions: string[]; entitlements: string[] }) {
   const can = (p: string) => permissions.includes(p);
@@ -20,6 +21,7 @@ export function Team({ permissions, entitlements }: { permissions: string[]; ent
     { key: 'hours', label: 'Horários', show: can('schedule.manage') || can('org.manage') },
     { key: 'blocks', label: 'Bloqueios', show: can('schedule.manage') || can('org.manage') },
     { key: 'payments', label: 'Pagamentos', show: can('payments.manage') && entitlements.includes('payments.gateway') },
+    { key: 'forms', label: 'Formulários', show: can('forms.manage') && entitlements.includes('clinical.forms') },
     { key: 'privacy', label: 'Privacidade', show: can('privacy.manage') },
     { key: 'audit', label: 'Auditoria', show: can('audit.read') },
   ];
@@ -36,6 +38,7 @@ export function Team({ permissions, entitlements }: { permissions: string[]; ent
       {tab === 'hours' && <Hours canManage={can('schedule.manage')} />}
       {tab === 'blocks' && <Blocks canManage={can('schedule.manage')} />}
       {tab === 'payments' && <PaymentsSettings />}
+      {tab === 'forms' && <FormTemplates canManage />}
       {tab === 'privacy' && <PrivacyQueue />}
       {tab === 'audit' && <Audit />}
     </>

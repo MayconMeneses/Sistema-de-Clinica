@@ -162,6 +162,7 @@ export interface PortalCtx {
   tenantName: string;
   patient: { id: string; name: string };
   sessionId: string;
+  entitlements: Set<string>;
   req: FastifyRequest;
 }
 
@@ -197,8 +198,9 @@ export function portalRoute(
           if (!row || row.revoked_at || row.expires_at.getTime() < Date.now() || row.merged_into) throw unauthorized();
           const t = await tx.query<{ name: string; status: string }>('SELECT name, status FROM tenants');
           if (!t.rows[0] || t.rows[0].status !== 'active') throw unauthorized();
-          if (!(await loadEntitlements(tx)).has('patient.portal')) throw new HttpError(403, 'O portal do paciente não está disponível.', 'capability_unavailable');
-          return handler({ tx, tenantId: tenantHint, tenantName: t.rows[0].name, patient: { id: row.patient_id, name: row.name }, sessionId: row.sid, req }, req, reply);
+          const entitlements = await loadEntitlements(tx);
+          if (!entitlements.has('patient.portal')) throw new HttpError(403, 'O portal do paciente não está disponível.', 'capability_unavailable');
+          return handler({ tx, tenantId: tenantHint, tenantName: t.rows[0].name, patient: { id: row.patient_id, name: row.name }, sessionId: row.sid, entitlements, req }, req, reply);
         });
       } catch (e) {
         if (e instanceof HttpError && e.status === 401) reply.clearCookie(PORTAL_COOKIE, cookieOptions('/api/portal', 0));

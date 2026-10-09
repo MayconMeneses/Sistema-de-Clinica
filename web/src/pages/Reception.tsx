@@ -1,15 +1,17 @@
 import { useEffect, useState } from 'react';
 import { get, patch } from '../api';
 import { STATUS_LABEL, timeOf } from '../format';
+import { TriageSheet } from './FormsStaff';
 import { PortalRequests } from './PortalStaff';
 import { Badge, Button, Empty, ErrorBox, Spinner, useLoad, usePolling, useToast } from '../ui';
 
-interface Appt { id: string; status: string; priority: string; startsAt: string; checkedInAt: string | null; patientId: string; patientName: string; professionalName: string; resourceName: string | null; service: string }
+interface Appt { id: string; status: string; priority: string; startsAt: string; checkedInAt: string | null; patientId: string; patientName: string; professionalName: string; resourceName: string | null; service: string; triageDone?: boolean; formsPending?: number; formsSubmitted?: number }
 
 /** Fila do dia: quem ainda vai chegar, quem espera, quem está sendo atendido. Atualiza sozinha a cada 15 s. */
-export function Reception({ canWrite, portal = false }: { canWrite: boolean; portal?: boolean }) {
+export function Reception({ canWrite, portal = false, forms = false, canTriage = false }: { canWrite: boolean; portal?: boolean; forms?: boolean; canTriage?: boolean }) {
   const toast = useToast();
   const list = useLoad(() => get<{ appointments: Appt[] }>('/api/reception'), []);
+  const [triaging, setTriaging] = useState<Appt | null>(null);
   const [, tick] = useState(0);
   usePolling(() => { list.reload(); tick((n) => n + 1); }, 15000);
 
@@ -43,6 +45,7 @@ export function Reception({ canWrite, portal = false }: { canWrite: boolean; por
                 <span className="row">{a.priority === 'priority' && <Badge tone="warn">Prioridade</Badge>}<Badge tone={a.status === 'called' ? 'info' : 'neutral'}>{STATUS_LABEL[a.status]}</Badge></span>
               </div>
               <span className="small muted">Agendado {timeOf(a.startsAt)} · {a.professionalName}{a.resourceName ? ` · ${a.resourceName}` : ''} · aguardando há {wait(a)} min</span>
+              {forms && <FormBadges a={a} canTriage={canTriage} onTriage={() => setTriaging(a)} />}
               {canWrite && (
                 <div className="row">
                   {a.status === 'checked_in' && <Button className="btn-sm" onClick={() => move(a, { status: 'called' }, `${a.patientName} chamado(a).`)}>Chamar</Button>}
@@ -90,5 +93,15 @@ export function Reception({ canWrite, portal = false }: { canWrite: boolean; por
         </ul>
       </section>
     </>
+  );
+}
+
+function FormBadges({ a, canTriage, onTriage }: { a: Appt; canTriage: boolean; onTriage: () => void }) {
+  return (
+    <div className="row">
+      {!!a.formsPending && <Badge tone="warn">{a.formsPending} formulário(s) aguardando</Badge>}
+      {!!a.formsSubmitted && <Badge tone="ok">Formulário respondido</Badge>}
+      {a.triageDone ? <Badge tone="ok">Triagem feita</Badge> : canTriage && <Button variant="secondary" className="btn-sm" onClick={onTriage}>Fazer triagem</Button>}
+    </div>
   );
 }
