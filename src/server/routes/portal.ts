@@ -9,6 +9,7 @@ import { config } from '../config.js';
 import { audit, auditPortal, clinicRoute, cookieOptions, PORTAL_COOKIE, portalRoute } from '../context.js';
 import { appPool } from '../db.js';
 import { CLINICAL_CATEGORIES } from './documents.js';
+import { validateAnswers, type FormField } from '../../modules/forms/schema.js';
 import { apptInScope, assertApptVisible, unitScope } from '../scope.js';
 import { badRequest, conflict, forbidden, HttpError, isRealDate, mapDbError, newSecret, notFound, sha256, unauthorized } from '../http.js';
 
@@ -171,7 +172,15 @@ export function portalRoutes(app: FastifyInstance) {
       `SELECT id, kind, message, status, created_at AS "createdAt" FROM portal_requests WHERE patient_id = ANY($1::uuid[]) ORDER BY created_at DESC LIMIT 10`, [ids]);
     const upcoming = appt.rows.filter((a) => a.isUpcoming).reverse();
     const past = appt.rows.filter((a) => !a.isUpcoming).slice(0, 8);
-    return { clinic: ctx.tenantName, patient: { name: ctx.patient.name }, cancelMinHours: CANCEL_MIN_HOURS, upcoming, past, documents: docs.rows, requests: reqs.rows };
+    // Formulários pendentes: só título e data da consulta. As perguntas vêm em /forms/:id; respostas nunca voltam ao portal.
+    const forms = ctx.entitlements.has('clinical.forms')
+      ? (await ctx.tx.query(
+        `SELECT f.id, t.name, f.created_at AS "createdAt", a.starts_at AS "appointmentAt"
+           FROM form_requests f JOIN form_templates t ON t.tenant_id = f.tenant_id AND t.id = f.template_id
+           LEFT JOIN appointments a ON a.tenant_id = f.tenant_id AND a.id = f.appointment_id
+          WHERE f.patient_id = ANY($1::uuid[]) AND f.status = 'pending' ORDER BY f.created_at DESC LIMIT 20`, [ids])).rows
+      : [];
+    return { clinic: ctx.tenantName, patient: { name: ctx.patient.name }, cancelMinHours: CANCEL_MIN_HOURS, upcoming, past, documents: docs.rows, requests: reqs.rows, pendingForms: forms };
   });
 
   const ownAppt = async (ctx: Parameters<Parameters<typeof portalRoute>[4]>[0], id: string) => {
@@ -246,5 +255,30 @@ export function portalRoutes(app: FastifyInstance) {
     const name = d.file_name.replace(/[\r\n"\\/]/g, '_');
     reply.header('content-type', d.mime_type).header('content-disposition', `attachment; filename="${name}"`).header('x-content-type-options', 'nosniff').header('cache-control', 'private, no-store');
     return reply.send(d.content);
+  });
+
+  const ownPendingForm = async (ctx: Parameters<Parameters<typeof portalRoute>[4]>[0], id: string, lock: boolean) => {
+    if (!ctx.entitlements.has('clinical.forms')) throw notFound('Formulário não encontrado.');
+    const ids = await family(ctx.tx, ctx.patient.id);
+    const r = await ctx.tx.query<{ id: string; name: string; fields: FormField[] }>(
+      `SELECT f.id, t.name, t.fields FROM form_requests f JOIN form_templates t ON t.tenant_id = f.tenant_id AND t.id = f.template_id
+        WHERE f.id = $1 AND f.patient_id = ANY($2::uuid[]) AND f.status = 'pending' ${lock ? 'FOR UPDATE OF f' : ''}`, [id, ids]);
+    if (!r.rows[0]) throw notFound('Formulário não encontrado ou já respondido.');
+    return r.rows[0];
+  };
+
+  portalRoute(app, 'GET', '/api/portal/forms/:id', {}, async (ctx) => {
+    const { id } = idParam.parse(ctx.req.params);
+    return await ownPendingForm(ctx, id, false);
+  });
+
+  portalRoute(app, 'POST', '/api/portal/forms/:id/submit', {}, async (ctx) => {
+    const { id } = idParam.parse(ctx.req.params);
+    const b = z.object({ answers: z.record(z.string(), z.unknown()) }).parse(ctx.req.body);
+    const f = await ownPendingForm(ctx, id, true);
+    const answers = validateAnswers(f.fields, b.answers);
+    await ctx.tx.query(`UPDATE form_requests SET status = 'submitted', answers = $2, submitted_at = now(), submitted_via = 'portal' WHERE id = $1`, [id, JSON.stringify(answers)]);
+    await auditPortal(ctx, 'portal.form_submitted', 'form_request', id);
+    return { ok: true };
   });
 }

@@ -31,6 +31,69 @@ function Bars({ rows }: { rows: { label: string; value: number }[] }) {
   );
 }
 
+interface Compare { months: string[]; indicators: { key: string; label: string; unit: 'qtd' | 'R$' | '%'; values: (number | null)[] }[] }
+const MONTHS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+const monthLabel = (ym: string) => `${MONTHS[Number(ym.slice(5, 7)) - 1]}/${ym.slice(2, 4)}`;
+const fmtVal = (v: number | null, unit: 'qtd' | 'R$' | '%') => (v === null ? '—' : unit === 'R$' ? v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : unit === '%' ? pct(v) : v.toLocaleString('pt-BR'));
+
+/** Colunas mês a mês do mesmo indicador, com uma linha ligando o topo das colunas e a variação sobre o mês anterior. */
+function MonthCompare() {
+  const [months, setMonths] = useState(6);
+  const [key, setKey] = useState('appointments');
+  const data = useLoad(() => get<Compare>(`/api/reports/compare?months=${months}`), [months]);
+  const ind = data.data?.indicators.find((i) => i.key === key) ?? data.data?.indicators[0];
+  const W = 640, H = 220, padL = 8, padB = 28, padT = 26;
+  const vals = ind?.values ?? [];
+  const max = Math.max(1, ...vals.map((v) => v ?? 0));
+  const n = vals.length || 1, slot = (W - padL * 2) / n, bw = Math.min(56, slot * 0.6);
+  const x = (i: number) => padL + slot * i + slot / 2;
+  const y = (v: number) => padT + (H - padT - padB) * (1 - v / max);
+  const line = vals.map((v, i) => (v === null ? null : `${x(i)},${y(v)}`)).filter(Boolean).join(' ');
+  const delta = (i: number) => {
+    const a = vals[i - 1], b = vals[i];
+    if (i === 0 || a == null || b == null) return null;
+    if (ind!.unit === '%') return { text: `${b - a >= 0 ? '+' : ''}${(b - a).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} p.p.`, up: b >= a };
+    if (a === 0) return null;
+    const d = ((b - a) / a) * 100;
+    return { text: `${d >= 0 ? '+' : ''}${d.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}%`, up: d >= 0 };
+  };
+  return (
+    <section className="card stack" aria-labelledby="r-cmp">
+      <div className="row between"><h2 id="r-cmp">Comparar meses</h2>
+        <span className="row">
+          <select aria-label="Indicador" className="input" value={ind?.key ?? key} onChange={(e) => setKey(e.target.value)}>{data.data?.indicators.map((i) => <option key={i.key} value={i.key}>{i.label}</option>)}</select>
+          <select aria-label="Quantidade de meses" className="input" value={months} onChange={(e) => setMonths(Number(e.target.value))}>{[3, 6, 12].map((m) => <option key={m} value={m}>{m} meses</option>)}</select>
+        </span></div>
+      <MonthCompare />
+      {data.loading && !data.data && <Spinner />}
+      {data.error && <ErrorBox message={data.error} onRetry={data.reload} />}
+      {data.data && !ind && <p className="small muted">Nenhum indicador disponível para o seu plano ou perfil.</p>}
+      {data.data && ind && (
+        <>
+          <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`${ind.label} por mês`} className="chart">
+            {vals.map((v, i) => v === null ? null : (
+              <g key={i}>
+                <rect x={x(i) - bw / 2} y={y(v)} width={bw} height={Math.max(1, H - padB - y(v))} rx={3} fill="var(--primary, #2563eb)" opacity={i === vals.length - 1 ? 1 : 0.7} />
+                <text x={x(i)} y={y(v) - 6} textAnchor="middle" fontSize="11" fill="currentColor">{fmtVal(v, ind.unit)}</text>
+              </g>
+            ))}
+            {line && <polyline points={line} fill="none" stroke="var(--warn, #d97706)" strokeWidth="2" />}
+            {vals.map((v, i) => v === null ? null : <circle key={`c${i}`} cx={x(i)} cy={y(v)} r={3.5} fill="var(--warn, #d97706)" />)}
+            {data.data!.months.map((m, i) => <text key={m} x={x(i)} y={H - 8} textAnchor="middle" fontSize="12" fill="currentColor">{monthLabel(m)}</text>)}
+          </svg>
+          <table className="table small">
+            <thead><tr><th>Mês</th><th>{ind.label}</th><th>Variação</th></tr></thead>
+            <tbody>{data.data.months.map((m, i) => { const d = delta(i); return (
+              <tr key={m}><td>{monthLabel(m)}</td><td>{fmtVal(vals[i] ?? null, ind.unit)}</td><td>{d ? <span style={{ color: d.up ? 'var(--ok, #15803d)' : 'var(--bad, #b91c1c)' }}>{d.up ? '▲' : '▼'} {d.text}</span> : '—'}</td></tr>
+            ); })}</tbody>
+          </table>
+          <p className="small muted">O mês atual está em andamento. Variação sobre o mês anterior (taxas em pontos percentuais).</p>
+        </>
+      )}
+    </section>
+  );
+}
+
 export function ReportsPage() {
   const toast = useToast();
   const [exporting, setExporting] = useState(false);

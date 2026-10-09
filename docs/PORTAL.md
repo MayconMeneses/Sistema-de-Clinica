@@ -13,6 +13,8 @@ O envio automático do link por WhatsApp/e-mail ainda não existe (depende do pr
 - **Pedir** uma nova consulta ou outro horário (a recepção atende pela tela **Recepção › Pedidos do portal**).
 - Baixar os **documentos que a clínica liberar** (aba Documentos › "Liberar no portal"). Exames e laudos só podem ser liberados por quem tem acesso ao prontuário.
 
+- Preencher **formulários pedidos pela clínica** (anamnese etc.). As respostas são validadas no servidor contra o modelo, não podem ser alteradas depois de enviadas e **nunca voltam para o portal**; só owner e profissional leem (aba Formulários do paciente). Recepção e demais perfis veem apenas se foi respondido.
+
 ## Segurança
 - Sessão própria (cookie `ps`, restrito a `/api/portal`, `HttpOnly`, `SameSite=Strict`); nenhuma rota da equipe aceita essa sessão e vice-versa.
 - Dentro da clínica, **toda consulta ao banco do portal filtra pelo próprio paciente**; testado com sessões de outro paciente da mesma clínica e de outra clínica (`tests/portal.test.ts`).

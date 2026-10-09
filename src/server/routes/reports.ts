@@ -151,7 +151,48 @@ export function toCsv(period: { from: string; to: string }, rows: Row[]): string
   return '\uFEFF' + lines.map((l) => l.map((c) => csvCell(c as string | number | null)).join(';')).join('\r\n') + '\r\n';
 }
 
+// ---------------------------------------------------------------- comparação mensal
+interface Indicator { key: string; label: string; section: string; unit: Unit; pick: (sec: Record<string, any>) => number | null }
+const cents = (v: string | undefined) => (v === undefined ? null : Number(BigInt(v)) / 100);
+const INDICATORS: Indicator[] = [
+  { key: 'appointments', label: 'Atendimentos', section: 'appointments', unit: 'qtd', pick: (s) => s.appointments?.total ?? null },
+  { key: 'completed', label: 'Atendimentos concluídos', section: 'appointments', unit: 'qtd', pick: (s) => (s.appointments ? (s.appointments.byStatus.completed ?? 0) : null) },
+  { key: 'noShowRate', label: 'Taxa de falta', section: 'appointments', unit: '%', pick: (s) => s.appointments?.noShowRate ?? null },
+  { key: 'newPatients', label: 'Pacientes novos', section: 'patients', unit: 'qtd', pick: (s) => s.patients?.newPatients ?? null },
+  { key: 'charged', label: 'Cobrado', section: 'finance', unit: 'R$', pick: (s) => cents(s.finance?.chargedCents) },
+  { key: 'received', label: 'Recebido', section: 'finance', unit: 'R$', pick: (s) => cents(s.finance?.receivedCents) },
+  { key: 'leads', label: 'Leads criados', section: 'crm', unit: 'qtd', pick: (s) => s.crm?.created ?? null },
+  { key: 'conversion', label: 'Conversão de leads', section: 'crm', unit: '%', pick: (s) => s.crm?.conversionRate ?? null },
+];
+
+/** Lista os `n` meses terminando no mês atual (fuso de São Paulo), do mais antigo ao mais recente. */
+export function lastMonths(n: number, now = new Date()): { month: string; from: string; to: string }[] {
+  const [y, m] = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit' }).format(now).split('-').map(Number) as [number, number];
+  const out: { month: string; from: string; to: string }[] = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const d = new Date(Date.UTC(y, m - 1 - i, 1));
+    const last = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0));
+    const ym = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+    out.push({ month: ym, from: `${ym}-01`, to: `${ym}-${String(last.getUTCDate()).padStart(2, '0')}` });
+  }
+  return out;
+}
+
 export function reportRoutes(app: FastifyInstance) {
+  // Mesmos indicadores do overview, mês a mês (3 a 12 meses). Cada série respeita plano e perfil, como o overview.
+  clinicRoute(app, 'GET', '/api/reports/compare', { cap: 'analytics.bi', perm: 'reports.read' }, async (ctx) => {
+    const q = z.object({ months: z.coerce.number().int().min(2).max(12).default(6) }).parse(ctx.req.query);
+    const months = lastMonths(q.months);
+    const per: Awaited<ReturnType<typeof buildOverview>>[] = [];
+    for (const m of months) per.push(await buildOverview(ctx, m));
+    const omitted = per[0]!.omitted;
+    const skip = new Set(omitted.map((o) => o.section));
+    const indicators = INDICATORS.filter((i) => !skip.has(i.section)).map((i) => ({
+      key: i.key, label: i.label, unit: i.unit, values: per.map((o) => i.pick(o.sections as Record<string, any>)),
+    }));
+    return { months: months.map((m) => m.month), indicators, omitted };
+  });
+
   // Só agregados (contagens e somas), nunca dados de uma pessoa. Cada seção respeita o recurso do plano e a permissão do perfil.
   clinicRoute(app, 'GET', '/api/reports/overview', { cap: 'analytics.bi', perm: 'reports.read' }, async (ctx) => {
     const q = z.object({ from: ymd, to: ymd }).parse(ctx.req.query);

@@ -1,4 +1,5 @@
 import { Documents } from './Documents';
+import { PatientForms } from './FormsStaff';
 import { Images } from './Images';
 import { PortalCard } from './PortalStaff';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
@@ -118,6 +119,7 @@ export function PatientDetail({ id, me }: { id: string; me: Me }) {
     { key: 'prontuario', label: 'Prontuário', show: has('clinical.record') && can('notes.read') },
     { key: 'imagens', label: 'Imagens', show: has('clinical.record') && can('notes.read') && can('documents.read') },
     { key: 'documentos', label: 'Documentos', show: has('clinical.record') && can('documents.read') },
+    { key: 'formularios', label: 'Formulários', show: has('clinical.forms') && (can('forms.assign') || can('triage.read')) },
     { key: 'mensagens', label: 'Mensagens', show: has('communication.inbox') && can('comm.read') },
     { key: 'odontograma', label: 'Odontograma', show: has('dental.odontogram') && can('dental.read') },
     { key: 'financeiro', label: 'Financeiro', show: has('finance.basic') && can('finance.read') },
@@ -140,6 +142,7 @@ export function PatientDetail({ id, me }: { id: string; me: Me }) {
         {tabs.map((t) => <button key={t.key} role="tab" aria-selected={tab === t.key} className="tab" onClick={() => setTab(t.key)}>{t.label}</button>)}
       </div>
       {tab === 'dados' && <div className="stack"><div className="card"><PatientForm initial={patient} canAlert={can('notes.read')} onSaved={() => p.reload()} /></div><Consents patientId={id} canWrite={can('patients.write')} />{has('patient.portal') && can('portal.manage') && <PortalCard patientId={id} />}<Guardians patientId={id} canWrite={can('patients.write')} />{can('privacy.open') && <PrivacyCard patientId={id} patientName={patient.name} canExport={can('patients.export')} />}{can('patients.merge') && <div><MergeButton patient={{ id, name: patient.name }} onMerged={(t) => { window.location.hash = `/pacientes/${t}`; }} /></div>}</div>}
+      {tab === 'formularios' && <PatientForms patientId={id} canAssign={can('forms.assign')} canTriageWrite={can('triage.write')} canTriageRead={can('triage.read')} />}
       {tab === 'mensagens' && <MessageHistory patientId={id} />}
       {tab === 'imagens' && <Images patientId={id} canWrite={can('documents.write')} canShare={has('patient.portal')} />}
       {tab === 'documentos' && <Documents patientId={id} canWrite={can('documents.write')} canClinical={can('notes.read')} canShare={has('patient.portal')} />}

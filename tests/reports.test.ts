@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { csvCell, overviewRows, toCsv } from '../src/server/routes/reports.js';
+import { csvCell, lastMonths, overviewRows, toCsv } from '../src/server/routes/reports.js';
 
 const { buildApp } = await import('../src/server/app.js');
 const { appPool, platformPool, workerPool } = await import('../src/server/db.js');
@@ -142,5 +142,33 @@ describe('exportação dos indicadores (CSV)', () => {
     expect((await solo.owner.get(`/api/reports/export?${q}`)).json().error).toBe('capability_unavailable');
 
     expect(JSON.stringify((await t.owner.get('/api/audit')).json())).toContain('report.export');
+  });
+});
+
+describe('comparação mensal', () => {
+  it('lastMonths cobre meses completos, vira o ano e respeita o fuso', () => {
+    const m = lastMonths(4, new Date('2026-02-10T12:00:00Z'));
+    expect(m.map((x) => x.month)).toEqual(['2025-11', '2025-12', '2026-01', '2026-02']);
+    expect(m[3]).toMatchObject({ from: '2026-02-01', to: '2026-02-28' });
+    expect(lastMonths(2, new Date('2024-03-31T23:30:00-03:00'))[0]).toMatchObject({ from: '2024-02-01', to: '2024-02-29' });
+    expect(lastMonths(1, new Date('2026-04-01T01:00:00Z'))[0]!.month).toBe('2026-03');   // 22h do dia 31/03 em São Paulo
+  });
+
+  it('devolve séries por mês, valida limites e respeita perfil e plano', async () => {
+    const t = await tenant('cmp');
+    const p = (await t.owner.post('/api/patients', { name: 'Comparar Mes' })).json().id as string;
+    expect(p).toBeTruthy();
+    const r = await t.owner.get('/api/reports/compare?months=3');
+    expect(r.statusCode).toBe(200);
+    const j = r.json();
+    expect(j.months).toHaveLength(3);
+    const novos = j.indicators.find((i: { key: string }) => i.key === 'newPatients');
+    expect(novos.values).toHaveLength(3);
+    expect(novos.values[2]).toBe(1);
+    for (const bad of ['months=1', 'months=13', 'months=x']) expect((await t.owner.get(`/api/reports/compare?${bad}`)).statusCode).toBe(400);
+    const rec = await t.mk('receptionist', 'recc');
+    expect((await rec.c.get('/api/reports/compare')).statusCode).toBe(403);
+    const solo = await tenant('cmp-solo', 'solo');
+    expect((await solo.owner.get('/api/reports/compare')).statusCode).toBe(403);
   });
 });

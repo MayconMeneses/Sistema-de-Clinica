@@ -1,12 +1,13 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { ApiError, downloadFile, get, post } from '../api';
 import { dateTimeOf } from '../format';
+import { FormSheet } from './FormFill';
 import { Badge, Button, Empty, Sheet, TextInput, useToast } from '../ui';
 
 interface Appt { id: string; startsAt: string; endsAt: string; status: string; service: string; professionalName: string; canCancelNow: boolean; canConfirm: boolean; hasOpenRequest: boolean }
 interface Doc { id: string; title: string; category: string; fileName: string; sizeBytes: number; createdAt: string }
 interface Req { id: string; kind: 'schedule' | 'reschedule' | 'cancel'; message: string | null; status: 'open' | 'done' | 'dismissed'; createdAt: string }
-interface Me { clinic: string; patient: { name: string }; cancelMinHours: number; upcoming: Appt[]; past: Appt[]; documents: Doc[]; requests: Req[] }
+interface Me { clinic: string; patient: { name: string }; cancelMinHours: number; upcoming: Appt[]; past: Appt[]; documents: Doc[]; requests: Req[]; pendingForms: { id: string; name: string; appointmentAt: string | null }[] }
 
 const STATUS: Record<string, { label: string; tone: 'neutral' | 'ok' | 'warn' | 'bad' | 'info' }> = {
   scheduled: { label: 'Agendada', tone: 'neutral' }, confirmed: { label: 'Confirmada', tone: 'ok' }, checked_in: { label: 'Chegou', tone: 'info' }, completed: { label: 'Concluída', tone: 'ok' },
@@ -75,6 +76,7 @@ function PortalHome({ me, reload, onLogout }: { me: Me; reload: () => void; onLo
   const [busy, setBusy] = useState<string | null>(null);
   const [asking, setAsking] = useState<{ kind: 'schedule' | 'reschedule'; appt?: Appt } | null>(null);
   const [cancelling, setCancelling] = useState<Appt | null>(null);
+  const [filling, setFilling] = useState<string | null>(null);
 
   async function act(id: string, fn: () => Promise<string | void>) {
     setBusy(id);
@@ -108,6 +110,20 @@ function PortalHome({ me, reload, onLogout }: { me: Me; reload: () => void; onLo
           ))}
         </ul>
       </section>
+
+      {me.pendingForms.length > 0 && (
+        <section aria-labelledby="p-forms" className="stack">
+          <h2 id="p-forms">Formulários para preencher</h2>
+          <ul className="list">
+            {me.pendingForms.map((f) => (
+              <li key={f.id} className="list-item row between">
+                <span><strong>{f.name}</strong>{f.appointmentAt && <><br /><span className="small muted">Antes da consulta de {dateTimeOf(f.appointmentAt)}</span></>}</span>
+                <Button className="btn-sm" onClick={() => setFilling(f.id)}>Preencher</Button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <section aria-labelledby="p-docs" className="stack">
         <h2 id="p-docs">Meus documentos</h2>
@@ -145,6 +161,7 @@ function PortalHome({ me, reload, onLogout }: { me: Me; reload: () => void; onLo
         </section>
       )}
 
+      <FormSheet id={filling} base="/api/portal/forms" get={get} post={post} onClose={() => setFilling(null)} onDone={() => { setFilling(null); toast('Respostas enviadas. Obrigado!'); reload(); }} />
       <AskSheet ask={asking} onClose={() => setAsking(null)} onSent={() => { setAsking(null); toast('Pedido enviado. A clínica vai responder.'); reload(); }} />
       <CancelSheet appt={cancelling} minHours={me.cancelMinHours} onClose={() => setCancelling(null)} onDone={(m) => { setCancelling(null); toast(m); reload(); }} />
     </main>

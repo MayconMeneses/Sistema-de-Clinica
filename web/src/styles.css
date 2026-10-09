@@ -236,3 +236,10 @@ details summary { cursor: pointer; font-weight: 700; min-height: 44px; display: 
 .compare { display: grid; gap: 1rem; grid-template-columns: 1fr; }
 .compare figure { margin: 0; }
 @media (min-width: 760px) { .compare { grid-template-columns: 1fr 1fr; } }
+
+/* Comparação mensal */
+.chart { width: 100%; height: auto; max-height: 260px; color: var(--text, inherit); }
+.table { width: 100%; border-collapse: collapse; }
+.table th, .table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border, #e5e7eb); }
+.answers { display: grid; gap: 6px; margin: 0; }
+.answers dd { margin: 0; }
