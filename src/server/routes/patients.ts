@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { audit, clinicRoute } from '../context.js';
-import { HttpError, notFound } from '../http.js';
+import { HttpError, isRealDate, notFound } from '../http.js';
 import { findDuplicates } from '../../modules/patients/family.js';
 import { hasPermission } from '../auth/rbac.js';
 
@@ -9,7 +9,7 @@ const opt = (max: number) => z.string().trim().max(max).nullish().transform((v) 
 const patientBody = z.object({
   name: z.string().trim().min(2, 'Informe o nome.').max(160),
   socialName: opt(160),
-  birthDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data inválida.').nullish().transform((v) => v ?? null),
+  birthDate: z.string().refine((v) => isRealDate(v) && v >= '1900-01-01' && v <= '2100-01-01', 'Data inválida.').nullish().transform((v) => v ?? null),
   phone: opt(30),
   email: z.string().trim().toLowerCase().email('E-mail inválido.').max(200).nullish().or(z.literal('')).transform((v) => v || null),
   document: opt(30),
