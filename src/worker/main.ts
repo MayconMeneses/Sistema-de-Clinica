@@ -4,6 +4,13 @@ import { startTelegramBot } from '../ops/telegram-bot.js';
 import { processOutbox } from './outbox.js';
 import { processReceipts } from './receipts.js';
 
+/** Banco indisponível ou reiniciando (recuperação após queda, desligamento, rede): passageiro, não é defeito do worker. */
+export function isDbUnavailable(e: unknown): boolean {
+  const x = e as { code?: string; errors?: { code?: string }[] };
+  const codes = [x?.code, ...(x?.errors ?? []).map((y) => y.code)];
+  return codes.some((c) => !!c && (/^(57P0[1-3]|08|53300)/.test(c) || ['ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'ENOTFOUND', 'EAI_AGAIN'].includes(c)));
+}
+
 /** Laço do worker. Em produção rode como processo separado (`npm run worker`); em dev roda junto do servidor. */
 export function startWorker(log: (msg: string, extra?: object) => void = () => undefined, intervalMs = 5000, version = appVersion()) {
   initAlerts(workerPool);
@@ -39,8 +46,9 @@ export function startWorker(log: (msg: string, extra?: object) => void = () => u
       if (r.dead) notify({ severity: 'warning', component: 'pagamentos', title: 'Notificações de gateway sem correspondência', detail: `${r.dead} webhook(s) não puderam ser conciliados.`, where: 'Painel Master → Integrações → Recibos de webhook', fingerprint: 'receipts-dead' });
       failures = 0;
     } catch (e) {
-      log('worker_error', { name: (e as Error).name });
-      if (++failures >= 3) reportError(e, { component: 'worker', title: 'Worker falhando repetidamente', fingerprint: 'worker-loop' });
+      log('worker_error', { name: (e as Error).name, code: (e as { code?: string }).code });
+      // Banco fora do ar: quem avisa é a checagem de saúde ("Banco de dados não responde"), uma vez, e avisa quando voltar.
+      if (isDbUnavailable(e)) { void checkHealth(); } else if (++failures >= 3) reportError(e, { component: 'worker', title: 'Worker falhando repetidamente', fingerprint: 'worker-loop' });
     }
     await checkHealth();
     if (!stopped) timer = setTimeout(tick, intervalMs);
