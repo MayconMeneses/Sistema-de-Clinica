@@ -1,5 +1,24 @@
 # Clínica One
 
+<!-- portfolio-quick-view:start -->
+## Visão rápida para recrutadores | Recruiter overview
+
+**Problema:** clínicas e consultórios precisam conectar agenda, prontuários e operação financeira mantendo separação e rastreabilidade dos dados.  
+**Solução:** Clínica One, plataforma SaaS multiempresa com módulos administrativos e clínicos, incluindo odontologia.  
+**Stack:** React · TypeScript · Node.js · Fastify · PostgreSQL · Docker · Vitest.
+
+**O que demonstra no código**
+- Isolamento entre clínicas com Row Level Security (RLS), chaves compostas e testes de autorização.
+- Regras de negócio e integridade aplicadas também no banco de dados.
+- Auditoria, controle de permissões, idempotência, testes automatizados e CI.
+
+**Status e responsabilidade:** funcional em **ambiente de desenvolvimento**, com integrações externas simuladas; **não utilizar com dados reais de pacientes** sem validações e revisões especializadas.  
+**Veja rapidamente:** [destaques técnicos](#destaques-técnicos) · [telas de demonstração](#telas) · [limites conhecidos](#limites-conhecidos).  
+**EN:** Multi-tenant healthcare management SaaS showing PostgreSQL RLS, access control, testing and reliable data workflows. **Development-only; not approved for real patient data.**
+
+<!-- portfolio-quick-view:end -->
+
+
 **Plataforma SaaS multiempresa de gestão clínica**, em português do Brasil, feita para clínicas e consultórios (com módulo de odontologia): agenda, pacientes, prontuário, financeiro, pagamentos online, estoque, compras, CRM, indicadores e operação da plataforma.
 
 > **Status:** projeto funcional em ambiente de desenvolvimento, com testes automatizados e CI. **Não está pronto para dados reais de pacientes**: integrações externas (WhatsApp, e-mail, SMS, NFS-e, assinatura eletrônica) rodam em modo simulado (sandbox) e nenhuma conformidade (LGPD, CFM, CFO) é declarada sem revisão especializada. Veja [Limites conhecidos](#limites-conhecidos).
